@@ -60,10 +60,12 @@ export function renderEmailStudio(container) {
     branding: { ...(mailer.branding || {}) },
     templates: JSON.parse(JSON.stringify(mailer.templates || {})),
   };
-  // Fall back to the document theme so a new account's emails already match the
-  // paperwork instead of starting on RELAY's own colours.
-  if (draft.branding.headerBg === undefined) draft.branding.headerBg = dtheme.headerBg || '#1E2A3A';
+  // Fall back to the document theme's accent so a new account's buttons already
+  // match the paperwork instead of starting on RELAY's own colour.
   if (draft.branding.accent === undefined) draft.branding.accent = dtheme.accentColor || '#FF5C00';
+  // The header starts white: the theme's headerBg is the PDF table-header fill,
+  // and the old navy default ('#1E2A3A') is read as never chosen.
+  if (draft.branding.headerBg === undefined || String(draft.branding.headerBg).toUpperCase() === '#1E2A3A') draft.branding.headerBg = '#FFFFFF';
 
   let saved = JSON.stringify(draft);
   let activeType = 'invoice';
@@ -86,14 +88,16 @@ export function renderEmailStudio(container) {
   // ── Ribbon ──────────────────────────────────
 
   function templateThumb() {
-    const head = draft.branding.headerBg || '#1E2A3A';
+    const head = draft.branding.headerBg || '#FFFFFF';
     const accent = draft.branding.accent || '#FF5C00';
-    return `<span class="rde-gal-thumb" aria-hidden="true" style="background:#eef1f4">
-      <span style="display:block;height:8px;border-radius:2px 2px 0 0;background:${head}"></span>
-      <span style="display:block;background:#fff;padding:3px 4px 4px;border-radius:0 0 2px 2px">
-        <span style="display:block;height:3px;width:52%;border-radius:1px;background:#c9d0d8"></span>
-        <span style="display:block;height:2px;width:88%;margin-top:3px;border-radius:1px;background:#e3e7ec"></span>
-        <span style="display:block;height:6px;width:40%;margin-top:4px;border-radius:2px;background:${accent}"></span>
+    return `<span class="rde-gal-thumb" aria-hidden="true" style="background:#f2f2f0">
+      <span style="display:block;overflow:hidden;background:#fff;border:1px solid #e8e8e6;border-radius:2px">
+        <span style="display:block;height:6px;background:${head};border-bottom:1px solid #e8e8e6"></span>
+        <span style="display:block;padding:3px 4px 4px">
+          <span style="display:block;height:3px;width:52%;border-radius:1px;background:#c9c9c6"></span>
+          <span style="display:block;height:5px;margin-top:3px;border:1px solid #e8e8e6;border-radius:1px;background:#fbfbfa"></span>
+          <span style="display:block;height:5px;width:40%;margin-top:3px;border-radius:1px;background:${accent}"></span>
+        </span>
       </span>
     </span>`;
   }
