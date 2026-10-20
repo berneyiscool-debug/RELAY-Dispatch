@@ -5,6 +5,8 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { showModal } from '../../components/Modal.js';
+import { viewDocumentInNewTab, downloadDocument } from '../../utils/documentActions.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
@@ -61,6 +63,10 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+          ${!isNew ? `
+            <button class="btn btn-secondary" id="btn-view-po" data-tooltip="Open the printable purchase order in a new tab (as last saved)" data-tooltip-pos="bottom"><span class="material-icons-outlined">visibility</span> View</button>
+            <button class="btn btn-secondary" id="btn-download-po" data-tooltip="Download the purchase order as a PDF (as last saved)" data-tooltip-pos="bottom"><span class="material-icons-outlined">download</span> PDF</button>
+          ` : ''}
           <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> Save PO</button>
           ${!isNew && po.status === 'Draft' ? `<button class="btn btn-primary" id="btn-issue"><span class="material-icons-outlined">send</span> Issue PO</button>` : ''}
           ${!isNew && po.status === 'Issued' ? `<button class="btn btn-success" id="btn-receive"><span class="material-icons-outlined">inventory</span> Receive PO</button>` : ''}
@@ -183,6 +189,23 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
 
   function bindEvents() {
     container.querySelector('#btn-cancel').addEventListener('click', () => router.navigate('/purchase-orders'));
+
+    // Same document the Document Center shows for this PO.
+    const poDoc = () => ({ name: `PO ${po.number}.pdf`, render: { kind: 'po', id: po.id } });
+    container.querySelector('#btn-view-po')?.addEventListener('click', () => {
+      if (!viewDocumentInNewTab(poDoc())) showToast('Save the PO before viewing it.', 'error');
+    });
+    container.querySelector('#btn-download-po')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await downloadDocument(poDoc());
+      } catch (err) {
+        showToast(`Could not download: ${err.message || err}`, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
     
     container.querySelector('#btn-save')?.addEventListener('click', () => {
       savePO();

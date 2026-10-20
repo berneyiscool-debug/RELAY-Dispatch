@@ -220,6 +220,9 @@ export function renderSettings(container) {
   let activeTab = resolvedTab.tab || SETTINGS_DEFAULT_TAB;
   let templatesSubTab = resolvedTab.templatesSubTab;
   let usersSubTab = resolvedTab.usersSubTab;
+  // `?tab=tasklists&edit=<id>` (the Document Center's "Open record") lands with
+  // that tasklist template's editor open. Read once, so re-renders don't reopen it.
+  let pendingTasklistEdit = templatesSubTab === 'tasklists' ? urlParams.get('edit') : null;
 
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
@@ -1741,6 +1744,13 @@ export function renderSettings(container) {
         openEditTemplateModal(btn.dataset.id);
       });
     });
+
+    if (pendingTasklistEdit) {
+      const editId = pendingTasklistEdit;
+      pendingTasklistEdit = null;
+      if (store.getById('taskTemplates', editId)) openEditTemplateModal(editId);
+      else showToast('That tasklist template no longer exists.', 'error');
+    }
 
     function openEditTemplateModal(editId = null) {
       const t = editId ? store.getById('taskTemplates', editId) : { name: '', description: '', tags: [], tasks: [] };

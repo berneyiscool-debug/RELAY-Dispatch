@@ -236,18 +236,45 @@ async function maybeSendReceipt(session: any, invoiceId: string) {
     const from = `${displayName} <billing.${company.email_slug}@${emailDomain}>`
     const replyTo = [company.email_reply_to, company.email].find((c) => isEmail(c))
 
-    const html = `
-      <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#1E2A3A;max-width:560px;">
-        <h2 style="margin:0 0 4px;">Payment received</h2>
-        <p style="margin:0 0 16px;color:#5b6b7c;">Thanks — your payment to ${headerSafe(co, 120)} has been received.</p>
-        <table style="border-collapse:collapse;font-size:14px;">
-          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Invoice</td><td style="padding:4px 0;font-weight:600;">${headerSafe(num, 60)}</td></tr>
-          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Amount paid</td><td style="padding:4px 0;font-weight:600;">${amount}</td></tr>
-          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Date</td><td style="padding:4px 0;">${today}</td></tr>
-          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Method</td><td style="padding:4px 0;">Card (online)</td></tr>
-        </table>
-        <p style="margin:20px 0 0;color:#8a97a5;font-size:12px;">This is your receipt. No payment is due.</p>
-      </div>`
+    // Same layout as the app's receipt template (src/utils/emailTemplates.js),
+    // restated here because edge functions can't import the browser bundle.
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+    const font = "'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+    const mono = "'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace"
+    const row = (label: string, value: string, isMono = false) => `<tr>
+      <td style="border-top:1px solid #e8e8e6;padding:11px 0 11px 20px;font-family:${font};font-size:14px;color:#5c5c5a;">${label}</td>
+      <td align="right" style="border-top:1px solid #e8e8e6;padding:11px 20px 11px 12px;font-family:${isMono ? mono : font};font-size:14px;font-weight:500;color:#1a1a1a;text-align:right;">${value}</td>
+    </tr>`
+    const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="color-scheme" content="light" /><title>Payment received</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" /></head>
+<body style="margin:0;padding:0;background:#f2f2f0;">
+  <div style="display:none;max-height:0;overflow:hidden;">Your payment for invoice ${esc(num)} has been received.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f2f0;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e8e8e6;border-radius:8px;border-collapse:separate;">
+        <tr><td style="padding:20px 32px;border-bottom:1px solid #e8e8e6;font-family:${font};font-size:16px;font-weight:600;color:#1a1a1a;">${esc(co)}</td></tr>
+        <tr><td style="padding:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;"><tr>
+            <td style="background:#e7f5ec;color:#15803D;font-family:${font};font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;">Paid</td>
+          </tr></table>
+          <div style="font-family:${font};font-size:22px;font-weight:600;line-height:1.3;color:#1a1a1a;padding:0 0 12px;">Payment received</div>
+          <div style="font-family:${font};font-size:15px;line-height:1.6;color:#5c5c5a;padding:0 0 24px;">Thanks — your payment to ${esc(co)} has been received.</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fbfbfa;border:1px solid #e8e8e6;border-radius:8px;border-collapse:separate;">
+            <tr><td colspan="2" style="padding:18px 20px;">
+              <div style="font-family:${font};font-size:12px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#6b6b68;">Amount paid</div>
+              <div style="font-family:${font};font-size:28px;font-weight:600;line-height:1.25;color:#1a1a1a;padding-top:4px;">${esc(amount)}</div>
+            </td></tr>
+            ${row('Invoice', esc(num), true)}
+            ${row('Date', esc(today))}
+            ${row('Method', 'Card (online)')}
+          </table>
+          <div style="font-family:${font};font-size:14px;line-height:1.6;color:#6b6b68;padding:24px 0 0;">This is your receipt. No payment is due.</div>
+        </td></tr>
+      </table>
+      <div style="font-family:${font};font-size:12px;line-height:1.5;color:#6b6b68;padding:16px 32px 0;">Sent by ${esc(co)}</div>
+    </td></tr>
+  </table>
+</body></html>`
 
     const body: Record<string, unknown> = { from, to: [to], subject: `Receipt for invoice ${num} — paid`, html }
     if (replyTo) body.reply_to = replyTo
