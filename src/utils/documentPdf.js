@@ -60,7 +60,7 @@ async function waitForFrame(frame, timeoutMs = 8000) {
 
 /**
  * Render a document to a PDF.
- * @param {'quote'|'invoice'} type
+ * @param {'quote'|'invoice'|'po'|'form'|'tasklist'} type
  * @param {object} data  the quote/invoice record, as passed to generateDocument
  * @param {{filename?: string}} [opts]
  * @returns {Promise<{filename: string, base64: string, bytes: number}>}
@@ -127,7 +127,7 @@ export async function renderDocumentPdf(type, data, opts = {}) {
     }
 
     const base64 = pdf.output('datauristring').split(',')[1] || '';
-    const label = type === 'quote' ? 'Quote' : 'Invoice';
+    const label = { quote: 'Quote', po: 'Purchase_Order', form: 'Form', tasklist: 'Tasklist' }[type] || 'Invoice';
     const filename = opts.filename
       || `${safeName(label)}_${safeName(data.number || data.id || 'document')}.pdf`;
 

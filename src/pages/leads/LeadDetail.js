@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { logActivity } from '../../actions/context.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
@@ -459,16 +460,15 @@ ${noteBlock('description', 'sticky_note_2', 'Internal Notes', lead.description, 
 
           // Log lead stage transition activity to global activity array.
           // Reuses the history id so the activity map de-duplicates the two.
-          const activity = store.getAll('activity') || [];
-          activity.push({
+          logActivity({
             id: newEntry.id,
-            leadId: id,
+            recordType: 'lead',
+            recordId: id,
             type: 'lead_stage_changed',
             text: newEntry.text,
             user: newEntry.user,
             timestamp: newEntry.timestamp
           });
-          store.save('activity', activity);
 
           showToast(`Status updated to ${newStatus}`, 'success');
           render();

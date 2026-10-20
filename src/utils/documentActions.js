@@ -11,10 +11,11 @@
 import { store } from '../data/store.js';
 import { generateDocument, getPrintStyles } from '../components/PrintPreview.js';
 import { fontFaceCss } from './fonts.js';
+import { demoTabUrl } from './demoSession.js';
 
 // Records that the print layout can draw as a document. A browser entry opts in
 // with `render: { kind, id }`.
-const RENDER_KINDS = new Set(['invoice', 'quote', 'form', 'form-template', 'tasklist-template']);
+const RENDER_KINDS = new Set(['invoice', 'quote', 'po', 'form', 'form-template', 'tasklist-template']);
 
 function isRoute(url) {
   return !!(url && url.startsWith('#/'));
@@ -53,13 +54,17 @@ export function canDownload(doc) {
 /**
  * Build the data the print layout needs for a rendered record, or null when
  * the record no longer exists.
- * @returns {{type: 'invoice'|'quote'|'form', data: object} | null}
+ * @returns {{type: 'invoice'|'quote'|'po'|'form'|'tasklist', data: object} | null}
  */
 export function resolveRenderable(render) {
   if (!render || !RENDER_KINDS.has(render.kind)) return null;
   if (render.kind === 'invoice' || render.kind === 'quote') {
     const data = store.getById(render.kind === 'invoice' ? 'invoices' : 'quotes', render.id);
     return data ? { type: render.kind, data } : null;
+  }
+  if (render.kind === 'po') {
+    const data = store.getById('purchaseOrders', render.id);
+    return data ? { type: 'po', data } : null;
   }
   // Templates print as blank sheets to fill in by hand.
   if (render.kind === 'form-template') {
@@ -123,7 +128,7 @@ export function viewDocumentInNewTab(doc) {
     delete payload.html;
     localStorage.setItem('currentDocumentView', JSON.stringify(payload));
   }
-  window.open('#/document/view', '_blank', 'noopener');
+  window.open(demoTabUrl('#/document/view'), '_blank', 'noopener');
   return true;
 }
 
@@ -131,7 +136,7 @@ export function viewDocumentInNewTab(doc) {
 export function openRecordInNewTab(doc) {
   const path = recordPath(doc);
   if (!path) return false;
-  window.open(path, '_blank', 'noopener');
+  window.open(demoTabUrl(path), '_blank', 'noopener');
   return true;
 }
 

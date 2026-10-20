@@ -10,6 +10,7 @@
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
 import { permissionDenied, unsupported } from './errors.js';
+import { LEGACY_ENTITY_KEYS } from '../data/activityRecord.js';
 
 /** The signed-in user, from the same storage the rest of the app reads. */
 export function currentActor() {
@@ -50,21 +51,17 @@ export function assertCloudOnly(feature) {
   if (store.demoMode) throw unsupported(`${feature} is not available in the demo workspace.`);
 }
 
-/** Flat foreign-key name each page already reads on the shared activity log. */
-const LEGACY_ENTITY_KEYS = { lead: 'leadId', job: 'jobId', quote: 'quoteId', invoice: 'invoiceId' };
-
 /**
  * Append an entry to the free-text activity log.
  *
- * `activity` is not a synced collection (it is absent from `TABLE_MAP`), so this
- * writes to the in-memory cache only — matching how QuoteDetail records a quote
- * conversion today.
+ * One store.create() per entry: in Cloud that is a single `activity_log` insert
+ * rather than an upsert of the whole log, and a local profile writes just the
+ * one record to IndexedDB. Pages that record activity go through here too.
  */
 export function logActivity({ id, type, text, recordType, recordId, status, user, timestamp }) {
   try {
-    const log = store.getAll('activity') || [];
     const entityKey = LEGACY_ENTITY_KEYS[recordType];
-    log.push({
+    return store.create('activity', {
       id: id || `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       type,
       text,
@@ -78,9 +75,9 @@ export function logActivity({ id, type, text, recordType, recordId, status, user
       user: user || currentActor().name,
       timestamp: timestamp || new Date().toISOString(),
     });
-    store.save('activity', log);
   } catch {
     // An activity trail is useful but never worth failing a real write for.
+    return null;
   }
 }
 

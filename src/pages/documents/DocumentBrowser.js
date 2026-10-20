@@ -195,14 +195,14 @@ function collectDocuments() {
   store.getAll('purchaseOrders').forEach(po => {
     push({
       id: po.id, name: `PO ${po.number}.pdf`, url: `#/purchase-orders/${po.id}`, type: 'PO PDF',
-      size: null, uploadedAt: po.issueDate, folder: 'Purchase Orders',
+      size: null, uploadedAt: po.issueDate, folder: 'Purchase Orders', render: { kind: 'po', id: po.id },
       entityType: 'PO', entityId: po.id, entityName: `PO ${po.number} - ${po.supplierName}`,
     });
   });
 
   store.getAll('taskTemplates').forEach(t => {
     push({
-      id: `task_tmpl_${t.id}`, name: `${t.name} (Tasklist Template)`, url: '#/settings', type: 'Tasklist Template',
+      id: `task_tmpl_${t.id}`, name: `${t.name} (Tasklist Template)`, url: `#/settings?tab=tasklists&edit=${encodeURIComponent(t.id)}`, type: 'Tasklist Template',
       render: { kind: 'tasklist-template', id: t.id },
       size: null, uploadedAt: t.createdAt || new Date().toISOString(), folder: 'Templates',
       entityType: 'Template', entityId: t.id, entityName: 'Settings / Tasklist Templates',
@@ -211,7 +211,7 @@ function collectDocuments() {
 
   store.getAll('formTemplates').forEach(ft => {
     push({
-      id: `form_tmpl_${ft.id}`, name: `${ft.name} (Compliance Form Template)`, url: '#/settings', type: 'Form Template',
+      id: `form_tmpl_${ft.id}`, name: `${ft.name} (Compliance Form Template)`, url: `#/settings/forms/${encodeURIComponent(ft.id)}/edit`, type: 'Form Template',
       render: { kind: 'form-template', id: ft.id },
       size: null, uploadedAt: ft.createdAt || ft.updatedAt || new Date().toISOString(), folder: 'Templates',
       entityType: 'Template', entityId: ft.id, entityName: 'Settings / Compliance Forms',
@@ -556,20 +556,19 @@ export function renderDocumentBrowser(container, params) {
 
   const byId = (id) => shown.find(d => d.id === id) || allDocs.find(d => d.id === id);
 
+  // Also what double-click / Enter does: always the document, never a silent
+  // jump to the record, so the gesture means the same thing on every row.
   function viewDoc(doc) {
     if (!doc) return;
-    if (!viewDocumentInNewTab(doc)) showToast('This item has no document to view.', 'error');
+    if (viewDocumentInNewTab(doc)) return;
+    showToast(canOpenRecord(doc)
+      ? 'This item has no document to view. Use Open record to see it.'
+      : 'This item has no document to view.', 'error');
   }
 
   function openRecord(doc) {
     if (!doc) return;
     if (!openRecordInNewTab(doc)) showToast('This item is not linked to a record.', 'error');
-  }
-
-  // Double-click / Enter: show the document when there is one, else its record.
-  function openDefault(doc) {
-    if (!doc) return;
-    if (canView(doc)) viewDoc(doc); else openRecord(doc);
   }
 
   async function downloadDocs(docs) {
@@ -835,7 +834,7 @@ export function renderDocumentBrowser(container, params) {
 
     root.addEventListener('dblclick', (e) => {
       const item = e.target.closest('#dx-main [data-id]');
-      if (item && !e.target.closest('[data-act]')) openDefault(byId(item.dataset.id));
+      if (item && !e.target.closest('[data-act]')) viewDoc(byId(item.dataset.id));
     });
 
     root.addEventListener('contextmenu', (e) => {
@@ -858,7 +857,7 @@ export function renderDocumentBrowser(container, params) {
       else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(-perRow, e.shiftKey); }
       else if (tiles && e.key === 'ArrowRight') { e.preventDefault(); moveFocus(1, e.shiftKey); }
       else if (tiles && e.key === 'ArrowLeft') { e.preventDefault(); moveFocus(-1, e.shiftKey); }
-      else if (e.key === 'Enter') { const s = selectedDocs(); if (s.length === 1) openDefault(s[0]); }
+      else if (e.key === 'Enter') { const s = selectedDocs(); if (s.length === 1) viewDoc(s[0]); }
       else if (e.key === 'Delete') { if (toolbarState().del) deleteSelected(); }
       else if (e.key === 'Backspace') { e.preventDefault(); goTo(ROOT); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {

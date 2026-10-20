@@ -146,6 +146,9 @@ export function generateDocument(type, data) {
   if (type === 'tasklist') {
     return generateTasklistDocument(data);
   }
+  if (type === 'po') {
+    return generatePurchaseOrderDocument(data);
+  }
 
   const isQuote = type === 'quote';
   const statusColors = DOC_STATUS_COLORS;
@@ -157,56 +160,9 @@ export function generateDocument(type, data) {
   const sections = data.sections || [];
 
   const settings = store.getSettings();
-  const dt = settings.documentTheme || {
-    preset: 'relay',
-    accentColor: '#FF5C00',
-    headerBg: '#1E2A3A',
-    accentTint: '#F8FAFC',
-    fontFamily: 'sans-serif',
-    invoiceTerms: 'Please pay within 7 days of invoice issue.',
-    invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
-    quoteTitle: 'PROPOSAL / QUOTE',
-    quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
-    logoAlignment: 'left',
-    logoScale: 60,
-    hideLogo: false,
-    logoSource: 'large',
-    paymentStripe: true,
-    paymentDirectTransfer: true,
-    paymentCash: false,
-    quoteSignature: true,
-    hideCompanyName: false,
-    hideBrandLogo: false,
-    footerNote: 'Thank you for your business!'
-  };
-
-  const isLocalMode = !store.companyId;
-  const hideBrandLogo = isLocalMode ? false : !!dt.hideBrandLogo;
-
-  const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
-  const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
-  const logoImgHtml = logoUrl 
-    ? `<img class="pdf-logo-img" src="${escapeHTML(logoUrl)}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
-    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#FF5C00'}, ${dt.accentColor || '#FF5C00'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${escapeHTML((settings.name || 'A').charAt(0))}</div>`;
-
-  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#FF5C00'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
-
-  const companyHeaderHtml = `
-    ${logoImgHtml}
-    ${textLogoHtml}
-  `;
-
-  let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
-  let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
-  let titleBlockStyle = 'text-align: right;';
-  
-  if (dt.logoAlignment === 'right') {
-    companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start; flex-direction: row-reverse; text-align: right;';
-  } else if (dt.logoAlignment === 'center') {
-    headerFlexStyle = 'display:flex; flex-direction:column; align-items:center; gap:20px; border-bottom: 2px solid #E4E9F0; padding-bottom: 24px; margin-bottom: 32px;';
-    companyFlexStyle = 'display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;';
-    titleBlockStyle = 'text-align: center; margin-top: 10px;';
-  }
+  const {
+    dt, hideBrandLogo, companyHeaderHtml, headerFlexStyle, companyFlexStyle, titleBlockStyle,
+  } = documentBrand(settings);
 
   let tableContent = '';
   if (sections.length > 0) {
@@ -436,15 +392,22 @@ export function generateDocument(type, data) {
 
       ${quoteSignatureHtml}
 
+      ${documentFooterHtml(settings, dt, hideBrandLogo, isQuote
+        ? (dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
+        : (dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.'))}
+    </div>
+  `;
+}
+
+function documentFooterHtml(settings, dt, hideBrandLogo, terms) {
+  return `
       <!-- Footer -->
       <div class="pdf-footer">
         <div class="pdf-footer-line"></div>
         <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;">
           <div style="flex: 1;">
             <div class="pdf-footer-text">
-              ${isQuote
-                ? escapeHTML(dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
-                : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
+              ${escapeHTML(terms)}
             </div>
             <div class="pdf-footer-company">${escapeHTML(settings.name || 'Company Name')}${settings.email ? ` — ${escapeHTML(settings.email)}` : ''}${settings.phone ? ` — ${escapeHTML(settings.phone)}` : ''}</div>
           </div>
@@ -455,8 +418,178 @@ export function generateDocument(type, data) {
         </div>
         <div class="pdf-footer-note" style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px; display: ${dt.footerNote ? 'block' : 'none'};">${escapeHTML(dt.footerNote || '')}</div>
       </div>
+  `;
+}
+
+const PO_STATUS_COLORS = { Draft: '#6B7280', Issued: '#1B6DE0', Received: '#10B981', Cancelled: '#EF4444' };
+
+// A purchase order as sent to the supplier: the business's branded header, who
+// it is ordered from, what is ordered and the order total. POs carry no tax
+// breakdown (unit costs are entered as the supplier quotes them), so the total
+// is printed as-is.
+function generatePurchaseOrderDocument(po) {
+  const settings = store.getSettings();
+  const {
+    dt, hideBrandLogo, companyHeaderHtml, headerFlexStyle, companyFlexStyle, titleBlockStyle,
+  } = documentBrand(settings);
+  const statusColor = PO_STATUS_COLORS[po.status] || '#6B7280';
+
+  // Supplier contact details live on the supplier record; older POs only kept the name.
+  const supplier = (po.supplierId && store.getById('suppliers', po.supplierId))
+    || store.getAll('suppliers').find(s => s.name && s.name === po.supplierName)
+    || null;
+  const supplierName = po.supplierName || (supplier && supplier.name) || 'Supplier';
+  const items = po.lineItems || po.items || [];
+  const lineTotal = (item) => (Number(item.unitCost) || 0) * (Number(item.quantity) || 0);
+  const total = po.total !== undefined && po.total !== null && po.total !== ''
+    ? Number(po.total) || 0
+    : items.reduce((sum, item) => sum + lineTotal(item), 0);
+  const infoRow = (label, value) => `
+            <div class="pdf-info-row">
+              <span class="pdf-info-label">${label}</span>
+              <span class="pdf-info-value">${value}</span>
+            </div>`;
+
+  const rows = items.length ? items.map(item => `
+          <tr>
+            <td>${item.description ? escapeHTML(item.description) : '—'}</td>
+            <td>${item.sku ? escapeHTML(item.sku) : '—'}</td>
+            <td style="text-align:center">${escapeHTML(String(item.quantity ?? 1))}</td>
+            <td style="text-align:right">$${(Number(item.unitCost) || 0).toFixed(2)}</td>
+            <td style="text-align:right;font-weight:600">$${lineTotal(item).toFixed(2)}</td>
+          </tr>`).join('') : `
+          <tr><td colspan="5" style="text-align:center; color:#8A97A8; padding:24px">No items on this order.</td></tr>`;
+
+  return `
+    <div class="pdf-page">
+      <!-- Header -->
+      <div class="pdf-header" style="${headerFlexStyle}">
+        <div class="pdf-company" style="${companyFlexStyle}">
+          ${companyHeaderHtml}
+          <div>
+            <div class="pdf-company-name" style="display: ${dt.hideCompanyName ? 'none' : 'block'};">${escapeHTML(settings.name || 'Company Name')}</div>
+            ${settings.abn ? `<div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn)}</div>` : ''}
+            ${settings.address ? `<div class="pdf-company-detail">${escapeHTML(settings.address)}</div>` : ''}
+            ${settings.phone ? `<div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone)}</div>` : ''}
+          </div>
+        </div>
+        <div class="pdf-title-block" style="${titleBlockStyle}">
+          <div class="pdf-doc-type">PURCHASE ORDER</div>
+          <div class="pdf-doc-number">${escapeHTML(po.number || '')}</div>
+          <div class="pdf-status" style="background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40">${escapeHTML(po.status || 'Draft')}</div>
+        </div>
+      </div>
+
+      <!-- Info Grid -->
+      <div class="pdf-info-grid">
+        <div class="pdf-info-col">
+          <div class="pdf-info-label">Order From</div>
+          <div class="pdf-info-value-lg">${escapeHTML(supplierName)}</div>
+          ${supplier && supplier.contactName ? `<div class="pdf-info-value">Attn: ${escapeHTML(supplier.contactName)}</div>` : ''}
+          ${supplier && supplier.address ? `<div class="pdf-info-value">${escapeHTML(supplier.address)}</div>` : ''}
+          ${supplier && supplier.email ? `<div class="pdf-info-value">${escapeHTML(supplier.email)}</div>` : ''}
+          ${supplier && supplier.phone ? `<div class="pdf-info-value">${escapeHTML(supplier.phone)}</div>` : ''}
+        </div>
+        <div class="pdf-info-col">
+          ${infoRow('Issue Date', formatDate(po.issueDate))}
+          ${po.expectedDate ? infoRow('Expected', formatDate(po.expectedDate)) : ''}
+          ${po.receivedDate ? infoRow('Received', formatDate(po.receivedDate)) : ''}
+          ${po.jobNumber ? infoRow('Job Reference', escapeHTML(po.jobNumber)) : ''}
+        </div>
+      </div>
+
+      <!-- Line Items Table -->
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th style="width:42%">Description</th>
+            <th style="width:16%">SKU</th>
+            <th style="width:10%;text-align:center">Qty</th>
+            <th style="width:15%;text-align:right">Unit Cost</th>
+            <th style="width:17%;text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+
+      <!-- Totals -->
+      <div class="pdf-totals">
+        <div class="pdf-total-row pdf-grand-total">
+          <span>Order Total (AUD)</span>
+          <span>$${total.toFixed(2)}</span>
+        </div>
+      </div>
+
+      ${po.notes ? `
+        <div class="pdf-notes">
+          <div class="pdf-notes-title">Notes</div>
+          <div class="pdf-notes-text">${escapeHTML(po.notes).replace(/\n/g, '<br>')}</div>
+        </div>
+      ` : ''}
+
+      ${documentFooterHtml(settings, dt, hideBrandLogo,
+        `Please quote ${po.number ? `order number ${po.number}` : 'this order number'} on all deliveries and invoices.`)}
     </div>
   `;
+}
+
+// The branded header pieces every customer-facing document shares, from the
+// Document Studio theme (Settings → Documents).
+function documentBrand(settings) {
+  const dt = settings.documentTheme || {
+    preset: 'relay',
+    accentColor: '#FF5C00',
+    headerBg: '#1E2A3A',
+    accentTint: '#F8FAFC',
+    fontFamily: 'sans-serif',
+    invoiceTerms: 'Please pay within 7 days of invoice issue.',
+    invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
+    quoteTitle: 'PROPOSAL / QUOTE',
+    quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
+    logoAlignment: 'left',
+    logoScale: 60,
+    hideLogo: false,
+    logoSource: 'large',
+    paymentStripe: true,
+    paymentDirectTransfer: true,
+    paymentCash: false,
+    quoteSignature: true,
+    hideCompanyName: false,
+    hideBrandLogo: false,
+    footerNote: 'Thank you for your business!'
+  };
+
+  const isLocalMode = !store.companyId;
+  const hideBrandLogo = isLocalMode ? false : !!dt.hideBrandLogo;
+
+  const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
+  const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
+  const logoImgHtml = logoUrl 
+    ? `<img class="pdf-logo-img" src="${escapeHTML(logoUrl)}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
+    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#FF5C00'}, ${dt.accentColor || '#FF5C00'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${escapeHTML((settings.name || 'A').charAt(0))}</div>`;
+
+  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#FF5C00'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
+
+  const companyHeaderHtml = `
+    ${logoImgHtml}
+    ${textLogoHtml}
+  `;
+
+  let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
+  let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
+  let titleBlockStyle = 'text-align: right;';
+  
+  if (dt.logoAlignment === 'right') {
+    companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start; flex-direction: row-reverse; text-align: right;';
+  } else if (dt.logoAlignment === 'center') {
+    headerFlexStyle = 'display:flex; flex-direction:column; align-items:center; gap:20px; border-bottom: 2px solid #E4E9F0; padding-bottom: 24px; margin-bottom: 32px;';
+    companyFlexStyle = 'display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;';
+    titleBlockStyle = 'text-align: center; margin-top: 10px;';
+  }
+
+  return { dt, hideBrandLogo, companyHeaderHtml, headerFlexStyle, companyFlexStyle, titleBlockStyle };
 }
 
 function generateFormDocument(data) {

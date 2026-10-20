@@ -4,6 +4,7 @@
 import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
+import { activityFromRow, activityToRow } from './activityRecord.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 import { isDemoSession } from '../utils/demoSession.js';
@@ -45,6 +46,10 @@ const TABLE_MAP = {
   purchaseOrders: 'purchase_orders',
   notifications: 'notifications',
   notices: null,
+  // Free-text activity trail (quote conversions, job and lead notes, brny's audit
+  // log). Append one entry at a time with create(), never save() the whole log.
+  // Rows are mapped by activityRecord.js; locally it lives in its own IndexedDB store.
+  activity: 'activity_log',
   formTemplates: 'form_templates',
   formInstances: 'form_instances',
   kits: 'kits',
@@ -66,6 +71,9 @@ const TABLE_MAP = {
   timeClocks: 'time_clocks',
   todos: 'todos'
 };
+
+// Permanent history: save() only appends to these and delete() refuses them.
+const APPEND_ONLY_COLLECTIONS = new Set(['activity']);
 
 const TABLE_COLUMNS = {
   companies: [
@@ -626,6 +634,19 @@ const TABLE_COLUMNS = {
     "error",
     "created_at",
     "updated_at"
+  ],
+  activity_log: [
+    "id",
+    "company_id",
+    "type",
+    "text",
+    "status",
+    "record_type",
+    "record_id",
+    "actor_name",
+    "occurred_at",
+    "created_at",
+    "updated_at"
   ]
 };
 
@@ -879,7 +900,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 9);
+      const request = window.indexedDB.open(dbName, 10);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1815,6 +1836,7 @@ class DataStore {
 
   normalizeRecord(item, collection) {
     if (!item) return null;
+    if (collection === 'activity') return activityFromRow(item);
     const record = { ...item };
 
     if (collection === 'formTemplates') {
@@ -2486,6 +2508,7 @@ class DataStore {
 
   // De-normalize camelCase fields -> snake_case schema columns for database updates
   denormalizeRecord(item, collection) {
+    if (collection === 'activity') return activityToRow(item);
     const record = { ...item };
 
     if (collection === 'formTemplates') {
@@ -3707,6 +3730,10 @@ class DataStore {
       console.warn(`Blocked delete of ${collection} from a portal scope.`);
       return;
     }
+    if (APPEND_ONLY_COLLECTIONS.has(collection)) {
+      console.warn(`Blocked delete from ${collection}: it is a permanent history log.`);
+      return;
+    }
     // Ahead of the cascade so children are left alone too.
     if (this._readOnlyBlocked(collection)) return;
 
@@ -4104,6 +4131,16 @@ class DataStore {
     }
     if (this._readOnlyBlocked(collection)) return;
     const prev = this.cache[collection] || [];
+
+    // History is permanent: a whole-log save only appends the entries it adds.
+    // Rewriting the log (upsert, then delete whatever is missing) would let a
+    // device with a stale or empty cache wipe everyone's history.
+    if (APPEND_ONLY_COLLECTIONS.has(collection)) {
+      const known = new Set(prev.map(it => it && it.id));
+      (items || []).filter(it => it && !known.has(it.id)).forEach(it => this.create(collection, { ...it }));
+      return;
+    }
+
     this.cache[collection] = items;
     this.emit(collection, items);
 
@@ -4121,7 +4158,7 @@ class DataStore {
     // Cloud mode: persist the whole collection. Upsert every current row, then delete
     // any rows that were removed from the array.
     const table = TABLE_MAP[collection];
-    if (!table) return; // cache-only collections (e.g. 'activity') have no table
+    if (!table) return; // cache-only collections (e.g. 'notices') have no table
 
     // Default the fields create() sets — bulk save() receives hand-built records
     // (e.g. maintenance-engine notifications) that may omit number/createdAt/
@@ -4389,7 +4426,12 @@ class DataStore {
       });
 
       // Write to Supabase using upsert
-      const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
+      // History tables grant INSERT but not UPDATE, so they take insert-or-skip;
+      // a re-run upgrade then leaves rows already carried across untouched.
+      const { error } = await supabase.from(table).upsert(payload, {
+        onConflict: 'id',
+        ignoreDuplicates: APPEND_ONLY_COLLECTIONS.has(col),
+      });
       if (error) {
         // Keep going so the user sees every problem at once instead of fixing
         // one collection per attempt.
