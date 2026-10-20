@@ -549,6 +549,7 @@ export function getContextualMenu(hash, panelEl) {
 
     if (!isRecurring) {
       navTabs.push(
+        { id: 'forms', icon: 'fact_check', label: 'Compliance Forms', path: `/jobs/${id}?tab=forms` },
         { id: 'activity_staff', icon: 'history', label: 'Staff Activity', path: `/jobs/${id}?tab=activity_staff` },
         { id: 'activity_customer', icon: 'forum', label: 'Customer Portal', path: `/jobs/${id}?tab=activity_customer`, badge: customerCommCount > 0 ? customerCommCount : null }
       );
