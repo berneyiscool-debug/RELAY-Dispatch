@@ -66,8 +66,16 @@ Adds only what genuinely needs the internet:
   request callouts
 - **Contractor portal** — subbies see assigned tasks, update progress, upload
   photos, manage compliance docs
-- Xero / Stripe, SMS & email automation (not shipped yet — **Cost Centers & Xero**
-  sits greyed out with a *Coming soon* hint until it does)
+- Xero / Stripe, SMS & email automation. **Xero** is built but switched off in
+  release builds until it has been tested against a live Xero organisation, so
+  **Cost Centers & Xero** still shows *Coming soon* there. In development builds it:
+  - connects one AUD Xero organisation
+  - sends invoices to Xero when they go out, with each job's cost center coding
+  - pushes payments recorded in RELAY, including Stripe payments
+  - marks invoices paid in Xero as Paid in RELAY
+  - shows each invoice's sync state on the invoice list and detail page
+
+  brny can answer "did INV-1042 go to Xero?". See `docs/XERO_SETUP.md`.
 
 ## How it works
 
@@ -569,7 +577,8 @@ sign-in owns everything on this device.
 - Features that haven't shipped yet are greyed out for **every** account type with
   a plain *Coming soon* hint — clicking one explains itself instead of offering the
   upgrade, because a cloud account wouldn't unlock it yet. Cost Centers & Xero is
-  gated that way until the Xero integration lands (it then becomes cloud-only).
+  gated that way in release builds while `FLAGS.xero` is off. With the flag on
+  (development builds), it is a cloud-only tab like Online payments.
   Deep links to a gated tab land on Company rather than the unfinished page.
 - Local mode has no geocoding — address lookups run through RELAY Cloud — so
   nothing in Settings asks for a dispatch start location, and the Lead & Market

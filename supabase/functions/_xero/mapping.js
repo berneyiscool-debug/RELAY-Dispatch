@@ -373,7 +373,9 @@ export function buildPayments(invoice, ctx = {}) {
       wanted.push({
         ref: stripeRef || 'balance',
         amount: balance,
-        date: toXeroDate(invoice.paid_date, timeZone),
+        // Invoices bulk-marked paid before paid_date was set there have no date;
+        // the last change (marking it paid) is the best stand-in.
+        date: toXeroDate(invoice.paid_date, timeZone) || toXeroDate(invoice.updated_at, timeZone),
         method: invoice.payment_method || '',
         reference: '',
       });

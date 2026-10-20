@@ -409,6 +409,15 @@ add `docs/XERO_SETUP.md`.
 
 ## 5. Build order (each step is a reviewable PR)
 
+> **Status:** steps 2–7 are built on `feat/xero-integration` and dark behind
+> `FLAGS.xero`. Step 7's sync state comes from `xero_sync_jobs` (readable by the
+> company) plus the invoice's `xero_*` fields, worked out in
+> `xeroInvoiceSyncState()`. The nudge hooks into the store's successful-update
+> path rather than each send/pay/void call site. The bulk "Mark Paid" now sets
+> `paidDate` (it used to write a `datePaid` field with no column), and payment
+> mapping falls back to the invoice's last change for older rows. Remaining work:
+> step 1 (register the Xero app), deploy, and step 8 (pilot).
+
 1. **Xero app registration (manual, you):** create the app at developer.xero.com
    (Web app, Starter tier), set the redirect URI, enable webhooks, and note the
    client id/secret and webhook key. Connect a **Xero Demo Company (AU)** for testing.

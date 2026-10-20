@@ -1,14 +1,15 @@
 // ============================================
 // RELAY — XERO CLIENT (Settings → Cost Centers & Xero)
 // ============================================
-// Connects a cloud company to one Xero organisation and reads what the Settings
-// card shows. Everything that touches Xero runs server-side (relay-xero-*);
-// tokens never reach the browser. Cloud-only and flag-gated (FLAGS.xero) until
-// the sync worker ships.
+// Connects a cloud company to one Xero organisation, reads what the Settings
+// card shows, and works out each invoice's sync state for the invoice pages.
+// Everything that touches Xero runs server-side (relay-xero-*); tokens never
+// reach the browser. Cloud-only and flag-gated (FLAGS.xero).
 
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
 import { invoke } from './payments.js';
+import { supabase } from './supabase.js';
 
 export const XERO_RETURN_PATH = '/settings?tab=cost_centers';
 
@@ -107,19 +108,36 @@ export async function startXeroConnect(returnPath = XERO_RETURN_PATH) {
 /** { connected, status, tenantName, baseCurrency, lastError, pendingJobs, failedJobs, tenants? } */
 export async function getXeroStatus() {
   if (!isCloudUser()) return null;
-  return invoke('relay-xero-status', {});
+  return remember(await invoke('relay-xero-status', {}));
 }
 
-export function selectXeroTenant(tenantId) {
-  return invoke('relay-xero-status', { selectTenant: tenantId });
+// The last status seen, so the invoice pages and the sync nudge don't each ask
+// the server. Settings always fetches fresh.
+let lastStatus = null;
+let lastStatusAt = 0;
+function remember(status) {
+  lastStatus = status || null;
+  lastStatusAt = Date.now();
+  return status;
 }
 
-export function disconnectXero() {
-  return invoke('relay-xero-status', { disconnect: true });
+export async function getXeroStatusCached({ maxAgeMs = 60_000 } = {}) {
+  if (!xeroEnabled()) return null;
+  if (lastStatusAt && Date.now() - lastStatusAt < maxAgeMs) return lastStatus;
+  return getXeroStatus();
 }
 
-export function retryXeroSync(jobId = 'all') {
-  return invoke('relay-xero-status', { retry: jobId });
+export async function selectXeroTenant(tenantId) {
+  return remember(await invoke('relay-xero-status', { selectTenant: tenantId }));
+}
+
+export async function disconnectXero() {
+  return remember(await invoke('relay-xero-status', { disconnect: true }));
+}
+
+export async function retryXeroSync(jobId = 'all') {
+  invoiceJobsAt = 0;
+  return remember(await invoke('relay-xero-status', { retry: jobId }));
 }
 
 /**
@@ -127,9 +145,17 @@ export function retryXeroSync(jobId = 'all') {
  * Fire-and-forget: the database already queued the work, so a failure here
  * only means it goes out on the schedule instead.
  */
+let nudgeTimer = null;
 export function nudgeXeroSync() {
-  if (!xeroEnabled()) return;
-  invoke('relay-xero-sync', {}).catch(() => { /* the scheduled run picks it up */ });
+  // Only for a company known to be connected: an unconnected company has no
+  // queued work, and this runs after every invoice and customer save.
+  if (!xeroEnabled() || !lastStatus?.connected) return;
+  // Bulk actions save many rows at once; one worker run covers them all.
+  clearTimeout(nudgeTimer);
+  nudgeTimer = setTimeout(() => {
+    invoiceJobsAt = 0;
+    invoke('relay-xero-sync', {}).catch(() => { /* the scheduled run picks it up */ });
+  }, 1500);
 }
 
 // The chart of accounts changes rarely; one fetch per page visit is plenty, and
@@ -150,4 +176,101 @@ export function cachedXeroAccounts() {
 
 export function clearXeroAccountsCache() {
   accountsCache = null;
+}
+
+// ── Invoice sync state (invoice list + detail) ───────────────────────
+
+/** Does Xero hold a payment on this invoice? Then Xero owns it and RELAY edits stay local. */
+export function xeroHoldsPayment(invoice) {
+  if (!invoice || !invoice.xeroInvoiceId) return false;
+  if (invoice.xeroStatus === 'PAID') return true;
+  if (invoice.xeroPaymentIds && Object.keys(invoice.xeroPaymentIds).length) return true;
+  return invoice.xeroAmountDue != null && Number(invoice.xeroAmountDue) < Number(invoice.total || 0);
+}
+
+export function xeroInvoiceUrl(xeroInvoiceId) {
+  return `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(xeroInvoiceId)}`;
+}
+
+/**
+ * Where an invoice stands with Xero, for a badge. `jobs` is this invoice's
+ * entry from fetchInvoiceSyncJobs(): { pending, failed: [{ id, lastError }] }.
+ * Every state carries an icon and words, never colour alone.
+ * @returns {{ state: string, label: string, tone: string, icon: string, detail: string }}
+ */
+export function xeroInvoiceSyncState(invoice, jobs = { pending: false, failed: [] }) {
+  const failed = jobs.failed || [];
+  const error = failed[0]?.lastError || invoice?.xeroSyncError || '';
+  if (!invoice || invoice.status === 'Draft') {
+    return { state: 'draft', label: 'Not sent', tone: 'neutral', icon: 'edit_note', detail: 'Goes to Xero when it\'s sent.' };
+  }
+  if (jobs.pending) {
+    return { state: 'pending', label: 'Syncing', tone: 'info', icon: 'sync', detail: 'Waiting to sync to Xero.' };
+  }
+  if (failed.length || (invoice.xeroSyncError && !invoice.xeroInvoiceId)) {
+    return { state: 'error', label: 'Sync failed', tone: 'danger', icon: 'sync_problem', detail: error };
+  }
+  if (invoice.xeroInvoiceId) {
+    const label = invoice.xeroStatus === 'PAID' ? 'Paid in Xero'
+      : invoice.xeroStatus === 'VOIDED' ? 'Voided in Xero' : 'In Xero';
+    if (invoice.xeroSyncError) return { state: 'warning', label, tone: 'warning', icon: 'warning_amber', detail: invoice.xeroSyncError };
+    return { state: 'synced', label, tone: 'success', icon: 'cloud_done', detail: '' };
+  }
+  if (invoice.status === 'Void') return { state: 'none', label: '—', tone: 'neutral', icon: 'remove', detail: '' };
+  return { state: 'missing', label: 'Not in Xero', tone: 'neutral', icon: 'cloud_off', detail: 'Sent before Xero was connected.' };
+}
+
+// Unfinished invoice jobs, keyed by invoice id. One small query serves the
+// whole list; it is the only reliable way to know something is still queued.
+let invoiceJobs = new Map();
+let invoiceJobsAt = 0;
+
+/** @returns {Promise<Map<string, { pending: boolean, failed: Array<{ id: number, lastError: string }> }>>} */
+export async function fetchInvoiceSyncJobs({ force = false, maxAgeMs = 20_000 } = {}) {
+  if (!xeroEnabled()) return new Map();
+  if (!force && invoiceJobsAt && Date.now() - invoiceJobsAt < maxAgeMs) return invoiceJobs;
+  const { data, error } = await supabase
+    .from('xero_sync_jobs')
+    .select('id, entity_id, status, last_error')
+    .eq('entity', 'invoice')
+    .in('status', ['pending', 'running', 'failed'])
+    .order('id', { ascending: false })
+    .limit(1000);
+  if (error) throw new Error(error.message);
+  invoiceJobs = groupInvoiceJobs(data || []);
+  invoiceJobsAt = Date.now();
+  return invoiceJobs;
+}
+
+export function groupInvoiceJobs(rows) {
+  const out = new Map();
+  for (const row of rows) {
+    const key = String(row.entity_id);
+    if (!out.has(key)) out.set(key, { pending: false, failed: [] });
+    const entry = out.get(key);
+    if (row.status === 'failed') entry.failed.push({ id: row.id, lastError: row.last_error || '' });
+    else entry.pending = true;
+  }
+  return out;
+}
+
+/** Requeue this invoice's failed jobs. Returns how many were requeued. */
+export async function retryInvoiceSync(invoiceId) {
+  const jobs = (await fetchInvoiceSyncJobs({ force: true })).get(String(invoiceId));
+  let requeued = 0;
+  for (const job of jobs?.failed || []) requeued += (await retryXeroSync(job.id))?.requeued || 0;
+  nudgeXeroSync();
+  return requeued;
+}
+
+/** What the last fetches saw, for synchronous renders. */
+export const cachedXeroStatus = () => lastStatus;
+export const cachedInvoiceSyncJobs = () => invoiceJobs;
+
+/** Small inline badge for an invoice's sync state (icon + words, tooltip for detail). */
+export function xeroSyncBadgeHtml(invoice, jobs, escape) {
+  const s = xeroInvoiceSyncState(invoice, jobs);
+  if (s.state === 'none' || s.state === 'draft') return '<span class="text-tertiary">—</span>';
+  const tip = s.detail ? ` data-tooltip="${escape(s.detail)}" data-tooltip-pos="left"` : '';
+  return `<span class="badge badge-${s.tone}" style="display:inline-flex;align-items:center;gap:3px;"${tip}><span class="material-icons-outlined" style="font-size:12px;" aria-hidden="true">${s.icon}</span>${escape(s.label)}</span>`;
 }

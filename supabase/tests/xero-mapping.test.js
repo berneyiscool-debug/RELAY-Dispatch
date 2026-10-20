@@ -357,3 +357,14 @@ describe('webhook events', () => {
     assert.deepEqual(invoiceIdsByTenant([]), {});
   });
 });
+
+describe('payment dates', () => {
+  test('an invoice marked paid without a paid date is dated by its last change', () => {
+    const inv = {
+      id: 'inv-1', status: 'Paid', total: 110, paid_date: null, payment_method: 'Bank Transfer',
+      updated_at: '2026-10-20T23:30:00.000Z', xero_invoice_id: 'xi-1', xero_payment_ids: {}, line_items: { sections: [] },
+    };
+    const [p] = buildPayments(inv, { settings: { paymentAccountCode: '090' } });
+    assert.equal(p.payload.Date, '2026-10-21'); // Sydney time
+  });
+});

@@ -11,6 +11,8 @@ import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { roundCurrency } from '../../utils/pricing.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
+import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, cachedXeroStatus, cachedInvoiceSyncJobs, xeroSyncBadgeHtml } from '../../utils/xero.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -34,14 +36,28 @@ export function renderInvoicesList(container) {
   let filteredData = [...invoices];
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
+  // The Xero column shows once the company is known to be connected. The status
+  // and the queued-jobs lookup are cached, so the re-render below happens once.
+  const showXero = xeroEnabled() && !!cachedXeroStatus()?.connected;
+  const xeroJobs = cachedInvoiceSyncJobs();
+  const xeroSignature = () => `${!!cachedXeroStatus()?.connected}|${[...cachedInvoiceSyncJobs().entries()].map(([k, v]) => `${k}:${v.pending}:${v.failed.length}`).join(',')}`;
+  const renderedSignature = xeroSignature();
+
   const columns = [
     { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '14%' },
-    { key: 'customerName', label: 'Customer', width: '30%' },
+    { key: 'customerName', label: 'Customer', width: showXero ? '20%' : '30%' },
     { key: 'jobNumber', label: 'Job Ref', render: (r) => { const refs = store.invoiceJobNumbers(r); return refs.length ? `<span class="text-secondary">${escapeHTML(refs.join(', '))}</span>` : '—'; }, width: '14%' },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '12%' },
     { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '14%' },
     { key: 'issueDate', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate.includes('T') ? r.issueDate : r.issueDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '16%' },
   ];
+  if (showXero) {
+    columns.push({
+      key: 'xero', label: 'Xero', width: '10%',
+      render: (r) => xeroSyncBadgeHtml(r, xeroJobs.get(String(r.id)), escapeHTML),
+      getValue: (r) => r.xeroSyncError ? 0 : r.xeroInvoiceId ? 2 : 1,
+    });
+  }
 
   const table = createDataTable({ 
     columns, 
@@ -120,7 +136,9 @@ export function renderInvoicesList(container) {
             label: 'Mark Paid',
             icon: 'check_circle',
             onClick: (ids) => {
-              ids.forEach(id => store.update('invoices', id, { status: 'Paid', datePaid: new Date().toISOString() }));
+              // paidDate (not the old datePaid, which had no column) is what the
+              // Paid date shows and what a Xero payment is dated by.
+              ids.forEach(id => store.update('invoices', id, { status: 'Paid', paidDate: todayLocalISO() }));
               table.clearSelection();
               renderInvoicesList(container);
               import('../../components/Notifications.js').then(({ showToast }) => showToast(`Marked ${ids.length} invoices as Paid`, 'success'));
@@ -386,6 +404,18 @@ export function renderInvoicesList(container) {
   if (kpiFilter) {
     mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
     applyFilters();
+  }
+
+  // Learn whether Xero is connected and what is still queued, then redraw once
+  // if that changes the table. Skipped if the user has started filtering, so a
+  // late answer never wipes what they typed.
+  if (xeroEnabled()) {
+    getXeroStatusCached().then((st) => (st?.connected ? fetchInvoiceSyncJobs() : null)).then(() => {
+      const untouched = !searchQuery && activeStatusFilter === 'all' && !filterStartDate && !filterEndDate;
+      if (untouched && container.isConnected && container.contains(table) && xeroSignature() !== renderedSignature) {
+        renderInvoicesList(container);
+      }
+    }).catch(() => { /* the list works without the Xero column */ });
   }
 
   btnExport.addEventListener('click', () => {

@@ -168,5 +168,21 @@ minute, does the read. A database error answers 500, so Xero redelivers later.
   queued work. Nothing already in Xero is changed.
 - **Every push echoes:** Xero sends an INVOICE event for invoices and payments
   RELAY itself pushes. Each echo costs one small read, and the pull is a no-op.
-- **Not built yet (step 7):** invoice badges and the detail row, the sync-now
-  wiring after send/pay/void, the brny read, and DOCS.md.
+- **In the app (step 7):**
+  - The invoice list gets a **Xero** column once the company is connected:
+    Syncing, In Xero, Paid in Xero, Sync failed (the reason is in the tooltip) or
+    Not in Xero.
+  - Each invoice shows a Xero row with "Open in Xero" and **Retry**.
+  - Saving an invoice that Xero already holds a payment on asks first, because
+    those edits stay in RELAY.
+  - Every invoice or customer save asks the worker to sync now. That only
+    happens for connected companies, with a 1.5-second debounce for bulk
+    actions.
+  - brny's `get_xero_sync` read answers "did INV-1042 go to Xero?" and "what's
+    stuck?".
+- **Known gaps:**
+  - Invoices sent before Xero was connected show *Not in Xero*. There's no
+    backfill button yet.
+  - Deleting an invoice in RELAY doesn't touch Xero.
+  - Credit notes (negative totals) are refused with a message to raise them in
+    Xero.
