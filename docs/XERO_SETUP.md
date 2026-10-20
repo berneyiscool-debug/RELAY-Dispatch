@@ -1,0 +1,172 @@
+# Xero Integration — Setup
+
+Tenants connect **their own** Xero organisation (AUD only) from
+**Settings → Cost Centers & Xero**. The UI only appears when `FLAGS.xero` is on,
+which is dev builds only until the sync worker ships. It's a cloud-only tab.
+Background: `XERO_INTEGRATION_RESEARCH.md`; build plan: `XERO_PHASE1_PLAN.md`.
+
+## How it works (connect flow, built)
+
+```
+Settings → "Connect to Xero"
+  → relay-xero-connect   (admin JWT) signs state {company, admin, return URL} → Xero consent URL
+  → Xero login/consent   (admin ticks an organisation)
+  → relay-xero-callback  (public redirect URI) verifies state, swaps code for tokens,
+                          picks the org from this consent, checks AUD, stores
+                          encrypted tokens → 302 back to Settings ?xero=<outcome>
+Settings card
+  → relay-xero-status    {} status · {selectTenant} · {accounts} · {disconnect} · {retry}
+```
+
+Several organisations ticked in one consent → `?xero=choose`, and the admin picks
+one in Settings. The rest are disconnected so they don't count towards the app's
+connection limit.
+
+## Setup
+
+1. **Register the app** at developer.xero.com → My Apps → New app:
+   - Integration type: **Web app**.
+   - Redirect URI: `https://<project-ref>.supabase.co/functions/v1/relay-xero-callback`.
+   - Copy the client id and generate a client secret.
+   - Stay on the **Starter** tier (free, 5 connections) for building and pilot.
+   - Connect the **Demo Company (AU)** for testing.
+2. **Apply the migration** `supabase/migrations/20261020090000_xero_integration.sql`.
+3. **Set the edge-function secrets:**
+
+   | Secret | Value |
+   |---|---|
+   | `XERO_CLIENT_ID` / `XERO_CLIENT_SECRET` | from the Xero app |
+   | `XERO_REDIRECT_URI` | exactly the redirect URI above |
+   | `XERO_STATE_SECRET` | any long random string |
+   | `XERO_TOKEN_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`). **Changing it makes every stored connection undecryptable**, so tenants must reconnect. |
+   | `RELAY_RETURN_ORIGINS` | optional, already used by payments: extra origins (preview deploys) allowed as return targets |
+
+4. **Deploy the functions:**
+   - `relay-xero-connect` and `relay-xero-status`, with verify_jwt **true**.
+   - `relay-xero-callback`, with verify_jwt **false**. It's a browser redirect from
+     Xero; trust comes from the signed state.
+
+   There's no `supabase/config.toml`, so set verify_jwt per deploy, the same as
+   `relay-create-payment`. The functions import `_xero/` and `_shared/`, which
+   the CLI bundles.
+
+## Sync worker (built, step 5)
+
+`relay-xero-sync` drains `xero_sync_jobs`, which the invoice and customer
+triggers fill. It handles five jobs:
+
+- **Contact upsert:** finds the contact by `RELAY-<id>` number, then email, then
+  name, and creates it only if none match.
+- **Invoice upsert:** an AUTHORISED ACCREC with a "View source" link back to RELAY.
+  The link is how a retry recognises RELAY's own invoice, so it never adopts
+  someone else's invoice with the same number.
+- **Invoice void.**
+- **Invoice pay (step 6):** each payment recorded in RELAY becomes one Xero
+  payment. That covers part-payments, the balance when an invoice is marked Paid,
+  and Stripe payments, which go into the Stripe account if one is set. Each is
+  saved to `xero_payment_ids` as soon as Xero accepts it, so it is never sent
+  twice. If the invoice hasn't reached Xero yet, the payment waits with backoff.
+- **Pull (step 6):** after a webhook, reads the invoice from Xero. Paid there means
+  Paid in RELAY (`payment_method = 'Xero'`, the date from `FullyPaidOnDate`).
+  Voided there is only flagged on the invoice, never auto-voided.
+
+1. **Deploy** `relay-xero-sync` with verify_jwt **false**. It checks either the
+   cron secret or a signed-in user's token itself. A user call syncs only that
+   user's company (`nudgeXeroSync()` in `src/utils/xero.js`).
+2. **Secret:** `XERO_CRON_SECRET`, any long random string.
+3. **Schedule it every minute** with `pg_cron` + `pg_net`:
+   - Enable both under Database → Extensions.
+   - Store the secret in Vault rather than in SQL.
+   - Run this once in the SQL editor:
+
+   ```sql
+   select vault.create_secret('<same value as XERO_CRON_SECRET>', 'xero_cron_secret');
+
+   select cron.schedule('relay-xero-sync', '* * * * *', $$
+     select net.http_post(
+       url     := 'https://<project-ref>.supabase.co/functions/v1/relay-xero-sync',
+       headers := jsonb_build_object(
+         'Content-Type', 'application/json',
+         'x-relay-cron', (select decrypted_secret from vault.decrypted_secrets where name = 'xero_cron_secret')
+       ),
+       body    := '{}'::jsonb,
+       timeout_milliseconds := 55000
+     );
+   $$);
+   ```
+
+   This isn't in a migration because the schedule embeds the project URL and
+   needs the Vault secret. To pause syncing everywhere, run
+   `select cron.unschedule('relay-xero-sync');`.
+
+**Throughput.** Each run spends up to 45 seconds claiming batches of up to 100
+due jobs.
+
+- Up to `XERO_SYNC_CONCURRENCY` companies (default 8, max 25) sync side by side.
+- Each company's jobs run one at a time and in order. An organisation never sees
+  more than one call in flight from a run, against Xero's limit of 5.
+- **Pacing:** after each call the worker reads Xero's "calls remaining" headers.
+  A company with 3 or fewer calls left this minute pauses for a minute. One with
+  25 or fewer left today pauses for an hour. Either way its jobs go back to the
+  queue without using up an attempt, and other companies carry on.
+
+At roughly 0.3–0.7 s per Xero call, 8 lanes give about 700–1,600 calls a minute
+app-wide. That's about 140–320 invoices a minute end to end, still well under
+Xero's 10,000/min app limit. Raise `XERO_SYNC_CONCURRENCY` if the queue backs up.
+
+A company with a large burst (a bulk "mark paid") keeps its lane busy for that
+run. Other companies' newer jobs wait at most until the next batch or minute.
+
+Scheduled runs also refresh up to 5 connections idle for 30+ days, because
+refresh tokens die after 60 days unused.
+
+Failures:
+
+| What happened | What the worker does |
+|---|---|
+| Setup gap (no account) or a Xero validation error | Job **failed**. The message is saved to `invoices.xero_sync_error`, and Settings → "Retry failed" requeues it. |
+| Rate limit, or nearly at it (pacing) | The company's remaining jobs go back to pending after `Retry-After`, or after 1 min / 1 h when pacing. No attempt is used up. |
+| Revoked access | Connection goes to `needs_reauth`. Its jobs wait until an admin reconnects. |
+| Anything else | Backoff of 1 min → 5 min → 30 min → 2 h → 12 h, then failed after 6 attempts. |
+
+Invoice dates are worked out in `Australia/Sydney`. A company in another
+time zone (e.g. Perth) can be a day out for invoices issued around midnight.
+There's no company time-zone setting yet.
+
+## Webhook (built, step 6)
+
+Xero's webhooks only say *which* invoice changed. There's no payment event, so
+a payment made in Xero arrives as an INVOICE update.
+
+1. **Deploy** `relay-xero-webhook` with verify_jwt **false**. The signature is
+   the authentication.
+2. **In the Xero app:**
+   - Go to Webhooks and set the delivery URL to
+     `https://<project-ref>.supabase.co/functions/v1/relay-xero-webhook`.
+   - Tick **Invoices**. Contacts can stay off, since Phase 1 ignores them.
+   - Copy the **Webhooks key**.
+3. **Secret:** set `XERO_WEBHOOK_KEY` to that key.
+4. **Save** the webhook in Xero. That runs Xero's "intent to receive" check: the
+   function must answer a correctly signed request with 200 and a wrongly signed
+   one with 401, both with empty bodies and within 5 seconds. The status shows
+   **OK** once it passes.
+
+Each event queues a pull only for invoices RELAY pushed (`xero_enqueue_pulls`),
+and nothing for the tenant's other Xero invoices. The next worker run, within a
+minute, does the read. A database error answers 500, so Xero redelivers later.
+
+## Notes
+
+- **Tokens:** stored AES-GCM-encrypted and bound to the company id. Only the
+  service role can read `xero_connections`. The browser sees the
+  `relay-xero-status` payload only.
+- **Desktop app:** the consent flow returns to the hosted web app, not the Electron
+  window. Stripe Connect has the same limitation.
+- **Switching organisations:** reconnecting to a different org clears the old org's
+  invoice/contact links and skips queued work. Reconnecting the same org keeps them.
+- **Disconnect:** removes the Xero connection, revokes the refresh token and skips
+  queued work. Nothing already in Xero is changed.
+- **Every push echoes:** Xero sends an INVOICE event for invoices and payments
+  RELAY itself pushes. Each echo costs one small read, and the pull is a no-op.
+- **Not built yet (step 7):** invoice badges and the detail row, the sync-now
+  wiring after send/pay/void, the brny read, and DOCS.md.

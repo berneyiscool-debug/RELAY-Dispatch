@@ -35,6 +35,22 @@ payment UI, payroll, non-AUD orgs, and local (IndexedDB) accounts.
 
 ## 1. Database: `supabase/migrations/<ts>_xero_integration.sql`
 
+> **Built (step 2):** `20261020090000_xero_integration.sql`, tested by
+> `supabase/tests/xero-integration.test.js`. Differences from the sketch below:
+> - Client status is the `xero_connection_status()` SECURITY DEFINER function, not
+>   a view, which avoids the Supabase "security definer view" advisor warning.
+> - Token columns are `access_token_enc` / `refresh_token_enc`, encrypted with
+>   AES-GCM in the edge functions.
+> - `tenant_id` is nullable so the `choose_tenant` / `unsupported_currency` states
+>   can be stored.
+> - `xero_payment_ids` is a jsonb **object** (RELAY payment ref → Xero PaymentID).
+> - The pull job is `entity='xero_invoice', action='refresh'`.
+> - The worker writes through two service-role RPCs:
+>   - `xero_claim_sync_jobs(limit)` (SKIP LOCKED, reclaims runs stuck >10 min)
+>   - `xero_apply_invoice_pull(...)`, which sets `relay.xero_sync` so pulls never
+>     echo back as pushes
+> - Plain service-role writes that only touch `xero_*` columns don't enqueue either.
+
 ```sql
 -- 1a. Connection (one per company). Server-write only; no client policies.
 create table xero_connections (
@@ -154,6 +170,24 @@ Shared ESM helpers in `supabase/functions/_xero/` (plain JS, unit-tested):
 - `mapping.js`: RELAY → Xero payloads (see §3).
 - `signature.js`: webhook HMAC verify (base64 SHA-256 of the raw body, constant-time compare).
 
+> **Built (step 4):** `relay-xero-connect`, `relay-xero-callback` and
+> `relay-xero-status`. Shared Deno plumbing is in `_xero/edge.ts`, and the pure
+> flow rules in `_xero/connect.js` (tested by `xero-connect.test.js`).
+> `returnUrls.js` moved to `_shared/`. Additions to the sketch:
+> - Only the organisations from **this** consent count (matched on the token's
+>   `authentication_event_id`). Unchosen orgs are disconnected so they don't use up
+>   connections.
+> - A non-AUD org is disconnected and recorded as `unsupported_currency`.
+> - One org can't feed two companies (`tenant_in_use`).
+> - Switching to a different org clears the old org's link ids and skips queued work.
+> - Retry runs through a new `xero_retry_failed_jobs` RPC (in the same migration).
+> - Accounts aren't cached server-side. The client caches them per page visit.
+> - The "push automatically" toggle was dropped, since the trigger always queues.
+> - The Settings card is in `renderCostCentersTab`, and the cost center modal
+>   suggests Xero codes through datalists. `src/utils/xero.js` (tested) is the
+>   client.
+> - Deploy steps are in `docs/XERO_SETUP.md`.
+
 ### 2a. `relay-xero-connect` (POST, admin JWT)
 Same checks as `relay-connect-onboard` (profile → `role === 'admin'`, cloud company).
 Returns `{ url }`:
@@ -185,6 +219,23 @@ Scopes: `openid profile email offline_access accounting.contacts accounting.invo
   refresh token (`/connect/revocation`), mark `disconnected`, clear tokens (admin).
 - `{ retry: jobId | 'all' }` → reset failed jobs to pending (admin).
 
+> **Built (step 5):** `relay-xero-sync` plus `_xero/worker.js`. The job logic
+> takes injected DB/Xero adapters and is tested in `xero-worker.test.js`. It
+> handles contact upsert, invoice upsert and invoice void. `pay` and `refresh`
+> stay queued until step 6 (the worker claims only `WORKER_ACTIONS`).
+> Additions to the sketch:
+> - The claim RPC only takes jobs for **active** connections, and can narrow by
+>   company and action.
+> - The invoice carries `Url` = its RELAY link. Before a first push the worker
+>   looks the number up in Xero and adopts only an invoice with that link.
+> - Rate limits and revoked access release jobs without using up an attempt.
+> - Transient errors show on the job only. Permanent ones also go on
+>   `invoices.xero_sync_error`.
+> - The idle-token refresh runs inside the scheduled worker. There's no
+>   separate cron.
+> - Cron SQL is in `XERO_SETUP.md`, not a migration, since it needs the project
+>   URL and a Vault secret.
+
 ### 2d. `relay-xero-sync` (worker; service-role or cron-only)
 Called by (i) a scheduled run every minute and (ii) a fire-and-forget nudge from
 the client after an invoice save, so the sync feels instant.
@@ -212,6 +263,14 @@ the client after an invoice save, so the sync feels instant.
   notify admins. `ValidationError` → `failed` plus the message on
   `invoices.xero_sync_error`. Anything else → exponential backoff
   (1m, 5m, 30m, 2h, 12h), `failed` after 6 attempts.
+
+> **Built (step 6):** the worker handles `invoice/pay` and `xero_invoice/refresh`.
+> `relay-xero-webhook` verifies the signature and calls the new
+> `xero_enqueue_pulls(tenant, ids)` RPC, which resolves the company and queues
+> only invoices RELAY pushed. Payments use `PUT /Payments`, one per ref, and each
+> PaymentID is saved as soon as Xero accepts it. A pay job for an invoice not yet
+> in Xero retries with backoff instead of failing. Deleted-in-Xero (404) pulls
+> are skipped.
 
 ### 2e. `relay-xero-webhook` (POST, `verify_jwt=false`)
 - Read the raw body and verify `x-xero-signature` against `XERO_WEBHOOK_KEY`.
@@ -241,6 +300,19 @@ Supabase Scheduled Function instead.
 ---
 
 ## 3. Mapping (`_xero/mapping.js`) and the rules it encodes
+
+> **Built (step 3):** `supabase/functions/_xero/` holds `crypto.js` (webhook HMAC,
+> signed state, AES-GCM tokens), `oauth.js`, `client.js` and `mapping.js`. Tests are
+> in `supabase/tests/xero-mapping.test.js` and `xero-client.test.js`. Differences
+> from the sketch:
+> - Contacts are stamped `ContactNumber = RELAY-<customer id>` and matched on that
+>   first, then email, then name.
+> - Invoices are posted with `unitdp=4`, so marked-up unit rates aren't rounded to
+>   cents. `summarizeErrors` stays at its default, one invoice per request, so a
+>   validation failure is a plain 400.
+> - Token ciphertext is bound to the company id (AES-GCM additional data).
+> - Payments: each recorded part-payment uses `p:<id>`. The unrecorded balance on
+>   a Paid invoice uses `balance`, or `stripe:<session>` when Stripe paid it.
 
 **Contact** (from `customers`):
 `Name` = `company` or `first_name last_name` (must be unique in Xero), `FirstName`,
