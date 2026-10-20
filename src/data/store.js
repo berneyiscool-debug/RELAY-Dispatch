@@ -717,7 +717,12 @@ class DataStore {
         this.userId = session.user.id;
         const userMeta = JSON.parse(localStorage.getItem('currentUser') || '{}');
         this.companyId = userMeta.companyId || null;
-        if (this.companyId && !this.companyId.startsWith('acct_')) {
+        // INITIAL_SESSION (every page load), TOKEN_REFRESHED and repeat SIGNED_IN
+        // events arrive for a company that is already synced or syncing. Starting a
+        // second full download alongside the boot one doubled the time every new
+        // tab took to show its page, so only a different company re-syncs here.
+        if (this.companyId && !this.companyId.startsWith('acct_')
+          && this._cloudSyncCompanyId !== this.companyId) {
           this.initPromise = this.initializeCloudSync();
         }
       } else {
@@ -1522,6 +1527,7 @@ class DataStore {
   // Fetch all tenant data into memory cache and subscribe to real-time updates
   async initializeCloudSync() {
     if (!this.companyId) return;
+    this._cloudSyncCompanyId = this.companyId;
 
     try {
       // Initialize IndexedDB for cloud users too, to store backup directory handles
@@ -1580,7 +1586,11 @@ class DataStore {
         if (!error && data) {
           // Normalize snake_case column names back to camelCase for the frontend
           this.cache[col] = this.normalizeData(data, col);
-          await this.writeAllToIndexedDB(col, this.cache[col]);
+          // The offline copy is refreshed in the background: pages read the cache,
+          // so boot does not wait for every table to be rewritten to disk.
+          this.writeAllToIndexedDB(col, this.cache[col]).catch((err) => {
+            console.warn(`Failed to cache ${col} offline:`, err);
+          });
         }
       });
 
@@ -1613,6 +1623,8 @@ class DataStore {
 
     } catch (e) {
       console.error('Error initializing Supabase sync:', e);
+      // Let the next auth event retry a sync that never completed.
+      this._cloudSyncCompanyId = null;
     }
   }
 
@@ -1667,6 +1679,7 @@ class DataStore {
 
   clearSync() {
     this.clearSubscriptions();
+    this._cloudSyncCompanyId = null;
     this.companyId = null;
     this.userId = null;
     this.companySettings = null;

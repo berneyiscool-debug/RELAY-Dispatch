@@ -4,10 +4,8 @@
 
 import { escapeHTML } from '../../utils/security.js';
 import { store } from '../../data/store.js';
-import { downloadDocument, resolveRenderable } from '../../utils/documentActions.js';
+import { downloadDocument, printableDocumentHtml, resolveRenderable } from '../../utils/documentActions.js';
 import { showToast } from '../../components/Notifications.js';
-import { generateDocument, getPrintStyles } from '../../components/PrintPreview.js';
-import { fontFaceCss } from '../../utils/fonts.js';
 
 export function renderDocumentViewer(container) {
   let docData = null;
@@ -20,48 +18,44 @@ export function renderDocumentViewer(container) {
     console.error('Failed to parse document data:', e);
   }
 
-  // Invoices, quotes and completed forms are drawn from their record as the
-  // printed page, so there is no file URL to resolve.
+  // This route is resolved before the store finishes loading (see main.js), so
+  // a fresh tab shows the document straight away. Only the paths below that
+  // read records or the synced folder wait for the data.
+  const storeReady = () => Promise.resolve(store.initPromise).catch(() => {});
+
+  // Invoices, quotes and completed forms arrive as their finished printed page,
+  // built by the tab that opened this one.
+  if (docData && docData.render && docData.html) {
+    renderWithData(docData);
+    return installCleanup();
+  }
+
+  // Older payloads, or a page too large to hand over: draw it from the record.
   if (docData && docData.render) {
-    const source = resolveRenderable(docData.render);
-    if (source) {
-      renderWithData({ ...docData, html: printableHtml(source) });
-      return installCleanup();
-    }
-    docData = null;
+    renderLoading('Loading Document...', 'Fetching the record.');
+    storeReady().then(() => {
+      const source = resolveRenderable(docData.render);
+      if (source) {
+        renderWithData({ ...docData, html: printableDocumentHtml(source) });
+      } else {
+        docData = null;
+        renderNotFound();
+      }
+    });
+    return installCleanup();
   }
 
   if (!docData || !docData.url) {
-    container.innerHTML = `
-      <div class="empty-state" style="padding: 40px; margin-top: 40px;">
-        <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary);">error_outline</span>
-        <h3>Document Not Found</h3>
-        <p class="text-secondary">The requested document could not be loaded or the session expired.</p>
-        <button class="btn btn-primary" data-close-window data-tooltip="Close this tab and return to app" data-tooltip-pos="top" style="margin-top: 20px;">Close Tab</button>
-      </div>
-    `;
+    renderNotFound();
     return;
   }
 
-  const isLocalRelative = docData.url && !docData.url.startsWith('data:') && !docData.url.startsWith('http');
+  const isLocalRelative = !docData.url.startsWith('data:') && !docData.url.startsWith('http');
 
   if (isLocalRelative) {
-    container.innerHTML = `
-      <div style="display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); justify-content: center; align-items: center;">
-        <div class="spinner" style="margin-bottom: 20px; width: 40px; height: 40px; border: 4px solid var(--border-color); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-        <h3>Loading Local Document...</h3>
-        <p class="text-secondary">Retrieving file from your local folder sync directory.</p>
-      </div>
-    `;
-
-    if (!document.getElementById('spin-keyframes-style')) {
-      const style = document.createElement('style');
-      style.id = 'spin-keyframes-style';
-      style.innerHTML = `@keyframes spin { to { transform: rotate(360deg); } }`;
-      document.head.appendChild(style);
-    }
-
-    store.getDocumentUrl(docData).then((resolvedUrl) => {
+    renderLoading('Loading Local Document...', 'Retrieving file from your local folder sync directory.');
+    // The folder handle is restored while the store loads.
+    storeReady().then(() => store.getDocumentUrl(docData)).then((resolvedUrl) => {
       renderWithData({ ...docData, url: resolvedUrl });
     }).catch((err) => {
       container.innerHTML = `
@@ -82,12 +76,32 @@ export function renderDocumentViewer(container) {
   renderWithData(docData);
   installCleanup();
 
-  function printableHtml({ type, data }) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8" />
-      <style>${fontFaceCss()}</style>
-      <style>${getPrintStyles(store.getSettings() || {})}</style>
-      <style>html, body { background:#ffffff; margin:0; }</style>
-    </head><body>${generateDocument(type, data)}</body></html>`;
+  function renderNotFound() {
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 40px; margin-top: 40px;">
+        <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary);">error_outline</span>
+        <h3>Document Not Found</h3>
+        <p class="text-secondary">The requested document could not be loaded or the session expired.</p>
+        <button class="btn btn-primary" data-close-window data-tooltip="Close this tab and return to app" data-tooltip-pos="top" style="margin-top: 20px;">Close Tab</button>
+      </div>
+    `;
+  }
+
+  function renderLoading(title, detail) {
+    container.innerHTML = `
+      <div style="display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); justify-content: center; align-items: center;">
+        <div class="spinner" style="margin-bottom: 20px; width: 40px; height: 40px; border: 4px solid var(--border-color); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <h3>${escapeHTML(title)}</h3>
+        <p class="text-secondary">${escapeHTML(detail)}</p>
+      </div>
+    `;
+
+    if (!document.getElementById('spin-keyframes-style')) {
+      const style = document.createElement('style');
+      style.id = 'spin-keyframes-style';
+      style.innerHTML = `@keyframes spin { to { transform: rotate(360deg); } }`;
+      document.head.appendChild(style);
+    }
   }
 
   // Saved HTML documents (e.g. from the print dialog) arrive as data: URLs.
@@ -159,6 +173,8 @@ export function renderDocumentViewer(container) {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
+          // A rendered record's PDF is built from the store's copy.
+          await storeReady();
           await downloadDocument(docData);
         } catch (err) {
           showToast(`Could not download: ${err.message || err}`, 'error');

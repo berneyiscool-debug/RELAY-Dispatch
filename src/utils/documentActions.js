@@ -9,6 +9,8 @@
 // Shared by the browser and the viewer tab so both behave the same way.
 
 import { store } from '../data/store.js';
+import { generateDocument, getPrintStyles } from '../components/PrintPreview.js';
+import { fontFaceCss } from './fonts.js';
 
 // Records that the print layout can draw as a document. A browser entry opts in
 // with `render: { kind, id }`.
@@ -90,18 +92,37 @@ export function resolveRenderable(render) {
   };
 }
 
+/** A rendered record as a standalone printable HTML page. */
+export function printableDocumentHtml({ type, data }) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+      <style>${fontFaceCss()}</style>
+      <style>${getPrintStyles(store.getSettings() || {})}</style>
+      <style>html, body { background:#ffffff; margin:0; }</style>
+    </head><body>${generateDocument(type, data)}</body></html>`;
+}
+
 /**
  * Show the document itself in a new tab, through the read-only viewer route.
  */
 export function viewDocumentInNewTab(doc) {
   if (!canView(doc)) return false;
   // The viewer tab reads the document from localStorage, so it must be written
-  // before the tab is opened.
-  localStorage.setItem('currentDocumentView', JSON.stringify(
-    isRendered(doc)
-      ? { name: doc.name, render: doc.render }
-      : { name: doc.name, url: doc.url, type: doc.type },
-  ));
+  // before the tab is opened. Rendered records travel as their finished page:
+  // drawing one in the new tab would mean waiting for that tab to download the
+  // whole account first.
+  let payload = { name: doc.name, url: doc.url, type: doc.type };
+  if (isRendered(doc)) {
+    payload = { name: doc.name, render: doc.render };
+    const source = resolveRenderable(doc.render);
+    if (source) payload.html = printableDocumentHtml(source);
+  }
+  try {
+    localStorage.setItem('currentDocumentView', JSON.stringify(payload));
+  } catch {
+    // Too large to store (e.g. a big inline logo): the viewer draws it instead.
+    delete payload.html;
+    localStorage.setItem('currentDocumentView', JSON.stringify(payload));
+  }
   window.open('#/document/view', '_blank', 'noopener');
   return true;
 }
