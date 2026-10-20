@@ -2945,32 +2945,87 @@ body.relay-assistant-open .relay-topbar-actions {
     rgba(9, 9, 11, 0) 100%);
 }
 
-/* First-run setup checklist, rendered into the empty .dash-topbar-left slot.
+/* Getting Started hub, rendered into the empty .dash-topbar-left slot.
    .dash-topbar is pointer-events: none so the canvas stays draggable, and only
-   its buttons re-enable events — the card opts back in so clicking anywhere on
+   its buttons re-enable events — the hub opts back in so clicking anywhere on
    it doesn't pan the canvas underneath. */
-.setup-checklist {
-  pointer-events: auto;
-  width: 300px;
-  max-width: min(300px, 42vw);
-  padding: 12px 14px;
-  border-radius: 12px;
+.setup-hub { position: relative; pointer-events: auto; }
+/* The open panel drops over the views dock (z 75), which outranks the topbar. */
+.dash-topbar:has(.setup-hub.is-open) { z-index: 80; }
+
+.setup-hub-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 6px;
   border: 1px solid var(--border-color);
+  border-radius: 999px;
   background: var(--card-bg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.setup-hub-pill:hover,
+.setup-hub.is-open .setup-hub-pill { border-color: var(--color-primary); }
+.setup-hub-pill-count { color: var(--text-secondary); font-weight: 500; font-variant-numeric: tabular-nums; }
+.setup-hub-pill-caret { font-size: 18px; color: var(--text-secondary); transition: transform var(--transition-fast); }
+.setup-hub.is-open .setup-hub-pill-caret { transform: rotate(180deg); }
+
+.setup-hub-ring { width: 22px; height: 22px; transform: rotate(-90deg); }
+.setup-hub-ring circle { fill: none; stroke-width: 3; }
+.setup-hub-ring-track { stroke: var(--border-color); }
+.setup-hub-ring-fill { stroke: var(--color-primary); stroke-linecap: round; transition: stroke-dashoffset 0.4s ease; }
+
+.setup-hub-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-xl);
   color: var(--text-primary);
   text-align: left;
+  animation: setup-hub-in 0.18s ease-out;
 }
+@keyframes setup-hub-in { from { opacity: 0; transform: translateY(-4px); } }
 
-.setup-checklist-head { display: flex; align-items: center; gap: 8px; }
-.setup-checklist-icon { font-size: 20px; color: var(--color-primary); }
-.setup-checklist-title { font-weight: 600; flex: 1; }
-.setup-checklist-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-
-.setup-checklist-dismiss {
+.setup-hub-hero {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, var(--color-primary-light), transparent 70%);
+}
+.setup-hub-hero-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 20px;
+}
+.setup-hub-hero > div { flex: 1; min-width: 0; }
+.setup-hub-title { font-size: var(--font-size-xl); font-weight: 700; }
+.setup-hub-sub { margin: 2px 0 0; color: var(--text-secondary); line-height: 1.4; }
+.setup-hub-close,
+.relay-guide-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -2980,40 +3035,233 @@ body.relay-assistant-open .relay-topbar-actions {
   color: var(--text-secondary);
   cursor: pointer;
 }
-.setup-checklist-dismiss:hover { background: rgba(120, 120, 120, 0.16); color: var(--text-primary); }
-.setup-checklist-dismiss .material-icons-outlined { font-size: 16px; }
+.setup-hub-close:hover,
+.relay-guide-icon:hover { background: rgba(120, 120, 120, 0.16); color: var(--text-primary); }
+.setup-hub-close .material-icons-outlined,
+.relay-guide-icon .material-icons-outlined { font-size: 16px; }
 
-.setup-checklist-track {
-  height: 4px;
-  margin: 10px 0;
-  border-radius: 999px;
-  background: var(--border-color);
-  overflow: hidden;
-}
-.setup-checklist-track span {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--color-primary);
-  transition: width 0.2s ease;
-}
-
-.setup-checklist-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.setup-hub-section { padding: 12px 14px; }
+.setup-hub-section + .setup-hub-section { border-top: 1px solid var(--border-color); }
+.setup-hub-section-head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.setup-checklist-item { display: flex; align-items: flex-start; gap: 8px; }
-.setup-checklist-tick { font-size: 18px; color: var(--text-secondary); }
-.setup-checklist-item.is-done .setup-checklist-tick { color: var(--color-success); }
-.setup-checklist-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.setup-checklist-label { font-weight: 500; }
-.setup-checklist-item.is-done .setup-checklist-label { color: var(--text-secondary); text-decoration: line-through; }
-.setup-checklist-hint { color: var(--text-secondary); font-size: 0.85em; line-height: 1.35; }
-.setup-checklist-go { align-self: center; white-space: nowrap; }
+.setup-hub-section-count { font-variant-numeric: tabular-nums; }
+
+/* Vertical timeline: numbered dots joined by a rail. */
+.setup-hub-steps { list-style: none; margin: 0; padding: 0; }
+.setup-hub-step { position: relative; display: flex; gap: 10px; padding-bottom: 12px; }
+.setup-hub-step:last-child { padding-bottom: 0; }
+.setup-hub-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 24px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-color);
+}
+.setup-hub-step.is-done:not(:last-child)::before { background: var(--color-success); }
+.setup-hub-step-dot {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color-dark);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+.setup-hub-step-dot .material-icons-outlined { font-size: 15px; }
+.setup-hub-step.is-done .setup-hub-step-dot { border-color: var(--color-success); background: var(--color-success); color: #fff; }
+.setup-hub-step.is-current .setup-hub-step-dot {
+  border-color: var(--color-primary);
+  color: var(--color-primary-ink);
+  box-shadow: 0 0 0 4px var(--color-primary-light);
+}
+.setup-hub-step-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 3px; }
+.setup-hub-step-label { font-weight: 500; }
+.setup-hub-step.is-done .setup-hub-step-label,
+.setup-hub-extra.is-done .setup-hub-step-label { color: var(--text-secondary); }
+.setup-hub-step.is-current .setup-hub-step-label { font-weight: 600; }
+.setup-hub-step-hint { color: var(--text-secondary); font-size: 0.92em; line-height: 1.4; }
+.setup-hub-cta { width: 100%; justify-content: center; margin-top: 14px; gap: 6px; }
+
+.setup-hub-extras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.setup-hub-extra { display: flex; align-items: center; gap: 10px; }
+.setup-hub-extra .setup-hub-step-text { padding-top: 0; }
+.setup-hub-extra-icon { flex: none; font-size: 20px; color: var(--text-secondary); }
+.setup-hub-extra.is-done .setup-hub-extra-icon { color: var(--color-success); }
+.setup-hub-extra .btn { flex: none; }
+
+.setup-hub .setup-checklist-note { margin: 0 14px; padding: 12px 0 0; }
+
+.setup-hub-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-color);
+}
+.setup-hub-confirm { flex: 1 1 100%; color: var(--text-secondary); line-height: 1.4; }
+.setup-hub-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.setup-hub-dismiss:hover { color: var(--text-primary); background: rgba(120, 120, 120, 0.12); }
+.setup-hub-dismiss .material-icons-outlined { font-size: 15px; }
+
+/* ── Floating new-user guide (Walkthrough.js) ── */
+#relay-guide {
+  position: fixed;
+  bottom: 16px;
+  z-index: 1500; /* above pages, below modals so a dialog it points to sits on top */
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-xl);
+  color: var(--text-primary);
+  animation: setup-hub-in 0.2s ease-out;
+}
+.relay-guide-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; }
+#relay-guide:not(.is-min) .relay-guide-head { border-bottom: 1px solid var(--border-color); }
+#relay-guide.is-min { width: 280px; }
+#relay-guide.is-min .relay-guide-head { cursor: pointer; }
+.relay-guide-logo { font-size: 18px; color: var(--color-primary); }
+.relay-guide-name { font-weight: 600; }
+.relay-guide-segs { flex: 1; display: flex; gap: 3px; margin: 0 6px; }
+.relay-guide-seg { flex: 1; height: 4px; border-radius: 999px; background: var(--border-color); }
+.relay-guide-seg.is-done { background: var(--color-success); }
+.relay-guide-seg.is-current { background: var(--color-primary); }
+.relay-guide-body { padding: 12px; }
+.relay-guide-step { color: var(--text-tertiary); font-size: var(--font-size-sm); font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.relay-guide-title { margin-top: 4px; font-size: var(--font-size-xl); font-weight: 700; }
+.relay-guide-text { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.5; }
+.relay-guide-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.relay-guide-actions:empty { display: none; }
+.relay-guide-actions .btn { gap: 4px; }
+.relay-guide-actions .material-icons-outlined { font-size: 16px; }
+.relay-guide-cheer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  font-weight: 600;
+}
+.relay-guide-cheer .material-icons-outlined { font-size: 18px; }
+.relay-guide-done { display: flex; gap: 10px; }
+.relay-guide-done > .material-icons-outlined { font-size: 28px; color: var(--color-primary); }
+.relay-guide-done p { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.5; }
+
+/* Spotlight ring around the control the guide or tour is pointing at. */
+#relay-guide-ring {
+  position: fixed;
+  z-index: 1499;
+  border-radius: 10px;
+  border: 2px solid var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-light);
+  pointer-events: none;
+  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
+  animation: relay-ring-pulse 1.8s ease-in-out infinite;
+}
+#relay-guide-ring.is-ping { animation: relay-ring-ping 0.6s ease-out 2, relay-ring-pulse 1.8s ease-in-out 1.2s infinite; }
+/* Sits just under the tour layer: the tour root is fixed, so it is its own
+   stacking context and the popover can only outrank what is outside it. */
+#relay-guide-ring.is-dim {
+  z-index: 2499;
+  animation: none;
+  box-shadow: 0 0 0 4px var(--color-primary-light), 0 0 0 9999px rgba(10, 10, 12, 0.55);
+}
+@keyframes relay-ring-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--color-primary-light); }
+  50% { box-shadow: 0 0 0 9px rgba(255, 92, 0, 0.06); }
+}
+@keyframes relay-ring-ping { from { transform: scale(1.12); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }
+
+/* ── Tours ── */
+#relay-tour { position: fixed; inset: 0; z-index: 2500; }
+.relay-tour-catch { position: absolute; inset: 0; }
+.relay-tour-pop {
+  position: fixed;
+  z-index: 2502;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-xl);
+  color: var(--text-primary);
+  transition: top 0.2s ease, left 0.2s ease;
+}
+.relay-tour-pop.is-center { left: 50% !important; top: auto !important; bottom: 16px; transform: translateX(-50%); }
+.relay-tour-meta { display: flex; align-items: center; justify-content: space-between; color: var(--text-tertiary); font-size: var(--font-size-sm); font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.relay-tour-title { margin: 6px 0 0; font-size: 17px; font-weight: 700; }
+.relay-tour-text { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.5; }
+.relay-tour-points { margin: 10px 0 0; padding-left: 18px; list-style: disc; display: flex; flex-direction: column; gap: 5px; color: var(--text-secondary); line-height: 1.45; }
+.relay-tour-points strong { color: var(--text-primary); font-weight: 600; }
+.relay-tour-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.relay-tour-cloud {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.relay-tour-cloud .material-icons-outlined { font-size: 11px; }
+.relay-tour-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.relay-tour-dots { flex: 1; display: flex; gap: 4px; }
+.relay-tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-color-dark); }
+.relay-tour-dots span.is-on { width: 16px; border-radius: 999px; background: var(--color-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  #relay-guide, .setup-hub-panel, #relay-guide-ring { animation: none !important; transition: none !important; }
+}
+@media (max-width: 640px) {
+  #relay-guide { left: 16px !important; right: 16px; width: auto; }
+}
 
 .setup-checklist-note {
   display: flex;

@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { logActivity } from '../../actions/context.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
@@ -482,16 +483,13 @@ export function renderQuoteDetail(container, params) {
     store.update('quotes', id, { status: 'Converted' });
 
     // Add activity log for live job conversion
-    const activity = store.getAll('activity') || [];
-    activity.push({
-      id: Date.now() + 1,
-      jobId: newJob.id,
+    logActivity({
+      recordType: 'job',
+      recordId: newJob.id,
       type: 'job_converted_from_quote',
       text: `Live job ${newJob.number} created from accepted Quote ${quote.number}.`,
       user: 'System Automation',
-      timestamp: new Date().toISOString()
     });
-    store.save('activity', activity);
 
     import('../../components/Notifications.js').then(({ addSystemNotification }) => {
       addSystemNotification(

@@ -1,4 +1,5 @@
 import { store } from '../../data/store.js';
+import { logActivity } from '../../actions/context.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
@@ -136,16 +137,13 @@ export function renderQuotesList(container, params) {
                             estimatedMaterialCost: materialCost,
                           });
 
-                          const activity = store.getAll('activity') || [];
-                          activity.push({
-                            id: Date.now() + Math.random(),
-                            jobId: newJob.id,
+                          logActivity({
+                            recordType: 'job',
+                            recordId: newJob.id,
                             type: 'job_converted_from_quote',
                             text: `Live job ${newJob.number} created from accepted Quote ${quote.number}.`,
                             user: 'System Automation',
-                            timestamp: new Date().toISOString()
                           });
-                          store.save('activity', activity);
 
                           import('../../components/Notifications.js').then(({ addSystemNotification }) => {
                             addSystemNotification(
