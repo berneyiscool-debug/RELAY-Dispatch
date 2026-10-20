@@ -15,6 +15,7 @@ import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 import { extractActions } from '../utils/relayActionTags.js';
+import { visionUserContent } from '../utils/visionContent.js';
 import { loadUserMemory, loadUserMemorySync, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
 import { FLAGS } from '../utils/flags.js';
 import { buildIntroCard, jobsScheduledToday, unassignedJobCount } from '../utils/introCard.js';
@@ -2596,13 +2597,11 @@ async function callVisionEngine(userText, images, batchIndex, batchCount) {
   const systemPrompt = `${basePrompt}\n\n${getVisionContext()}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 
   const instruction = batchCount > 1
-    ? `${userText || 'Extract every record from this document.'}\n\n(Batch ${batchIndex + 1} of ${batchCount} — extract only what appears in the images below.)`
+    ? `${userText || 'Extract every record from this document.'}\n\n(Batch ${batchIndex + 1} of ${batchCount} — extract only what appears in these images.)`
     : (userText || 'Extract every record from this attachment.');
 
-  const content = [
-    { type: 'text', text: instruction },
-    ...images.map(url => ({ type: 'image_url', image_url: { url } }))
-  ];
+  // Anthropic image blocks; the proxy forwards these verbatim.
+  const content = visionUserContent(instruction, images);
 
   return dispatchChat([
     { role: 'system', content: systemPrompt },
@@ -3561,7 +3560,7 @@ async function runRoutineBuilder(text) {
 const LIVE_CONTEXT_HEADING = 'Current Live CRM Data Context';
 
 export function getSystemContext(slim = false, { tags = true } = {}) {
-  // Everything static is emitted before anything live, so DeepSeek's prefix
+  // Everything static is emitted before anything live, so a provider prefix
   // cache can reuse the bulk of this prompt between calls. Keep the live block
   // last when adding new sections.
   // Pull current DB state

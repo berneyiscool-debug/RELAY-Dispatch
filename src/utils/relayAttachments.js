@@ -2,7 +2,7 @@
 // RELAY — ASSISTANT ATTACHMENT PROCESSING
 // ============================================
 // Turns user-attached images and PDFs into an array of base64 image data URLs
-// that DeepSeek's Flash vision model can read. Images are downscaled to keep the
+// that brny's vision model can read. Images are downscaled to keep the
 // payload/token count sane; PDFs are rendered page-by-page via pdf.js.
 //
 // Supplier catalogues can be large, so we cap the page count and let the caller
@@ -21,9 +21,9 @@ export const MAX_PDF_PAGES = 150;
 export const VISION_BATCH_SIZE = 15;
 
 // The page images go to the same model, key and endpoint as the chat turns: the
-// relay-copilot edge function, which is DeepSeek-only. PDFs have to be
-// rasterised first because the DeepSeek API accepts images only, never a PDF or
-// office document.
+// relay-copilot edge function, which forwards them to Anthropic. They are sent
+// as base64 `image` blocks (see visionContent.js). PDFs are rasterised first so
+// every page reaches the model the same way, whatever the document is.
 
 // Longest edge (px) we downscale attachment images to before sending.
 const MAX_IMAGE_DIM = 1500;
