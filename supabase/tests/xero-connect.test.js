@@ -22,16 +22,16 @@ const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base6
 
 describe('return URLs', () => {
   test('the public site returns to /app; dev servers to their root; anything else to the hosted app', () => {
-    assert.equal(connectReturnUrl({ origin: 'https://relaydispatch.com.au' }), 'https://relaydispatch.com.au/app/#/settings?tab=cost_centers');
+    assert.equal(connectReturnUrl({ origin: 'https://relaydispatch.com.au' }), 'https://relaydispatch.com.au/app/#/settings?tab=accounting');
     assert.equal(connectReturnUrl({ origin: 'http://localhost:5173', returnPath: '/settings?tab=cost_centers' }), 'http://localhost:5173/#/settings?tab=cost_centers');
-    assert.equal(connectReturnUrl({ origin: null }), 'https://relaydispatch.com.au/app/#/settings?tab=cost_centers');
-    assert.equal(connectReturnUrl({ origin: 'https://evil.example' }), 'https://relaydispatch.com.au/app/#/settings?tab=cost_centers');
-    assert.equal(connectReturnUrl({ origin: 'https://preview.example', extraOrigins: ['https://preview.example'] }), 'https://preview.example/#/settings?tab=cost_centers');
+    assert.equal(connectReturnUrl({ origin: null }), 'https://relaydispatch.com.au/app/#/settings?tab=accounting');
+    assert.equal(connectReturnUrl({ origin: 'https://evil.example' }), 'https://relaydispatch.com.au/app/#/settings?tab=accounting');
+    assert.equal(connectReturnUrl({ origin: 'https://preview.example', extraOrigins: ['https://preview.example'] }), 'https://preview.example/#/settings?tab=accounting');
   });
 
   test('a return path can only be an in-app route', () => {
     for (const bad of ['//evil.example/x', 'https://evil.example', 'javascript:alert(1)', '/settings?tab=<x>', 42]) {
-      assert.equal(connectReturnUrl({ origin: 'http://localhost:5173', returnPath: bad }), 'http://localhost:5173/#/settings?tab=cost_centers', String(bad));
+      assert.equal(connectReturnUrl({ origin: 'http://localhost:5173', returnPath: bad }), 'http://localhost:5173/#/settings?tab=accounting', String(bad));
     }
   });
 
@@ -50,7 +50,7 @@ describe('return URLs', () => {
   test('the callback never redirects off RELAY, even with a tampered return URL', () => {
     assert.equal(
       callbackRedirect('https://evil.example/#/x', 'connected'),
-      'https://relaydispatch.com.au/app/#/settings?tab=cost_centers&xero=connected'
+      'https://relaydispatch.com.au/app/#/settings?tab=accounting&xero=connected'
     );
     assert.match(callbackRedirect('http://localhost:5173/#/settings', 'made-up'), /xero=error$/);
     assert.ok(OUTCOMES.includes('tenant_in_use'));

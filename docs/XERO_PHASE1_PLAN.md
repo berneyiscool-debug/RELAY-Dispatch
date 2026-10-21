@@ -183,8 +183,10 @@ Shared ESM helpers in `supabase/functions/_xero/` (plain JS, unit-tested):
 > - Retry runs through a new `xero_retry_failed_jobs` RPC (in the same migration).
 > - Accounts aren't cached server-side. The client caches them per page visit.
 > - The "push automatically" toggle was dropped, since the trigger always queues.
-> - The Settings card is in `renderCostCentersTab`, and the cost center modal
->   suggests Xero codes through datalists. `src/utils/xero.js` (tested) is the
+> - The Settings UI moved to its own tab, `renderAccountingTab` (status tiles,
+>   needs attention, coding defaults, per-cost-center codes). Cost Centers is a
+>   plain tab for everyone; its modal suggests Xero codes through datalists.
+>   Old `?tab=cost_centers&xero=` returns are redirected to `tab=accounting`. `src/utils/xero.js` (tested) is the
 >   client.
 > - Deploy steps are in `docs/XERO_SETUP.md`.
 

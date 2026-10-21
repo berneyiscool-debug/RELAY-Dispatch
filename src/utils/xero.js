@@ -1,5 +1,5 @@
 // ============================================
-// RELAY — XERO CLIENT (Settings → Cost Centers & Xero)
+// RELAY — XERO CLIENT (Settings → Accounting & Xero)
 // ============================================
 // Connects a cloud company to one Xero organisation, reads what the Settings
 // card shows, and works out each invoice's sync state for the invoice pages.
@@ -11,7 +11,7 @@ import { FLAGS } from './flags.js';
 import { invoke } from './payments.js';
 import { supabase } from './supabase.js';
 
-export const XERO_RETURN_PATH = '/settings?tab=cost_centers';
+export const XERO_RETURN_PATH = '/settings?tab=accounting';
 
 function isCloudUser() {
   return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
@@ -34,6 +34,7 @@ const DEFAULT_KEYS = [
   'materialsAccountCode',
   'paymentAccountCode',
   'stripeAccountCode',
+  'taxTypeTaxed',
   'defaultDueDays',
 ];
 
@@ -252,6 +253,49 @@ export function groupInvoiceJobs(rows) {
     else entry.pending = true;
   }
   return out;
+}
+
+/**
+ * "Send to Xero": 'missing' queues every sent invoice not yet in Xero (the
+ * backfill for invoices sent before connecting); an id list resends those.
+ * Drafts and voids are skipped server-side. Returns how many were queued.
+ */
+export async function pushToXero(target = 'missing') {
+  const data = await invoke('relay-xero-status', { push: target });
+  remember(data);
+  invoiceJobsAt = 0;
+  nudgeXeroSync();
+  return data?.queued || 0;
+}
+
+/**
+ * Everything the Accounting page lists under "Needs attention", from the
+ * invoices in the store and the queue: failed syncs (with the reason, and
+ * whether the fix is a setting rather than a retry) and how many sent invoices
+ * never reached Xero.
+ */
+export function xeroAttention(invoices, jobs = new Map()) {
+  const failed = [];
+  let missing = 0;
+  let inXero = 0;
+  let lastSyncedAt = '';
+  for (const inv of invoices || []) {
+    const s = xeroInvoiceSyncState(inv, jobs.get(String(inv.id)));
+    if (inv.xeroInvoiceId) inXero++;
+    if (inv.xeroSyncedAt && inv.xeroSyncedAt > lastSyncedAt) lastSyncedAt = inv.xeroSyncedAt;
+    if (s.state === 'error') {
+      failed.push({
+        id: inv.id,
+        number: inv.number || '',
+        reason: s.detail || 'Xero rejected this invoice.',
+        // These are fixed in the settings below, not by retrying as-is.
+        needsSetting: /sales account|payments are received into|payment account/i.test(s.detail || ''),
+      });
+    } else if (s.state === 'missing') {
+      missing++;
+    }
+  }
+  return { failed, missing, inXero, lastSyncedAt: lastSyncedAt || null };
 }
 
 /** Requeue this invoice's failed jobs. Returns how many were requeued. */

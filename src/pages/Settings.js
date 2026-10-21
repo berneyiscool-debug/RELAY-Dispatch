@@ -16,7 +16,7 @@ import { router } from '../router.js';
 import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
-import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache } from '../utils/xero.js';
+import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync } from '../utils/xero.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
@@ -221,6 +221,12 @@ export function renderSettings(container) {
   let activeTab = resolvedTab.tab || SETTINGS_DEFAULT_TAB;
   let templatesSubTab = resolvedTab.templatesSubTab;
   let usersSubTab = resolvedTab.usersSubTab;
+  // Xero used to live on Cost Centers, and consents started before the move still
+  // return there with ?xero=<outcome>. Send those to Accounting, where the card is.
+  if (activeTab === 'cost_centers' && urlParams.get('xero')) {
+    activeTab = 'accounting';
+    history.replaceState(null, '', window.location.href.replace('tab=cost_centers', 'tab=accounting'));
+  }
   // `?tab=tasklists&edit=<id>` (the Document Center's "Open record") lands with
   // that tasklist template's editor open. Read once, so re-renders don't reopen it.
   let pendingTasklistEdit = templatesSubTab === 'tasklists' ? urlParams.get('edit') : null;
@@ -341,9 +347,12 @@ export function renderSettings(container) {
     }
 
     if (activeTab === 'cost_centers') {
-      // Unreachable while cost_centers is in COMING_SOON_SETTINGS_TABS (the guard
-      // above rewrites it to Company) — kept for when the Xero integration ships.
       renderCostCentersTab(tc);
+      return;
+    }
+
+    if (activeTab === 'accounting') {
+      renderAccountingTab(tc);
       return;
     }
 
@@ -4397,20 +4406,8 @@ export function renderSettings(container) {
   function renderCostCentersTab(tc) {
       const list = store.getAll('costCenters') || [];
 
-      // With Xero on, the connection card sits above the cost center list.
-      let listEl = tc;
-      if (xeroEnabled()) {
-        tc.innerHTML = `
-          <div style="display:flex; flex-direction:column; gap:24px">
-            <div id="xero-card"></div>
-            <div id="cost-center-list"></div>
-          </div>`;
-        listEl = tc.querySelector('#cost-center-list');
-        renderXeroCard(tc.querySelector('#xero-card'));
-      }
-
       const renderTab = () => {
-        listEl.innerHTML = `
+        tc.innerHTML = `
           <div class="card" style="max-width:100%">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Cost Centers</h4>
@@ -4418,13 +4415,18 @@ export function renderSettings(container) {
                 <span class="material-icons-outlined" style="font-size:18px">add</span> Add Cost Center
               </button>
             </div>
+            ${xeroEnabled() ? `
+              <div style="padding:10px 16px; border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:13px;">
+                Which Xero account and tracking each cost center uses is set in
+                <a href="#/settings?tab=accounting" style="color:var(--color-primary);">Accounting &amp; Xero</a>.
+              </div>` : ''}
             <div class="card-body" style="padding:0">
               <table class="data-table">
                 <thead>
                   <tr>
                     <th style="padding-left:16px; width:120px">Code</th>
                     <th>Name</th>
-                    <th>Xero Mapping</th>
+                    <th>Accounting codes</th>
                     <th style="width:120px">Status</th>
                     <th style="text-align:right; padding-right:16px; width:180px">Actions</th>
                   </tr>
@@ -4443,11 +4445,11 @@ export function renderSettings(container) {
                       <td>
                         ${cc.xeroSalesAccountCode || cc.xeroTrackingOptionName ? `
                           <div style="line-height:1.4">
-                            ${cc.xeroSalesAccountCode ? `<div><span class="text-tertiary">Sales Code:</span> <strong>${escapeHTML(cc.xeroSalesAccountCode)}</strong></div>` : ''}
-                            ${cc.xeroExpenseAccountCode ? `<div><span class="text-tertiary">Expense Code:</span> <strong>${escapeHTML(cc.xeroExpenseAccountCode)}</strong></div>` : ''}
-                            ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}:${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
+                            ${cc.xeroSalesAccountCode ? `<div><span class="text-tertiary">Sales:</span> <strong>${escapeHTML(cc.xeroSalesAccountCode)}</strong></div>` : ''}
+                            ${cc.xeroExpenseAccountCode ? `<div><span class="text-tertiary">Expenses:</span> <strong>${escapeHTML(cc.xeroExpenseAccountCode)}</strong></div>` : ''}
+                            ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}: ${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
                           </div>
-                        ` : '<span class="text-tertiary">— Unmapped —</span>'}
+                        ` : '<span class="text-tertiary">Uses the defaults</span>'}
                       </td>
                       <td>
                         <span class="badge ${cc.active ? 'badge-success' : 'badge-neutral'}">
@@ -4468,11 +4470,11 @@ export function renderSettings(container) {
           </div>
         `;
 
-        listEl.querySelector('#btn-add-cost-center')?.addEventListener('click', () => openCostCenterModal());
-        listEl.querySelectorAll('.btn-edit-cc').forEach(btn => {
+        tc.querySelector('#btn-add-cost-center')?.addEventListener('click', () => openCostCenterModal());
+        tc.querySelectorAll('.btn-edit-cc').forEach(btn => {
           btn.addEventListener('click', (e) => openCostCenterModal(e.target.dataset.id));
         });
-        listEl.querySelectorAll('.btn-toggle-cc').forEach(btn => {
+        tc.querySelectorAll('.btn-toggle-cc').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             const id = e.target.dataset.id;
             const cc = store.getById('costCenters', id);
@@ -4490,9 +4492,9 @@ export function renderSettings(container) {
     }
 
     function openCostCenterModal(editId = null) {
-      let cc = editId ? store.getById('costCenters', editId) : { 
-        code: '', 
-        name: '', 
+      let cc = editId ? store.getById('costCenters', editId) : {
+        code: '',
+        name: '',
         active: true,
         xeroSalesAccountCode: '',
         xeroExpenseAccountCode: '',
@@ -4509,11 +4511,12 @@ export function renderSettings(container) {
           <label class="form-label" style="display:block; margin-bottom:6px">Cost Center Name</label>
           <input class="form-input" id="cc-name" value="${escapeHTML(cc.name)}" placeholder="e.g. Electrical Services" style="width:100%" />
         </div>
-        
+
         <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; margin-bottom: 16px; background:var(--card-bg)">
           <legend style="padding: 0 6px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 4px; margin: 0">
-            <span class="material-icons-outlined" style="font-size:15px">sync</span> Xero Integration (Optional)
+            <span class="material-icons-outlined" style="font-size:15px" aria-hidden="true">account_balance_wallet</span> Accounting codes (optional)
           </legend>
+          <p style="margin:0 0 10px; color:var(--text-secondary); font-size:12px;">Used by the Xero sync and by accounting exports. Leave blank to use your defaults.</p>
           <div class="form-row" style="margin-bottom:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label" style="margin-bottom:4px">Sales Account Code</label>
@@ -4563,9 +4566,9 @@ export function renderSettings(container) {
             if (!name) { showToast('Name required', 'error'); return; }
 
             try {
-              const updates = { 
-                code, 
-                name, 
+              const updates = {
+                code,
+                name,
                 active,
                 xeroSalesAccountCode: xeroSalesAccountCode || null,
                 xeroExpenseAccountCode: xeroExpenseAccountCode || null,
@@ -4591,8 +4594,8 @@ export function renderSettings(container) {
       });
     }
 
-    // Suggestions for the cost center modal's Xero fields, once the chart of
-    // accounts has been loaded by the Xero card. Free text still works.
+    // Suggestions for the cost center modal's accounting fields, once the chart
+    // of accounts has been loaded by the Accounting page. Free text still works.
     function xeroDatalistsHtml() {
       const xa = cachedXeroAccounts();
       if (!xa) return '';
@@ -4605,12 +4608,53 @@ export function renderSettings(container) {
         <datalist id="xero-tracking-options">${opts(categories.flatMap(c => c.options.map(o => [o, c.name])))}</datalist>`;
     }
 
-    // ── Xero connection card (Settings → Cost Centers & Xero) ───────────
-    function renderXeroCard(el) {
+    // ── Settings → Accounting & Xero ─────────────────────────────────────
+    // A status card, then only what needs a person (failed syncs, invoices that
+    // never reached Xero), then how invoices are coded and where payments land,
+    // then each cost center's Xero account. Everything past the status card is
+    // admin-only: the server refuses changes from anyone else anyway.
+    function renderAccountingTab(tc) {
+      if (!tc) return;
+      tc.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:24px; max-width:100%">
+          <div id="xero-card"></div>
+          <div id="xero-attention"></div>
+          <div id="xero-defaults"></div>
+          <div id="xero-cc-map"></div>
+        </div>`;
+      renderXeroCard(tc);
+    }
+
+    const xeroAgo = (iso) => {
+      const ms = Date.now() - Date.parse(iso || '');
+      if (!Number.isFinite(ms)) return '';
+      const mins = Math.round(ms / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins} min ago`;
+      const hours = Math.round(mins / 60);
+      if (hours < 24) return `${hours} h ago`;
+      return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    };
+
+    const xeroBanner = (tone, icon, title, detail = '') => `
+      <div style="display:flex;align-items:center;gap:10px;background:var(--color-${tone}-bg);border:1px solid var(--color-${tone});border-radius:8px;padding:12px 14px;">
+        <span class="material-icons-outlined" style="color:var(--color-${tone});" aria-hidden="true">${icon}</span>
+        <div><div style="font-weight:600;">${title}</div>${detail ? `<div style="color:var(--text-tertiary);">${detail}</div>` : ''}</div>
+      </div>`;
+
+    const xeroBusy = async (btn, work, failure) => {
+      if (btn) btn.disabled = true;
+      try { await work(); }
+      catch (err) { showToast(err.message || failure, 'error'); if (btn) btn.disabled = false; }
+    };
+
+    function renderXeroCard(page) {
+      const el = page.querySelector('#xero-card');
       if (!el) return;
-      // Read like renderSettings does: this card is also redrawn from the cost
-      // center modal and toggles, which have no renderSettings locals to pass in.
-      // The server enforces admin-only changes regardless.
+      const slots = ['#xero-attention', '#xero-defaults', '#xero-cc-map'].map(s => page.querySelector(s));
+      const clearSlots = () => slots.forEach(s => { if (s) s.innerHTML = ''; });
+      // Read like renderSettings does: this page is also redrawn from its own
+      // buttons, which have no renderSettings locals to pass in.
       const sessionUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
       const isAdmin = sessionUser.role === 'admin';
 
@@ -4627,29 +4671,14 @@ export function renderSettings(container) {
         history.replaceState(null, '', `${window.location.pathname}${window.location.search}${route}${rest ? `?${rest}` : ''}`);
       }
 
-      const banner = (tone, icon, title, detail = '') => `
-        <div style="display:flex;align-items:center;gap:10px;background:var(--color-${tone}-bg);border:1px solid var(--color-${tone});border-radius:8px;padding:12px 14px;">
-          <span class="material-icons-outlined" style="color:var(--color-${tone});" aria-hidden="true">${icon}</span>
-          <div><div style="font-weight:600;">${title}</div>${detail ? `<div style="color:var(--text-tertiary);">${detail}</div>` : ''}</div>
-        </div>`;
-
-      const shell = (inner) => {
+      const shell = (inner, headerAction = '') => {
         el.innerHTML = `
           <div class="card" style="max-width:100%">
-            <div class="card-header"><h4 style="margin:0">Xero</h4></div>
-            <div class="card-body">
-              <p style="color:var(--text-secondary);margin-top:0;">
-                Send invoices to Xero when they go out, push the payments you record here, and mark invoices paid when they're paid in Xero.
-              </p>
-              ${inner}
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+              <h4 style="margin:0">Xero</h4>${headerAction}
             </div>
+            <div class="card-body">${inner}</div>
           </div>`;
-      };
-
-      const busy = async (btn, work, failure) => {
-        if (btn) btn.disabled = true;
-        try { await work(); }
-        catch (err) { showToast(err.message || failure, 'error'); if (btn) btn.disabled = false; }
       };
 
       const connectButton = (label) => isAdmin
@@ -4657,22 +4686,33 @@ export function renderSettings(container) {
         : `<span style="color:var(--text-tertiary);">Ask an administrator to connect Xero.</span>`;
 
       const wireConnect = () => {
-        el.querySelector('#xero-connect')?.addEventListener('click', (e) => busy(e.currentTarget, () => startXeroConnect(), 'Could not start the Xero connection'));
+        el.querySelector('#xero-connect')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, () => startXeroConnect(), 'Could not start the Xero connection'));
       };
 
       shell(`<div style="color:var(--text-tertiary);">Checking the Xero connection…</div>`);
 
-      const render = (st) => {
+      const render = async (st) => {
         if (!st || st.status === 'disconnected') {
-          shell(`<div style="margin:16px 0;">${connectButton('Connect to Xero')}</div>`);
+          clearSlots();
+          shell(`
+            <p style="color:var(--text-secondary);margin-top:0;">
+              Connect Xero and RELAY keeps it up to date for you: invoices go across when you send them, payments you record here follow, and invoices paid in Xero come back as Paid.
+            </p>
+            <ul style="margin:0 0 16px;padding-left:18px;color:var(--text-secondary);line-height:1.7;">
+              <li>Customers become Xero contacts, matched to ones you already have</li>
+              <li>Lines are coded to the accounts and tracking you choose</li>
+              <li>Works with Australian (AUD) Xero organisations</li>
+            </ul>
+            ${connectButton('Connect to Xero')}`);
           wireConnect();
           return;
         }
 
         if (st.status === 'choose_tenant') {
+          clearSlots();
           const tenants = st.tenants || [];
           shell(`
-            ${banner('info', 'domain', 'Choose an organisation', 'You gave RELAY access to more than one Xero organisation. RELAY uses one; the others are disconnected.')}
+            ${xeroBanner('info', 'domain', 'Choose an organisation', 'You gave RELAY access to more than one Xero organisation. RELAY uses one; the others are disconnected.')}
             ${isAdmin && tenants.length ? `
               <fieldset style="border:0;padding:0;margin:16px 0;display:flex;flex-direction:column;gap:8px;">
                 <legend class="form-label">Xero organisation</legend>
@@ -4685,7 +4725,7 @@ export function renderSettings(container) {
               <button class="btn btn-primary" id="xero-select"><span class="material-icons-outlined" aria-hidden="true">check</span> Use this organisation</button>
             ` : `<div style="margin:16px 0;">${connectButton('Start again')}</div>`}`);
           wireConnect();
-          el.querySelector('#xero-select')?.addEventListener('click', (e) => busy(e.currentTarget, async () => {
+          el.querySelector('#xero-select')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
             const tenantId = el.querySelector('input[name="xero-tenant"]:checked')?.value;
             if (!tenantId) throw new Error('Choose an organisation first.');
             const next = await selectXeroTenant(tenantId);
@@ -4697,40 +4737,45 @@ export function renderSettings(container) {
         }
 
         if (st.status === 'needs_reauth' || st.status === 'unsupported_currency') {
+          clearSlots();
           const reauth = st.status === 'needs_reauth';
           shell(`
-            ${banner(reauth ? 'warning' : 'danger', reauth ? 'sync_problem' : 'error_outline',
+            ${xeroBanner(reauth ? 'warning' : 'danger', reauth ? 'sync_problem' : 'error_outline',
               reauth ? `Reconnect ${escapeHTML(st.tenantName || 'Xero')}` : 'This Xero organisation can\'t be used',
               escapeHTML(st.lastError || (reauth ? 'Xero stopped accepting RELAY\'s access. Changes are queued and go out once you reconnect.' : '')))}
-            <div style="margin:16px 0;">${connectButton(reauth ? 'Reconnect Xero' : 'Connect a different organisation')}</div>`);
+            <div style="margin:16px 0 0;">${connectButton(reauth ? 'Reconnect Xero' : 'Connect a different organisation')}</div>`);
           wireConnect();
           return;
         }
 
         // Connected.
-        const queue = [
-          st.pendingJobs ? `${st.pendingJobs} waiting to sync` : 'Nothing waiting to sync',
-          st.failedJobs ? `${st.failedJobs} failed` : '',
-        ].filter(Boolean).join(' · ');
+        let jobs;
+        try { jobs = await fetchInvoiceSyncJobs({ force: true }); } catch (_) { jobs = new Map(); }
+        const att = xeroAttention(store.getAll('invoices') || [], jobs);
+        const attentionCount = att.failed.length;
+        const tile = (label, value, tone = '') => `
+          <div style="background:${tone ? `var(--color-${tone}-bg)` : 'var(--bg-secondary, var(--bg-color))'};border-radius:8px;padding:10px 12px;">
+            <div style="color:${tone ? `var(--color-${tone})` : 'var(--text-secondary)'};font-size:12px;">${label}</div>
+            <div style="font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;${tone ? `color:var(--color-${tone});` : ''}">${value}</div>
+          </div>`;
         shell(`
-          ${banner('success', 'verified', `Connected to ${escapeHTML(st.tenantName || 'Xero')}`, escapeHTML(queue))}
-          ${isAdmin ? `
-            <div style="margin:16px 0;display:flex;gap:10px;flex-wrap:wrap;">
-              ${st.failedJobs ? `<button class="btn btn-secondary" id="xero-retry"><span class="material-icons-outlined" aria-hidden="true">replay</span> Retry failed</button>` : ''}
-              <button class="btn btn-outline" id="xero-disconnect"><span class="material-icons-outlined" aria-hidden="true">link_off</span> Disconnect</button>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="material-icons-outlined" style="color:var(--color-success);" aria-hidden="true">verified</span>
+            <div>
+              <div style="font-weight:600;">Connected to ${escapeHTML(st.tenantName || 'Xero')}</div>
+              <div style="color:var(--text-tertiary);font-size:13px;">${att.lastSyncedAt ? `Last synced ${escapeHTML(xeroAgo(att.lastSyncedAt))}` : 'Nothing synced yet'}</div>
             </div>
-            <div id="xero-defaults"><div style="color:var(--text-tertiary);">Loading your Xero accounts…</div></div>
-          ` : ''}`);
-
-        el.querySelector('#xero-retry')?.addEventListener('click', (e) => busy(e.currentTarget, async () => {
-          const next = await retryXeroSync('all');
-          showToast(`${next?.requeued || 0} sync job${next?.requeued === 1 ? '' : 's'} queued again`, 'info');
-          render(next);
-        }, 'Could not retry'));
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px;">
+            ${tile('In Xero', att.inXero)}
+            ${tile('Waiting to sync', st.pendingJobs || 0)}
+            ${tile('Needs attention', attentionCount, attentionCount ? 'danger' : '')}
+          </div>`,
+          isAdmin ? `<button class="btn btn-outline btn-sm" id="xero-disconnect"><span class="material-icons-outlined" aria-hidden="true">link_off</span> Disconnect</button>` : '');
 
         el.querySelector('#xero-disconnect')?.addEventListener('click', (e) => {
           const btn = e.currentTarget;
-          busy(btn, async () => {
+          xeroBusy(btn, async () => {
             const confirmed = await showConfirm(
               'RELAY will stop sending invoices and payments to Xero and anything still waiting is dropped. Nothing already in Xero is changed.',
               { title: 'Disconnect Xero', confirmLabel: 'Disconnect', danger: true });
@@ -4741,92 +4786,263 @@ export function renderSettings(container) {
           }, 'Could not disconnect Xero');
         });
 
-        if (isAdmin) renderXeroDefaults(el.querySelector('#xero-defaults'));
+        if (!isAdmin) { clearSlots(); return; }
+        renderXeroAttention(page, att, () => renderXeroCard(page));
+        renderXeroSetup(page);
       };
 
       getXeroStatus().then(render).catch((err) => {
+        clearSlots();
         shell(`
-          ${banner('danger', 'error_outline', 'Couldn\'t check the Xero connection', escapeHTML(err.message || ''))}
-          <div style="margin:16px 0;"><button class="btn btn-secondary" id="xero-reload"><span class="material-icons-outlined" aria-hidden="true">refresh</span> Try again</button></div>`);
-        el.querySelector('#xero-reload')?.addEventListener('click', () => renderXeroCard(el));
+          ${xeroBanner('danger', 'error_outline', 'Couldn\'t check the Xero connection', escapeHTML(err.message || ''))}
+          <div style="margin:16px 0 0;"><button class="btn btn-secondary" id="xero-reload"><span class="material-icons-outlined" aria-hidden="true">refresh</span> Try again</button></div>`);
+        el.querySelector('#xero-reload')?.addEventListener('click', () => renderXeroCard(page));
       });
     }
 
-    async function renderXeroDefaults(el) {
+    // Failed syncs with the reason and the one action that fixes each, plus the
+    // backfill for invoices sent before Xero was connected.
+    function renderXeroAttention(page, att, refresh) {
+      const el = page.querySelector('#xero-attention');
       if (!el) return;
+      const shown = att.failed.slice(0, 10);
+      const row = (icon, color, text, actions) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border-color);">
+          <span class="material-icons-outlined" style="color:${color};font-size:20px;" aria-hidden="true">${icon}</span>
+          <div style="flex:1;min-width:0;">${text}</div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">${actions}</div>
+        </div>`;
+      const failedRows = shown.map(f => row('sync_problem', 'var(--color-danger)',
+        `<div style="font-weight:600;">${escapeHTML(f.number || 'Invoice')}</div><div style="color:var(--text-secondary);font-size:13px;">${escapeHTML(f.reason)}</div>`,
+        `${f.needsSetting
+          ? `<button class="btn btn-secondary btn-sm" data-xero-fix>Fix</button>`
+          : `<button class="btn btn-secondary btn-sm" data-xero-retry="${escapeHTML(f.id)}">Retry</button>`}
+         <a class="btn btn-outline btn-sm" href="#/invoices/${encodeURIComponent(f.id)}">Open</a>`)).join('');
+      const moreRow = att.failed.length > shown.length
+        ? `<div style="padding:8px 16px;border-top:1px solid var(--border-color);color:var(--text-tertiary);font-size:13px;">and ${att.failed.length - shown.length} more</div>` : '';
+      const missingRow = att.missing ? row('cloud_off', 'var(--text-secondary)',
+        `<div style="font-weight:600;">${att.missing} invoice${att.missing === 1 ? '' : 's'} sent before Xero was connected</div><div style="color:var(--text-secondary);font-size:13px;">Send them across so Xero has your full history. Paid ones go with their payment.</div>`,
+        `<button class="btn btn-primary btn-sm" id="xero-backfill">Send to Xero</button>`) : '';
+      const empty = !att.failed.length && !att.missing;
+
+      el.innerHTML = `
+        <div class="card" style="max-width:100%">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h4 style="margin:0">Needs attention</h4>
+            ${att.failed.length > 1 ? `<button class="btn btn-secondary btn-sm" id="xero-retry-all"><span class="material-icons-outlined" aria-hidden="true">replay</span> Retry all</button>` : ''}
+          </div>
+          <div class="card-body" style="padding:0;">
+            ${empty
+              ? `<div style="display:flex;align-items:center;gap:10px;padding:14px 16px;color:var(--text-secondary);"><span class="material-icons-outlined" style="color:var(--color-success);" aria-hidden="true">check_circle</span> Nothing needs attention. Invoices and payments are reaching Xero.</div>`
+              : `${failedRows}${moreRow}${missingRow}`}
+          </div>
+        </div>`;
+
+      el.querySelectorAll('[data-xero-fix]').forEach(btn => btn.addEventListener('click', () => {
+        const target = page.querySelector('#xero-defaults');
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target?.querySelector('select')?.focus({ preventScroll: true });
+      }));
+      el.querySelectorAll('[data-xero-retry]').forEach(btn => btn.addEventListener('click', (e) => {
+        const b = e.currentTarget;
+        xeroBusy(b, async () => {
+          const n = await retryInvoiceSync(b.dataset.xeroRetry);
+          showToast(n ? 'Queued to sync to Xero again.' : 'Nothing to retry.', 'info');
+          refresh();
+        }, 'Could not retry');
+      }));
+      el.querySelector('#xero-retry-all')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+        const next = await retryXeroSync('all');
+        showToast(`${next?.requeued || 0} sync job${next?.requeued === 1 ? '' : 's'} queued again`, 'info');
+        refresh();
+      }, 'Could not retry'));
+      el.querySelector('#xero-backfill')?.addEventListener('click', (e) => {
+        const b = e.currentTarget;
+        xeroBusy(b, async () => {
+          const confirmed = await showConfirm(
+            `${att.missing} invoice${att.missing === 1 ? '' : 's'} will be created in Xero as awaiting payment, using your coding settings. Paid ones get their payment recorded too. Drafts and voids are left out.`,
+            { title: 'Send to Xero', confirmLabel: 'Send to Xero' });
+          if (!confirmed) { b.disabled = false; return; }
+          const n = await pushToXero('missing');
+          showToast(`${n} invoice${n === 1 ? '' : 's'} queued for Xero`, 'success');
+          refresh();
+        }, 'Could not send to Xero');
+      });
+    }
+
+    // How invoices are coded, where payments land, and each cost center's Xero
+    // account — all picked from the organisation's own chart of accounts.
+    async function renderXeroSetup(page) {
+      const defaultsEl = page.querySelector('#xero-defaults');
+      const ccEl = page.querySelector('#xero-cc-map');
+      if (!defaultsEl) return;
+      defaultsEl.innerHTML = `<div class="card"><div class="card-body" style="color:var(--text-tertiary);">Loading your Xero accounts…</div></div>`;
       let xa;
       try {
         xa = await listXeroAccounts();
       } catch (err) {
-        el.innerHTML = `<div style="color:var(--color-danger);">Couldn't load your Xero accounts: ${escapeHTML(err.message || '')}</div>`;
+        defaultsEl.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-danger);">Couldn't load your Xero accounts: ${escapeHTML(err.message || '')}</div></div>`;
         return;
       }
       if (!xa) {
-        // The connection dropped while loading (e.g. needs re-auth): redraw the card.
-        renderXeroCard(document.querySelector('#xero-card'));
+        // The connection dropped while loading (e.g. needs re-auth): redraw the page.
+        renderXeroCard(page);
         return;
       }
-      const select = (id, label, accounts, value, hint, noneLabel = '— None —') => `
-        <div class="form-group">
+      const revenue = xa.revenueAccounts || [];
+      const payment = xa.paymentAccounts || [];
+      const gstRates = (xa.taxRates || []).filter(t => t.rate > 0);
+
+      const accountSelect = (id, label, accounts, value, hint, noneLabel) => `
+        <div class="form-group" style="margin:0;">
           <label class="form-label" for="${id}">${label}</label>
           <select class="form-select" id="${id}">
             <option value="">${noneLabel}</option>
             ${accounts.map(a => `<option value="${escapeHTML(a.code)}" ${a.code === value ? 'selected' : ''}>${escapeHTML(a.code)} — ${escapeHTML(a.name)}</option>`).join('')}
             ${value && !accounts.some(a => a.code === value) ? `<option value="${escapeHTML(value)}" selected>${escapeHTML(value)} (not found in Xero)</option>` : ''}
           </select>
-          ${hint ? `<div style="color:var(--text-tertiary);margin-top:4px;">${hint}</div>` : ''}
+          ${hint ? `<div style="color:var(--text-tertiary);margin-top:4px;font-size:12px;">${hint}</div>` : ''}
         </div>`;
-      const revenue = xa.revenueAccounts || [];
-      const payment = xa.paymentAccounts || [];
 
-      const draw = () => {
+      const drawDefaults = () => {
         const d = xeroSettings();
         const warnings = xeroDefaultsWarnings(d);
-        el.innerHTML = `
-          <h5 style="margin:8px 0 4px;">Invoice coding</h5>
-          <p style="color:var(--text-tertiary);margin:0 0 12px;">A job's cost center account wins. Otherwise labour and material lines use these, then the default sales account.</p>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
-            ${select('xero-default-sales', 'Default sales account', revenue, d.defaultSalesAccountCode, '', '— Choose an account —')}
-            ${select('xero-labour', 'Labour lines', revenue, d.labourAccountCode, '', 'Use the default')}
-            ${select('xero-materials', 'Material lines', revenue, d.materialsAccountCode, '', 'Use the default')}
-          </div>
-          <h5 style="margin:16px 0 4px;">Payments</h5>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
-            ${select('xero-payment-account', 'Payments received into', payment, d.paymentAccountCode, 'Bank transfers, cash and card payments you record in RELAY.', '— Choose an account —')}
-            ${select('xero-stripe-account', 'Online (Stripe) payments into', payment, d.stripeAccountCode, 'A Stripe clearing account keeps Stripe payouts easy to reconcile.', 'Same as above')}
-            <div class="form-group">
-              <label class="form-label" for="xero-due-days">Payment terms if an invoice has no due date</label>
-              <input class="form-input" id="xero-due-days" type="number" min="0" max="365" step="1" value="${escapeHTML(String(d.defaultDueDays ?? 30))}" />
-              <div style="color:var(--text-tertiary);margin-top:4px;">Days after the issue date.</div>
+        const gst = d.taxTypeTaxed || 'OUTPUT';
+        defaultsEl.innerHTML = `
+          <div class="card" style="max-width:100%">
+            <div class="card-header"><h4 style="margin:0">How invoices are coded</h4></div>
+            <div class="card-body">
+              <p style="color:var(--text-secondary);margin:0 0 14px;">A job's cost center account comes first. Otherwise labour and material lines use these, and everything else uses the default.</p>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+                ${accountSelect('xero-labour', 'Labour lines', revenue, d.labourAccountCode, '', 'Use the default')}
+                ${accountSelect('xero-materials', 'Material lines', revenue, d.materialsAccountCode, '', 'Use the default')}
+                ${accountSelect('xero-default-sales', 'Everything else (default)', revenue, d.defaultSalesAccountCode, '', 'Choose an account')}
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" for="xero-gst">GST on invoices that charge it</label>
+                  <select class="form-select" id="xero-gst">
+                    ${(gstRates.length ? gstRates : [{ type: 'OUTPUT', name: 'GST on Income', rate: 10 }]).map(t => `<option value="${escapeHTML(t.type)}" ${t.type === gst ? 'selected' : ''}>${escapeHTML(t.name)} (${escapeHTML(String(t.rate))}%)</option>`).join('')}
+                  </select>
+                  <div style="color:var(--text-tertiary);margin-top:4px;font-size:12px;">Invoices with no GST go across as GST free.</div>
+                </div>
+              </div>
+
+              <h5 style="margin:22px 0 4px;">Where payments land</h5>
+              <p style="color:var(--text-secondary);margin:0 0 14px;">The Xero account each payment is recorded against, ready to match to your bank feed.</p>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+                ${accountSelect('xero-payment-account', 'Payments recorded in RELAY', payment, d.paymentAccountCode, 'Bank transfers, cash, cheques and cards you mark as paid.', 'Choose an account')}
+                ${accountSelect('xero-stripe-account', 'Paid online (Stripe)', payment, d.stripeAccountCode, 'A Stripe clearing account makes payouts easy to reconcile.', 'Same as above')}
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" for="xero-due-days">Payment terms when an invoice has no due date</label>
+                  <input class="form-input" id="xero-due-days" type="number" min="0" max="365" step="1" value="${escapeHTML(String(d.defaultDueDays ?? 30))}" />
+                  <div style="color:var(--text-tertiary);margin-top:4px;font-size:12px;">Days after the issue date.</div>
+                </div>
+              </div>
+              ${warnings.length ? `<ul style="margin:16px 0 0;padding-left:18px;color:var(--color-warning);">${warnings.map(w => `<li>${escapeHTML(w)}</li>`).join('')}</ul>` : ''}
+              <div style="margin-top:18px;">
+                <button class="btn btn-primary" id="xero-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save</button>
+              </div>
             </div>
-          </div>
-          ${warnings.length ? `<ul style="margin:12px 0 0;padding-left:18px;color:var(--color-warning);">${warnings.map(w => `<li>${escapeHTML(w)}</li>`).join('')}</ul>` : ''}
-          <div style="margin-top:16px;">
-            <button class="btn btn-primary" id="xero-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save Xero settings</button>
           </div>`;
 
-        el.querySelector('#xero-save')?.addEventListener('click', async (e) => {
+        defaultsEl.querySelector('#xero-save')?.addEventListener('click', async (e) => {
           const btn = e.currentTarget;
           btn.disabled = true;
           try {
             await saveXeroDefaults({
-              defaultSalesAccountCode: el.querySelector('#xero-default-sales').value,
-              labourAccountCode: el.querySelector('#xero-labour').value,
-              materialsAccountCode: el.querySelector('#xero-materials').value,
-              paymentAccountCode: el.querySelector('#xero-payment-account').value,
-              stripeAccountCode: el.querySelector('#xero-stripe-account').value,
-              defaultDueDays: el.querySelector('#xero-due-days').value,
+              defaultSalesAccountCode: defaultsEl.querySelector('#xero-default-sales').value,
+              labourAccountCode: defaultsEl.querySelector('#xero-labour').value,
+              materialsAccountCode: defaultsEl.querySelector('#xero-materials').value,
+              taxTypeTaxed: defaultsEl.querySelector('#xero-gst').value,
+              paymentAccountCode: defaultsEl.querySelector('#xero-payment-account').value,
+              stripeAccountCode: defaultsEl.querySelector('#xero-stripe-account').value,
+              defaultDueDays: defaultsEl.querySelector('#xero-due-days').value,
             });
             showToast('Xero settings saved', 'success');
             window.dispatchEvent(new CustomEvent('relay:settings-updated'));
-            draw();
+            drawDefaults();
           } catch (err) {
             showToast(err.message || 'Could not save Xero settings', 'error');
             btn.disabled = false;
           }
         });
       };
-      draw();
+
+      const drawCostCenters = () => {
+        if (!ccEl) return;
+        const centers = (store.getAll('costCenters') || []).filter(cc => cc.active);
+        const trackingOptions = (xa.trackingCategories || []).flatMap(c => c.options.map(o => ({ cat: c.name, opt: o })));
+        const trackKey = (cat, opt) => (cat && opt ? `${cat}\u0000${opt}` : '');
+        ccEl.innerHTML = `
+          <div class="card" style="max-width:100%">
+            <div class="card-header"><h4 style="margin:0">Cost centers in Xero</h4></div>
+            ${centers.length ? `
+              <div class="card-body" style="padding:0;">
+                <table class="data-table">
+                  <thead><tr>
+                    <th style="padding-left:16px;width:110px;">Code</th><th>Name</th><th>Sales account</th><th>Tracking</th>
+                  </tr></thead>
+                  <tbody>
+                    ${centers.map(cc => {
+                      const current = trackKey(cc.xeroTrackingCategoryName, cc.xeroTrackingOptionName);
+                      const known = trackingOptions.some(t => trackKey(t.cat, t.opt) === current);
+                      return `
+                      <tr data-cc="${escapeHTML(cc.id)}">
+                        <td style="padding-left:16px;font-weight:600;">${escapeHTML(cc.code)}</td>
+                        <td>${escapeHTML(cc.name)}</td>
+                        <td>
+                          <select class="form-select" data-cc-account aria-label="Sales account for ${escapeHTML(cc.name)}">
+                            <option value="">Use the defaults</option>
+                            ${revenue.map(a => `<option value="${escapeHTML(a.code)}" ${a.code === cc.xeroSalesAccountCode ? 'selected' : ''}>${escapeHTML(a.code)} — ${escapeHTML(a.name)}</option>`).join('')}
+                            ${cc.xeroSalesAccountCode && !revenue.some(a => a.code === cc.xeroSalesAccountCode) ? `<option value="${escapeHTML(cc.xeroSalesAccountCode)}" selected>${escapeHTML(cc.xeroSalesAccountCode)} (not found in Xero)</option>` : ''}
+                          </select>
+                        </td>
+                        <td>
+                          <select class="form-select" data-cc-tracking aria-label="Tracking for ${escapeHTML(cc.name)}">
+                            <option value="">No tracking</option>
+                            ${trackingOptions.map(t => `<option value="${escapeHTML(trackKey(t.cat, t.opt))}" ${trackKey(t.cat, t.opt) === current ? 'selected' : ''}>${escapeHTML(t.cat)}: ${escapeHTML(t.opt)}</option>`).join('')}
+                            ${current && !known ? `<option value="${escapeHTML(current)}" selected>${escapeHTML(cc.xeroTrackingCategoryName)}: ${escapeHTML(cc.xeroTrackingOptionName)} (not found in Xero)</option>` : ''}
+                          </select>
+                        </td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+                <div style="padding:14px 16px;border-top:1px solid var(--border-color);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="xero-cc-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save cost centers</button>
+                  ${!trackingOptions.length ? `<span style="color:var(--text-tertiary);font-size:13px;">Add a tracking category in Xero to tag lines by cost center.</span>` : ''}
+                </div>
+              </div>` : `
+              <div class="card-body" style="color:var(--text-secondary);">
+                Cost centers let you send each job's lines to its own Xero account and tracking.
+                <a href="#/settings?tab=cost_centers" style="color:var(--color-primary);">Add a cost center</a>
+              </div>`}
+          </div>`;
+
+        ccEl.querySelector('#xero-cc-save')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+          let changed = 0;
+          for (const tr of ccEl.querySelectorAll('tr[data-cc]')) {
+            const cc = store.getById('costCenters', tr.dataset.cc);
+            if (!cc) continue;
+            const account = tr.querySelector('[data-cc-account]').value || null;
+            const [cat, opt] = (tr.querySelector('[data-cc-tracking]').value || '').split('\u0000');
+            const updates = {
+              xeroSalesAccountCode: account,
+              xeroTrackingCategoryName: (opt && cat) || null,
+              xeroTrackingOptionName: opt || null,
+            };
+            if (updates.xeroSalesAccountCode === (cc.xeroSalesAccountCode || null)
+              && updates.xeroTrackingCategoryName === (cc.xeroTrackingOptionName ? cc.xeroTrackingCategoryName || null : null)
+              && updates.xeroTrackingOptionName === (cc.xeroTrackingOptionName || null)) continue;
+            await store.update('costCenters', cc.id, updates);
+            changed++;
+          }
+          showToast(changed ? `Saved ${changed} cost center${changed === 1 ? '' : 's'}` : 'No changes to save', changed ? 'success' : 'info');
+          drawCostCenters();
+        }, 'Could not save cost centers'));
+      };
+
+      drawDefaults();
+      drawCostCenters();
     }
 
   function renderSuppliersSettings(tc) {

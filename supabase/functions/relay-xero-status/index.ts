@@ -18,8 +18,10 @@ import { grantedTenants, statusPayload, summariseSettings } from '../_xero/conne
 //   { accounts: true }       → chart of accounts, tracking categories, tax rates
 //   { disconnect: true }     → drop the connection and revoke its tokens
 //   { retry: <jobId>|"all" } → requeue failed sync jobs
+//   { push: "missing"|[ids] } → "Send to Xero": every sent invoice not yet in
+//                               Xero, or the named invoices (resend)
 // Response: the status payload ({ connected, status, tenantName, ... }), plus
-//   `settings` for { accounts }, or `requeued` for { retry }.
+//   `settings` for { accounts }, `requeued` for { retry }, `queued` for { push }.
 //
 // Secrets: see _xero/edge.ts
 
@@ -28,7 +30,7 @@ serve(handle('relay-xero-status', async (req) => {
   const env = xeroEnv()
   const admin = adminClient()
   const body = await req.json().catch(() => ({}))
-  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry)
+  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry || body.push)
   const caller = await requireUser(req, admin, { adminOnly: changes })
   const companyId = caller.companyId
 
@@ -67,6 +69,16 @@ serve(handle('relay-xero-status', async (req) => {
     }
     row = await loadConnection(admin, companyId)
     return json(await status(admin, env, row))
+  }
+
+  if (body.push) {
+    if (row?.status !== 'active') throw new HttpError(409, 'Connect Xero first.')
+    const ids = body.push === 'missing' ? null
+      : Array.isArray(body.push) ? body.push.map(String).filter(Boolean).slice(0, 500) : undefined
+    if (ids === undefined || (Array.isArray(ids) && !ids.length)) throw new HttpError(400, 'push must be "missing" or a list of invoice ids')
+    const { data, error } = await admin.rpc('xero_enqueue_invoices', { p_company_id: companyId, p_invoice_ids: ids })
+    if (error) throw new Error(`Could not queue invoices: ${error.message}`)
+    return json({ ...(await status(admin, env, row)), queued: data || 0 })
   }
 
   if (body.retry) {

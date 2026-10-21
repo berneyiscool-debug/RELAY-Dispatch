@@ -22,7 +22,7 @@ import { PUBLIC_APP_BASE, parseExtraOrigins } from '../_shared/returnUrls.js'
 //
 // Secrets: see _xero/edge.ts. XERO_REDIRECT_URI must be this function's URL.
 
-const FALLBACK = `${PUBLIC_APP_BASE}/#/settings?tab=cost_centers`
+const FALLBACK = `${PUBLIC_APP_BASE}/#/settings?tab=accounting`
 
 serve(async (req) => {
   if (req.method !== 'GET') return new Response('Method Not Allowed', { status: 405 })

@@ -19,6 +19,10 @@ const MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '20261020090000_xero_integration.sql'),
   'utf8'
 );
+const SEND_TO_XERO = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '20261022090000_xero_send_to_xero.sql'),
+  'utf8'
+);
 
 const COMPANY_A = '00000000-0000-0000-0000-00000000000a';
 const COMPANY_B = '00000000-0000-0000-0000-00000000000b';
@@ -143,6 +147,7 @@ describe('xero integration migration', () => {
     db = new PGlite();
     await db.exec(FIXTURE);
     await db.exec(MIGRATION);
+    await db.exec(SEND_TO_XERO);
   });
 
   after(async () => {
@@ -412,6 +417,54 @@ describe('xero integration migration', () => {
       await db.query("UPDATE public.customers SET email = 'changed@x.test'");
       await db.query("UPDATE public.customers SET status = 'Inactive'");
       assert.deepEqual(await jobs(), [{ entity: 'contact', entity_id: 'cust-linked', action: 'upsert', status: 'pending' }]);
+    });
+  });
+
+  describe('send to Xero', () => {
+    const send = (ids) => asRole('service_role', () =>
+      rows('SELECT public.xero_enqueue_invoices($1, $2::text[]) AS n', [COMPANY_A, ids]).then((r) => r[0].n));
+
+    test('the backfill queues every sent invoice not yet in Xero, and payments for paid ones', async () => {
+      await insertInvoice('OLD-SENT', { status: 'Sent' });
+      await insertInvoice('OLD-PAID', { status: 'Paid' });
+      await insertInvoice('OLD-DRAFT', { status: 'Draft' });
+      await insertInvoice('OLD-VOID', { status: 'Void' });
+      await insertInvoice('LINKED', { status: 'Sent' });
+      await insertInvoice('OTHER-CO', { status: 'Sent', companyId: COMPANY_B });
+      await asRole('service_role', () => db.query("UPDATE public.invoices SET xero_invoice_id = 'x-1' WHERE id = 'LINKED'"));
+
+      assert.equal(await send(null), 0, 'nothing is queued before Xero is connected');
+      await connect(COMPANY_A);
+      await db.exec('DELETE FROM public.xero_sync_jobs');
+
+      assert.equal(await send(null), 2);
+      assert.deepEqual(
+        (await jobs()).map((j) => `${j.entity_id}:${j.action}`).sort(),
+        ['OLD-PAID:pay', 'OLD-PAID:upsert', 'OLD-SENT:upsert']
+      );
+      assert.equal(await send(null), 2, 'running it again collapses into the pending jobs');
+      assert.equal((await jobs()).length, 3);
+    });
+
+    test('a named resend includes linked invoices but never drafts, voids or other companies', async () => {
+      await connect(COMPANY_A);
+      await insertInvoice('LINKED', { status: 'Sent' });
+      await insertInvoice('DRAFT', { status: 'Draft' });
+      await insertInvoice('OTHER-CO', { status: 'Sent', companyId: COMPANY_B });
+      await asRole('service_role', () => db.query(
+        "UPDATE public.invoices SET xero_invoice_id = 'x-1', xero_payment_ids = '{\"balance\":\"p\"}' WHERE id = 'LINKED'"
+      ));
+      await db.exec('DELETE FROM public.xero_sync_jobs');
+
+      assert.equal(await send(['LINKED', 'DRAFT', 'OTHER-CO', 'MISSING']), 1);
+      assert.deepEqual(await jobs(), [{ entity: 'invoice', entity_id: 'LINKED', action: 'upsert', status: 'pending' }]);
+      assert.deepEqual(await jobs(COMPANY_B), []);
+    });
+
+    test('client roles cannot call it', async () => {
+      await asUser(ADMIN_A, async () => {
+        await assert.rejects(() => db.query(`SELECT public.xero_enqueue_invoices('${COMPANY_A}', NULL)`), /permission denied/i);
+      });
     });
   });
 

@@ -12,7 +12,7 @@ import { parseExtraOrigins } from '../_shared/returnUrls.js'
 // `state` carries the company, the admin and where to send them back, so the
 // public callback can't be replayed into another company. Auth: admin.
 //
-// Request body: { "returnPath"? }   e.g. "/settings?tab=cost_centers"
+// Request body: { "returnPath"? }   e.g. "/settings?tab=accounting"
 // Response:     { "url": "https://login.xero.com/identity/connect/authorize?..." }
 //
 // Secrets: see _xero/edge.ts

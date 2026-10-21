@@ -265,7 +265,7 @@ export function buildInvoice(invoice, ctx = {}) {
   if (missing.length) {
     throw new MappingError(
       'no_account',
-      `No Xero sales account for: ${missing.join(', ')}. Set a default sales account in Settings → Cost Centers & Xero.`,
+      `No Xero sales account for: ${missing.join(', ')}. Set a default sales account in Settings → Accounting & Xero.`,
       { lines: missing }
     );
   }
@@ -386,7 +386,7 @@ export function buildPayments(invoice, ctx = {}) {
   return todo.map((p) => {
     const code = isStripe(p.method) ? settings.stripeAccountCode || settings.paymentAccountCode : settings.paymentAccountCode;
     if (!code) {
-      throw new MappingError('no_payment_account', 'Choose the Xero account payments are received into in Settings → Cost Centers & Xero.');
+      throw new MappingError('no_payment_account', 'Choose the Xero account payments are received into in Settings → Accounting & Xero.');
     }
     if (!p.date) throw new MappingError('no_payment_date', 'A payment has no date.');
     return {

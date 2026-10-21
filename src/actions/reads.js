@@ -538,8 +538,8 @@ defineAction({
     if (!status?.connected) {
       return {
         summary: status?.status === 'needs_reauth'
-          ? 'Xero needs reconnecting in Settings → Cost Centers & Xero; changes are queued until then.'
-          : 'Xero is not connected. An admin can connect it in Settings → Cost Centers & Xero.',
+          ? 'Xero needs reconnecting in Settings → Accounting & Xero; changes are queued until then.'
+          : 'Xero is not connected. An admin can connect it in Settings → Accounting & Xero.',
         connected: false,
         status: status?.status || 'disconnected',
       };

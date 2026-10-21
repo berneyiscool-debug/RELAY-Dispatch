@@ -68,14 +68,17 @@ Adds only what genuinely needs the internet:
   photos, manage compliance docs
 - Xero / Stripe, SMS & email automation. **Xero** is built but switched off in
   release builds until it has been tested against a live Xero organisation, so
-  **Cost Centers & Xero** still shows *Coming soon* there. In development builds it:
+  **Accounting & Xero** still shows *Coming soon* there. In development builds it:
   - connects one AUD Xero organisation
   - sends invoices to Xero when they go out, with each job's cost center coding
   - pushes payments recorded in RELAY, including Stripe payments
   - marks invoices paid in Xero as Paid in RELAY
   - shows each invoice's sync state on the invoice list and detail page
+  - lists what needs attention, with Fix/Retry and a **Send to Xero** backfill
 
   brny can answer "did INV-1042 go to Xero?". See `docs/XERO_SETUP.md`.
+- **Cost Centers** (Settings) is available to every account type. Invoices can
+  be exported from the invoice list as a Xero import file or a spreadsheet.
 
 ## How it works
 
@@ -576,7 +579,7 @@ sign-in owns everything on this device.
   Documents, reports and the Local Storage tools stay fully available.
 - Features that haven't shipped yet are greyed out for **every** account type with
   a plain *Coming soon* hint — clicking one explains itself instead of offering the
-  upgrade, because a cloud account wouldn't unlock it yet. Cost Centers & Xero is
+  upgrade, because a cloud account wouldn't unlock it yet. Accounting & Xero is
   gated that way in release builds while `FLAGS.xero` is off. With the flag on
   (development builds), it is a cloud-only tab like Online payments.
   Deep links to a gated tab land on Company rather than the unfinished page.

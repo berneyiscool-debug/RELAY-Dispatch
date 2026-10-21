@@ -46,7 +46,7 @@ export const CLOUD_ONLY_SETTINGS_TABS = {
   user_types: 'User Types & Permissions',
   password_recovery: 'Password Recovery',
   // Xero needs the cloud: the connection and every sync run server-side.
-  ...(FLAGS.xero ? { cost_centers: 'Cost Centers & Xero' } : {})
+  ...(FLAGS.xero ? { accounting: 'Accounting & Xero' } : {})
 };
 
 // Settings tabs that are greyed out for EVERY account type because the feature
@@ -55,9 +55,10 @@ export const CLOUD_ONLY_SETTINGS_TABS = {
 // "coming soon" explanation. Keyed by Settings tab id; the value is the label.
 export const COMING_SOON_TOOLTIP = 'Coming soon';
 
-// Cost Centers & Xero opens (as a cloud-only tab, above) once FLAGS.xero is on.
+// Accounting & Xero opens (as a cloud-only tab, above) once FLAGS.xero is on.
+// Cost centers don't depend on Xero and are open to every account.
 export const COMING_SOON_SETTINGS_TABS = {
-  ...(FLAGS.xero ? {} : { cost_centers: 'Cost Centers & Xero' })
+  ...(FLAGS.xero ? {} : { accounting: 'Accounting & Xero' })
 };
 
 const SUBMIT_LABEL = 'Continue to payment';

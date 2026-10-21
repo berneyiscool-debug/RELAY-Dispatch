@@ -1,8 +1,11 @@
 # Xero Integration — Setup
 
 Tenants connect **their own** Xero organisation (AUD only) from
-**Settings → Cost Centers & Xero**. The UI only appears when `FLAGS.xero` is on,
-which is dev builds only until the sync worker ships. It's a cloud-only tab.
+**Settings → Accounting & Xero**. The UI only appears when `FLAGS.xero` is on,
+which is dev builds only until it has been tested against a live org. It's a
+cloud-only tab. **Settings → Cost Centers** is a separate, plain tab for every
+account type (local too); each cost center can carry optional Xero account and
+tracking codes.
 Background: `XERO_INTEGRATION_RESEARCH.md`; build plan: `XERO_PHASE1_PLAN.md`.
 
 ## How it works (connect flow, built)
@@ -30,7 +33,8 @@ connection limit.
    - Copy the client id and generate a client secret.
    - Stay on the **Starter** tier (free, 5 connections) for building and pilot.
    - Connect the **Demo Company (AU)** for testing.
-2. **Apply the migration** `supabase/migrations/20261020090000_xero_integration.sql`.
+2. **Apply the migrations** `supabase/migrations/20261020090000_xero_integration.sql`
+   and `20261022090000_xero_send_to_xero.sql` (the "Send to Xero" backfill RPC).
 3. **Set the edge-function secrets:**
 
    | Secret | Value |
@@ -181,8 +185,12 @@ minute, does the read. A database error answers 500, so Xero redelivers later.
   - brny's `get_xero_sync` read answers "did INV-1042 go to Xero?" and "what's
     stuck?".
 - **Known gaps:**
-  - Invoices sent before Xero was connected show *Not in Xero*. There's no
-    backfill button yet.
+  - Invoices sent before Xero was connected show *Not in Xero* until someone
+    clicks **Send to Xero** (Accounting & Xero → Needs attention, or the invoice
+    list's bulk action). That queues them through `xero_enqueue_invoices`.
+  - The invoice list's **Export for accounting** downloads a Xero import file
+    (coded like the sync) or a plain spreadsheet. Xero imports can't record
+    payments, so paid invoices still need their payment entered in Xero.
   - Deleting an invoice in RELAY doesn't touch Xero.
   - Credit notes (negative totals) are refused with a message to raise them in
     Xero.

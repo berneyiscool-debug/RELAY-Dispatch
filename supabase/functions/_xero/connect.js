@@ -8,7 +8,9 @@
 
 import { PUBLIC_APP_BASE, fallbackAppBase, isAllowedReturnUrl } from '../_shared/returnUrls.js';
 
-export const SETTINGS_RETURN_PATH = '/settings?tab=cost_centers';
+// Old consents (and the callback's fallback before this change was deployed)
+// land on ?tab=cost_centers; Settings forwards a xero= outcome there to here.
+export const SETTINGS_RETURN_PATH = '/settings?tab=accounting';
 export const SUPPORTED_CURRENCY = 'AUD';
 
 /** Outcomes the callback reports back to Settings as ?xero=<outcome>. */

@@ -19,7 +19,7 @@ export const FLAGS = {
                                   //   "Payments configured & live" there, so turning this
                                   //   on can't surface a broken Pay Now (see payments.js).
   email:    true,                 // shipped — sends via RELAY's shared domain, zero setup
-  xero:     DEV,                  // in development — Settings → Cost Centers & Xero and the
+  xero:     DEV,                  // in development — Settings → Accounting & Xero and the
                                   //   connect flow. Dark in release builds until the sync
                                   //   worker ships (docs/XERO_PHASE1_PLAN.md).
 };

@@ -13,6 +13,7 @@ import {
   groupInvoiceJobs,
   xeroSyncBadgeHtml,
   xeroInvoiceUrl,
+  xeroAttention,
 } from './xero.js';
 import { escapeHTML } from './security.js';
 
@@ -168,5 +169,30 @@ describe('store mapping of Xero fields', () => {
     const cust = store.normalizeRecord({ id: 'c1', company: 'Acme', xero_contact_id: 'xc' }, 'customers');
     assert.equal(cust.xeroContactId, 'xc');
     assert.ok(!Object.keys(store.denormalizeRecord(cust, 'customers')).some((k) => /xero/i.test(k)));
+  });
+});
+
+describe('xeroAttention()', () => {
+  test('counts what is in Xero, lists failures with whether a setting fixes them, and counts the backfill', () => {
+    const invoices = [
+      { id: 'a', number: 'INV-A', status: 'Sent', total: 10, xeroInvoiceId: 'x1', xeroSyncedAt: '2026-10-20T01:00:00Z' },
+      { id: 'b', number: 'INV-B', status: 'Paid', total: 10, xeroInvoiceId: 'x2', xeroStatus: 'PAID', xeroSyncedAt: '2026-10-21T02:00:00Z' },
+      { id: 'c', number: 'INV-C', status: 'Sent', total: 10, xeroSyncError: 'No Xero sales account for: Call-out. Set a default sales account in Settings.' },
+      { id: 'd', number: 'INV-D', status: 'Sent', total: 10 },
+      { id: 'e', number: 'INV-E', status: 'Sent', total: 10 },
+      { id: 'f', number: 'INV-F', status: 'Draft', total: 10 },
+      { id: 'g', number: 'INV-G', status: 'Sent', total: 10 },
+    ];
+    const jobs = groupInvoiceJobs([
+      { id: 1, entity_id: 'e', status: 'failed', last_error: 'Invoice # must be unique.' },
+      { id: 2, entity_id: 'g', status: 'pending' },
+    ]);
+    const att = xeroAttention(invoices, jobs);
+    assert.equal(att.inXero, 2);
+    assert.equal(att.lastSyncedAt, '2026-10-21T02:00:00Z');
+    assert.equal(att.missing, 1); // INV-D; INV-G is queued, INV-F is a draft
+    assert.deepEqual(att.failed.map((f) => [f.number, f.needsSetting]), [['INV-C', true], ['INV-E', false]]);
+    assert.equal(att.failed[1].reason, 'Invoice # must be unique.');
+    assert.deepEqual(xeroAttention([], new Map()), { failed: [], missing: 0, inXero: 0, lastSyncedAt: null });
   });
 });
