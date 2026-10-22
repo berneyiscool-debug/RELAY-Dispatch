@@ -25,6 +25,7 @@ import { store } from '../data/store.js';
 import { todayLocalISO } from './dateUtils.js';
 import { getClockStatusForToday } from './timeClock.js';
 import { getExpectedRosterRowsForDay } from './expectedWorkRoster.js';
+import { getWorkRules } from './workRules.js';
 
 export const EXCEPTION = {
   OPEN_SESSION: 'open-session',
@@ -52,8 +53,20 @@ export function isBlocking(type) {
 // and nothing has to be unwound if the shift later happens after all. Real schedule
 // rows store that decision on the row; generated roster shifts use a separate
 // per-technician/day dismissal so the reusable template stays intact.
+//
+// People whose user type doesn't clock on are never expected on the clock, so they
+// are left out here: no missing hours, no lateness, never "not arrived".
 export function getRosterForDay(dateStr) {
   const byTech = new Map();
+  const techs = new Map((store.getAll('technicians') || []).map(t => [String(t.id), t]));
+  const clocksOn = new Map();
+  const expectedOnClock = (id) => {
+    if (!clocksOn.has(id)) {
+      const tech = techs.get(id);
+      clocksOn.set(id, !tech || getWorkRules(tech).clockOn);
+    }
+    return clocksOn.get(id);
+  };
   const scheduleRows = store.getAll('schedule') || [];
   scheduleRows.forEach(s => {
     if (!s.technicianId) return;
@@ -62,6 +75,7 @@ export function getRosterForDay(dateStr) {
     const day = s.date || (s.startTime ? todayLocalISO(new Date(s.startTime)) : null);
     if (day !== dateStr) return;
     const id = String(s.technicianId);
+    if (!expectedOnClock(id)) return;
     if (!byTech.has(id)) byTech.set(id, []);
     byTech.get(id).push(s);
   });
@@ -72,6 +86,7 @@ export function getRosterForDay(dateStr) {
   getExpectedRosterRowsForDay(store.getAll('expectedWorkRosters') || [], dateStr).forEach(row => {
     const key = `${row.expectedWorkRosterId}|${row.technicianId}|${row.date}`;
     if (dismissed.has(key)) return;
+    if (!expectedOnClock(String(row.technicianId))) return;
     if (!byTech.has(row.technicianId)) byTech.set(row.technicianId, []);
     byTech.get(row.technicianId).push(row);
   });

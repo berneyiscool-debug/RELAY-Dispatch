@@ -28,7 +28,6 @@ import {
   readHoursSource,
   setHoursSourceError
 } from '../../utils/invoiceLabour.js';
-import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';

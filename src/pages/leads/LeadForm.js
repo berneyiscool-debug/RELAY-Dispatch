@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { isCloudUser } from '../../utils/aiTier.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 import { LEAD_STAGES, leadStageBadge, leadDatePart, logLeadStageChange, notifyLeadOwner } from './leadStages.js';
 
 export function renderLeadForm(container, { id, origin }) {
@@ -44,6 +45,7 @@ export function renderLeadForm(container, { id, origin }) {
             <select class="form-select" name="customerId" required id="lead-customer-select">
               <option value="">Select customer...</option>
               ${customers.map(c => `<option value="${c.id}" ${lead.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+              ${newCustomerOptionHtml()}
             </select>
           </div>
           <div class="form-row">
@@ -152,6 +154,8 @@ export function renderLeadForm(container, { id, origin }) {
   `;
 
   const customerSelect = container.querySelector('#lead-customer-select');
+  // "+ New customer" adds a missing customer without leaving the lead.
+  wireNewCustomerOption(customerSelect, { customers });
   customerSelect.addEventListener('change', () => {
     const selectedId = customerSelect.value;
     const cust = customers.find(c => c.id === selectedId);

@@ -18,6 +18,7 @@ import { customerForDocument, savedCustomerPortalUrl } from '../../utils/portalL
 import { getActiveClock, getClockStatusForToday, getBreakState, endShiftFromBreak, formatDuration, clockIn, clockOut } from '../../utils/timeClock.js';
 import { initTimeOnlyClockPicker } from '../../utils/clockPicker.js';
 import { getNotArrived, getRosterForDay } from '../../utils/payrollExceptions.js';
+import { getWorkRules } from '../../utils/workRules.js';
 import {
   EXPECTED_ROSTER_DAYS,
   MAX_EXPECTED_ROSTER_REPEAT_WEEKS,
@@ -243,6 +244,11 @@ export function renderScheduleView(container) {
   let technicians = getTechnicians();
   // jobs read fresh each render — do NOT cache here
 
+  // Work rules from each person's user type: who gets a Schedule column and can be
+  // booked onto work, and who is on the clock (attendance panel, Clock In button).
+  const canBeScheduled = (t) => getWorkRules(t).schedulable;
+  const clocksOn = (t) => getWorkRules(t).clockOn;
+
   // Role-based access: read who is logged in
   // Demo mode always represents the business owner, regardless of the role on
   // the real account that entered the isolated demo session.
@@ -274,7 +280,7 @@ export function renderScheduleView(container) {
     visibleTechIds = new Set(savedVisibleTechs);
   } else if (store.demoMode) {
     // The demo opens on the whole crew so the week reads as a team at work.
-    visibleTechIds = new Set(technicians.filter(t => t.fieldStaff !== false).map(t => t.id));
+    visibleTechIds = new Set(technicians.filter(canBeScheduled).map(t => t.id));
   } else if (currentUser.id) {
     visibleTechIds = new Set([currentUser.id]);
   } else {
@@ -1528,15 +1534,16 @@ export function renderScheduleView(container) {
       saveScroll();
       technicians = getTechnicians();
 
-      // Clean up visibleTechIds to only include active/real technicians
-      const activeTechIds = new Set(technicians.map(t => t.id));
+      // Clean up visibleTechIds to only include active technicians who can be scheduled
+      const scheduledTechs = technicians.filter(canBeScheduled);
+      const activeTechIds = new Set(scheduledTechs.map(t => t.id));
       for (const id of visibleTechIds) {
         if (!activeTechIds.has(id)) {
           visibleTechIds.delete(id);
         }
       }
-      if (visibleTechIds.size === 0 && technicians.length > 0) {
-        technicians.forEach(t => visibleTechIds.add(t.id));
+      if (visibleTechIds.size === 0 && scheduledTechs.length > 0) {
+        scheduledTechs.forEach(t => visibleTechIds.add(t.id));
       }
 
       const days = getWeekDays();
@@ -1579,17 +1586,21 @@ export function renderScheduleView(container) {
           </div>`;
       }).join('');
 
-    // Clock in/out attendance state for the current user.
+    // Clock in/out attendance state for the current user. Someone whose user type
+    // doesn't clock on gets no Clock In button (unless a session is already running).
     const activeClock = getActiveClock(currentUser.id);
     const isClockedIn = !!activeClock;
     const breakState = getBreakState(currentUser.id);
     const isOnBreak = breakState.onBreak;
+    const myRecord = technicians.find(t => String(t.id) === String(currentUser.id)) || currentUser;
+    const showTimeClock = clocksOn(myRecord) || isClockedIn || isOnBreak;
 
     // Attendance for the side panel. Derived from `technicians` (already scoped to the
     // company) rather than scanning the timeClocks collection globally, so it can't
     // leak between companies. Currently clocked-in crew are ordered by arrival time.
     const today = todayLocalISO();
     const attendance = technicians
+      .filter(clocksOn)
       .map(tech => ({ tech, clock: getClockStatusForToday(tech.id), state: getBreakState(tech.id) }));
     const clockedIn = attendance
       .filter(p => p.clock.status === 'in')
@@ -1635,7 +1646,7 @@ export function renderScheduleView(container) {
             ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${escapeHTML(currentUser.name)}</span>`}
           </div>
           <div class="flex gap-sm items-center" data-breadcrumb-center>
-            ${isOnBreak ? `
+            ${!showTimeClock ? '' : isOnBreak ? `
               <button class="btn btn-success" id="btn-finish-break" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px;">play_arrow</span>
                 <span>Finish Break</span>
@@ -1717,7 +1728,7 @@ export function renderScheduleView(container) {
                     ${expectedWorkRosters.map(roster => `<option value="${escapeHTML(String(roster.id))}" ${String(roster.id) === techFilterRosterId ? 'selected' : ''}>${escapeHTML(roster.name || 'Unnamed roster')}</option>`).join('')}
                   </select>
                   <div class="tech-filter-staff-list" style="max-height:220px;overflow-y:auto;">
-                    ${technicians.map(t => `
+                    ${technicians.filter(canBeScheduled).map(t => `
                       <label class="tech-filter-staff-row" data-tech-filter-id="${escapeHTML(String(t.id))}" data-tech-filter-name="${escapeHTML(String(t.name || '').toLocaleLowerCase())}" style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer; padding:4px 0;">
                         <input type="checkbox" class="tech-visibility-checkbox" value="${escapeHTML(String(t.id))}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
                         <div style="width:10px; height:10px; border-radius:50%; background:${escapeHTML(t.color)};flex-shrink:0;"></div>
@@ -2380,7 +2391,7 @@ export function renderScheduleView(container) {
 
   function handleAddJobSchedule() {
     const activeJobs = getUnscheduledJobs();
-    const technicians = getTechnicians();
+    const technicians = getTechnicians().filter(canBeScheduled);
 
     if (activeJobs.length === 0) {
       showToast('No active jobs available.', 'info');

@@ -8,6 +8,7 @@ import { activityFromRow, activityToRow } from './activityRecord.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 import { isDemoSession } from '../utils/demoSession.js';
+import { defaultWorkRules, withWorkRules } from '../utils/workRules.js';
 
 // Demo mode runs under this pseudo local account, so every "is this a cloud
 // company?" check in the app answers no and cloud features stay switched off.
@@ -832,7 +833,12 @@ class DataStore {
 
     Object.keys(TABLE_MAP).forEach(col => { this.cache[col] = []; });
     Object.entries(collections).forEach(([col, items]) => { this.cache[col] = items; });
-    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({ ...ut, id: `${scope}${ut.id}` }));
+    // Demo types carry the same Time & Attendance defaults a new account starts with.
+    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({
+      ...ut,
+      id: `${scope}${ut.id}`,
+      permissions: withWorkRules(ut.permissions, defaultWorkRules(ut.name)),
+    }));
     this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
     this.companySettings = settings;
 
@@ -1520,6 +1526,15 @@ class DataStore {
     }
 
     // 2. Standard Browser File System Access API
+    return URL.createObjectURL(await this.readLocalDocumentFile(doc));
+  }
+
+  /**
+   * The File behind a document stored in the synced local folder (a relative
+   * `dir/file` url). Callers that need the bytes use this rather than the blob:
+   * URL from getDocumentUrl, which the CSP's connect-src does not let fetch() read.
+   */
+  async readLocalDocumentFile(doc) {
     if (!this.dirHandle) {
       throw new Error('Local directory sync is not configured.');
     }
@@ -1536,8 +1551,7 @@ class DataStore {
 
       const dir = await this.dirHandle.getDirectoryHandle(dirName);
       const fileHandle = await dir.getFileHandle(fileName);
-      const file = await fileHandle.getFile();
-      return URL.createObjectURL(file);
+      return await fileHandle.getFile();
     } catch (err) {
       console.error('Failed to read file from local directory:', err);
       throw err;
@@ -3930,11 +3944,11 @@ class DataStore {
       jobTypes: ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance', 'Service', 'Project', 'Maintenance', 'Quote'],
       supplierCategories: ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'],
       laborRates: [
-        { id: 'rate_1', name: 'Standard Rate',    rate: 85.00,  description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], isDefault: true  },
-        { id: 'rate_2', name: 'After Hours Rate', rate: 127.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 45, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,34,35,36,37,38,39,40,41,42,43,44,45,46,47], isDefault: false },
-        { id: 'rate_3', name: 'Saturday Rate',    rate: 127.50, description: 'Saturday work',                   overtimeMultiplier: 1.5,  minCallOutFee: 65, applicableDays: ['Sat'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
-        { id: 'rate_4', name: 'Sunday Rate',      rate: 170.00, description: 'Sunday and public holidays',       overtimeMultiplier: 2.0,  minCallOutFee: 85, applicableDays: ['Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
-        { id: 'rate_5', name: 'Emergency Rate',   rate: 195.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
+        { id: 'rate_1', name: 'Standard Rate',    rate: 85.00,  description: 'Normal business hours Mon–Fri', minCallOutFee: 0, isDefault: true  },
+        { id: 'rate_2', name: 'After Hours Rate', rate: 127.50, description: 'Evenings and early mornings',      minCallOutFee: 45, isDefault: false },
+        { id: 'rate_3', name: 'Saturday Rate',    rate: 127.50, description: 'Saturday work',                   minCallOutFee: 65, isDefault: false },
+        { id: 'rate_4', name: 'Sunday Rate',      rate: 170.00, description: 'Sunday and public holidays',       minCallOutFee: 85, isDefault: false },
+        { id: 'rate_5', name: 'Emergency Rate',   rate: 195.00, description: 'Urgent call-outs any day',        minCallOutFee: 120, isDefault: false },
       ],
       documentTheme: {
         preset: 'relay',
@@ -4280,6 +4294,9 @@ class DataStore {
         })
       }
     ];
+    // Each type starts with its Time & Attendance rules (who clocks on, books job
+    // time and is scheduled), editable on the type afterwards.
+    userTypes.forEach(ut => { ut.permissions = withWorkRules(ut.permissions, defaultWorkRules(ut.name)); });
 
     this.cache.userTypes = userTypes;
     this.emit('userTypes', userTypes);
