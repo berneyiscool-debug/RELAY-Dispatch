@@ -10,6 +10,7 @@ import { renderStorageOptions } from '../components/StorageOptions.js';
 import { usageBarsHtml, refreshUsageBars } from '../components/UsageBars.js';
 import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
+import { WORK_RULES, defaultWorkRules, workRulesForType, workRulesFromPermissions, withWorkRules } from '../utils/workRules.js';
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
@@ -1126,6 +1127,7 @@ export function renderSettings(container) {
 
   function openUserTypeModal(editId = null) {
     let ut = editId ? store.getById('userTypes', editId) : { name: '', description: '', template: 'Admin' };
+    const startRules = editId ? workRulesForType(ut) : defaultWorkRules('Admin');
     const contentDiv = document.createElement('div');
     contentDiv.innerHTML = `
         ${!editId ? `
@@ -1151,10 +1153,30 @@ export function renderSettings(container) {
           <label class="form-label">Description</label>
           <input class="form-input" id="ut-desc" value="${escapeHTML(ut.description)}" />
         </div>
+        <div class="form-group ut-work-rules">
+          <label class="form-label">Time &amp; Attendance</label>
+          ${WORK_RULES.map(({ key, label, hint }) => `
+            <label class="ut-work-rule">
+              <input type="checkbox" class="ut-work-rule-input" data-rule="${key}" ${startRules[key] ? 'checked' : ''} />
+              <span><strong>${label}</strong><small>${hint}</small></span>
+            </label>`).join('')}
+        </div>
     `;
+
+    const ruleInputs = () => contentDiv.querySelectorAll('.ut-work-rule-input');
+    const readRules = () => {
+      const rules = {};
+      ruleInputs().forEach(input => { rules[input.dataset.rule] = input.checked; });
+      return rules;
+    };
 
     const templateSelect = contentDiv.querySelector('#ut-template');
     const customEditBtn = contentDiv.querySelector('#ut-custom-edit-perms');
+    // A template sets the starting rules as well as the permissions.
+    templateSelect?.addEventListener('change', (e) => {
+      const rules = defaultWorkRules(e.target.value);
+      ruleInputs().forEach(input => { input.checked = !!rules[input.dataset.rule]; });
+    });
 
     if (templateSelect && customEditBtn) {
       templateSelect.addEventListener('change', (e) => {
@@ -1173,7 +1195,7 @@ export function renderSettings(container) {
            return;
          }
          
-         const perms = buildGranularPerms(() => false);
+         const perms = withWorkRules(buildGranularPerms(() => false), readRules());
          const newUt = store.create('userTypes', { name, description: desc, permissions: perms });
          
          document.getElementById('modal-close-btn')?.click();
@@ -1194,7 +1216,7 @@ export function renderSettings(container) {
           if (!name) { showToast('Name required', 'error'); return; }
           
           if (editId) {
-            store.update('userTypes', editId, { name, description: desc });
+            store.update('userTypes', editId, { name, description: desc, permissions: withWorkRules(ut.permissions, readRules()) });
           } else {
             const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Assets', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
             let perms = [];
@@ -1218,7 +1240,7 @@ export function renderSettings(container) {
             });
             else perms = buildGranularPerms(() => false);
 
-            store.create('userTypes', { name, description: desc, permissions: perms });
+            store.create('userTypes', { name, description: desc, permissions: withWorkRules(perms, readRules()) });
           }
           showToast('User Type saved', 'success');
           renderContent();
@@ -1314,7 +1336,9 @@ export function renderSettings(container) {
             });
             return obj;
           });
-          store.update('userTypes', id, { permissions: newPerms });
+          // The Time & Attendance rules are edited on the type itself; keep them.
+          const keptRules = workRulesFromPermissions(ut.permissions);
+          store.update('userTypes', id, { permissions: keptRules ? withWorkRules(newPerms, keptRules) : newPerms });
           showToast('Permissions updated successfully', 'success');
           renderContent();
           c();

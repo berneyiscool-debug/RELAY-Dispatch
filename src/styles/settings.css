@@ -365,3 +365,49 @@
     color: var(--text-secondary);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   11 · User type dialog — Time & Attendance rules
+   Rendered in a modal (outside #settings-content), so scoped by class.
+   --------------------------------------------------------------------------- */
+.ut-work-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ut-work-rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  cursor: pointer;
+}
+
+.ut-work-rule:hover {
+  background: var(--bg-color);
+}
+
+.ut-work-rule input {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ut-work-rule strong {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ut-work-rule small {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}

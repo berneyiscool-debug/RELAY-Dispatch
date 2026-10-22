@@ -8,6 +8,7 @@ import { activityFromRow, activityToRow } from './activityRecord.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 import { isDemoSession } from '../utils/demoSession.js';
+import { defaultWorkRules, withWorkRules } from '../utils/workRules.js';
 
 // Demo mode runs under this pseudo local account, so every "is this a cloud
 // company?" check in the app answers no and cloud features stay switched off.
@@ -832,7 +833,12 @@ class DataStore {
 
     Object.keys(TABLE_MAP).forEach(col => { this.cache[col] = []; });
     Object.entries(collections).forEach(([col, items]) => { this.cache[col] = items; });
-    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({ ...ut, id: `${scope}${ut.id}` }));
+    // Demo types carry the same Time & Attendance defaults a new account starts with.
+    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({
+      ...ut,
+      id: `${scope}${ut.id}`,
+      permissions: withWorkRules(ut.permissions, defaultWorkRules(ut.name)),
+    }));
     this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
     this.companySettings = settings;
 
@@ -4288,6 +4294,9 @@ class DataStore {
         })
       }
     ];
+    // Each type starts with its Time & Attendance rules (who clocks on, books job
+    // time and is scheduled), editable on the type afterwards.
+    userTypes.forEach(ut => { ut.permissions = withWorkRules(ut.permissions, defaultWorkRules(ut.name)); });
 
     this.cache.userTypes = userTypes;
     this.emit('userTypes', userTypes);
