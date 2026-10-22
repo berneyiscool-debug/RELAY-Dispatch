@@ -63,9 +63,8 @@ const pick = (collection, filter, sort) => `
 const SHOTS = [
   ['dashboard', '#/', null, DASHBOARD],
   ['schedule', '#/schedule', null, SCHEDULE],
-  ['job', pick('jobs', "(j) => j.status === 'In Progress' && j.quoteId", '(a, b) => (b.estimatedHours || 0) - (a.estimatedHours || 0)'), '#/jobs/{id}?tab=financials'],
   ['quote', pick('quotes', "(q) => q.status === 'Sent'", '(a, b) => b.total - a.total'), '#/quotes/{id}'],
-  ['reports', '#/reports'],
+  ['invoice', pick('invoices', "(i) => i.status === 'Overdue'", '(a, b) => b.total - a.total'), '#/invoices/{id}'],
 ];
 
 // The demo is dated relative to the day it loads (src/data/demoDataset.js), so
@@ -102,6 +101,35 @@ const TIDY = `
   document.getElementById('relay-demo-banner')?.remove();
   document.activeElement?.blur();
 `;
+
+// Each sidebar tab, named after its feature-page id (scripts/build-feature-pages.mjs).
+const TABS = [
+  ['dashboard', '#/'],
+  ['schedule', '#/schedule'],
+  ['notifications', '#/notifications'],
+  ['leads', '#/leads'],
+  ['quotes', '#/quotes'],
+  ['jobs', '#/jobs'],
+  ['invoices', '#/invoices'],
+  ['recurring-templates', '#/recurring-templates'],
+  ['projects', '#/projects'],
+  ['customers', '#/people'],
+  ['contractors', '#/contractors'],
+  ['suppliers', '#/suppliers'],
+  ['assets', '#/assets'],
+  ['stock', '#/stock'],
+  ['purchase-orders', '#/purchase-orders'],
+  ['time-tracking', '#/timesheets'],
+  ['documents', '#/documents'],
+  ['reports', '#/reports'],
+  ['settings', '#/settings'],
+];
+
+// Where the main content starts, in CSS pixels, so the crop drops the sidebar.
+const CROP_LEFT = `(() => {
+  const main = document.getElementById('main-content');
+  return main ? Math.round(main.getBoundingClientRect().left) : 0;
+})()`;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -164,6 +192,30 @@ app.whenReady().then(async () => {
       const file = path.join(OUT_DIR, `${name}${suffix}.webp`);
       writeFileSync(file, Buffer.from(data, 'base64'));
       console.log(`${path.relative(process.cwd(), file)}  (${width}w)`);
+    }
+  }
+
+  // One cropped shot per sidebar tab for the feature pages. The crop starts at
+  // the left edge of the main content, so the sidebar and any submenu are out.
+  const TAB_DIR = path.join(OUT_DIR, 'tabs');
+  mkdirSync(TAB_DIR, { recursive: true });
+  for (const [name, hash] of TABS) {
+    await win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`);
+    await wait(2500);
+    await win.webContents.executeJavaScript(`document.fonts.ready.then(() => { ${TIDY} })`);
+    await wait(800);
+
+    const left = await win.webContents.executeJavaScript(CROP_LEFT);
+    const cropWidth = WIDTH - left;
+    for (const [width, suffix] of SIZES) {
+      const { data } = await cdp.sendCommand('Page.captureScreenshot', {
+        format: 'webp',
+        quality: QUALITY,
+        clip: { x: left, y: 0, width: cropWidth, height: HEIGHT, scale: width / (cropWidth * SCALE) },
+      });
+      const file = path.join(TAB_DIR, `${name}${suffix}.webp`);
+      writeFileSync(file, Buffer.from(data, 'base64'));
+      console.log(`${path.relative(process.cwd(), file)}  (${width}w, crop from x=${left})`);
     }
   }
 
