@@ -14,6 +14,8 @@ import {
   xeroSyncBadgeHtml,
   xeroInvoiceUrl,
   xeroAttention,
+  saveXeroDefaults,
+  costCenterTrackingPlan,
 } from './xero.js';
 import { escapeHTML } from './security.js';
 
@@ -68,6 +70,50 @@ describe('normaliseXeroDefaults()', () => {
     assert.throws(() => normaliseXeroDefaults({ defaultDueDays: '-1' }), /whole number/);
     assert.throws(() => normaliseXeroDefaults({ defaultDueDays: '400' }), /whole number/);
     assert.deepEqual(normaliseXeroDefaults({ defaultDueDays: '0' }), { defaultDueDays: 0 });
+  });
+
+  test('cost center tracking is on unless switched off; the category name is tidied', () => {
+    assert.deepEqual(normaliseXeroDefaults({ trackCostCenters: true, trackingCategoryName: '  Trade   Type ' }), { trackingCategoryName: 'Trade Type' });
+    assert.deepEqual(normaliseXeroDefaults({ trackCostCenters: false, trackingCategoryName: '' }), { trackCostCenters: false });
+  });
+});
+
+describe('saveXeroDefaults()', () => {
+  const original = { get: store.getSettings, save: store.saveSettings };
+  afterEach(() => { store.getSettings = original.get; store.saveSettings = original.save; });
+
+  test('the two Settings cards save their own fields without wiping each other\'s', async () => {
+    let saved = { xero: { defaultSalesAccountCode: '200', trackingCategoryName: 'Trade' } };
+    store.getSettings = () => structuredClone(saved);
+    store.saveSettings = async (s) => { saved = s; };
+    await saveXeroDefaults({ paymentAccountCode: '090' });
+    assert.deepEqual(saved.xero, { defaultSalesAccountCode: '200', paymentAccountCode: '090', trackingCategoryName: 'Trade' });
+    await saveXeroDefaults({ trackingCategoryName: '', trackCostCenters: false });
+    assert.deepEqual(saved.xero, { defaultSalesAccountCode: '200', paymentAccountCode: '090', trackCostCenters: false });
+  });
+});
+
+describe('costCenterTrackingPlan()', () => {
+  const centers = [
+    { id: 'a', name: 'Plumbing' },
+    { id: 'b', name: 'Gas Fitting' },
+    { id: 'c', name: 'plumbing' },
+    { id: 'd', name: 'Roofing', xeroTrackingCategoryName: 'Region', xeroTrackingOptionName: 'North' },
+  ];
+  const xeroCategories = [{ name: 'Cost Center', options: ['PLUMBING'] }, { name: 'Region', options: ['North'] }];
+
+  test('shows Xero\'s spelling for what exists and what RELAY will add', () => {
+    const plan = costCenterTrackingPlan(centers, {}, xeroCategories);
+    assert.deepEqual(plan.map((p) => [p.id, p.state, p.option]), [
+      ['a', 'in_xero', 'PLUMBING'], ['b', 'will_create', 'Gas Fitting'], ['c', 'in_xero', 'PLUMBING'], ['d', 'in_xero', 'North'],
+    ]);
+    assert.deepEqual(plan.filter((p) => p.collision).map((p) => p.id), ['a', 'c']);
+    assert.equal(plan[3].source, 'override');
+  });
+
+  test('a read-only connection needs a reconnect for anything missing; switched off shows off', () => {
+    assert.equal(costCenterTrackingPlan(centers, {}, xeroCategories, { writable: false })[1].needsReconnect, true);
+    assert.equal(costCenterTrackingPlan(centers, { trackCostCenters: false }, xeroCategories)[0].state, 'off');
   });
 });
 

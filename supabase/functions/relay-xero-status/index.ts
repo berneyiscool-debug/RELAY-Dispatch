@@ -5,6 +5,8 @@ import {
 } from '../_xero/edge.ts'
 import { XeroError } from '../_xero/client.js'
 import { grantedTenants, statusPayload, summariseSettings } from '../_xero/connect.js'
+import { canEditTracking, ensureTracking } from '../_xero/tracking.js'
+import { saveTrackingLinks } from '../_xero/worker.js'
 
 // ============================================
 // RELAY — XERO STATUS / MANAGE
@@ -20,8 +22,11 @@ import { grantedTenants, statusPayload, summariseSettings } from '../_xero/conne
 //   { retry: <jobId>|"all" } → requeue failed sync jobs
 //   { push: "missing"|[ids] } → "Send to Xero": every sent invoice not yet in
 //                               Xero, or the named invoices (resend)
+//   { syncTracking: true }   → match every active cost center to its Xero
+//                               tracking option, creating what's missing
 // Response: the status payload ({ connected, status, tenantName, ... }), plus
-//   `settings` for { accounts }, `requeued` for { retry }, `queued` for { push }.
+//   `settings` for { accounts }, `requeued` for { retry }, `queued` for { push },
+//   `tracking` (per cost center) for { syncTracking }.
 //
 // Secrets: see _xero/edge.ts
 
@@ -30,7 +35,7 @@ serve(handle('relay-xero-status', async (req) => {
   const env = xeroEnv()
   const admin = adminClient()
   const body = await req.json().catch(() => ({}))
-  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry || body.push)
+  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry || body.push || body.syncTracking)
   const caller = await requireUser(req, admin, { adminOnly: changes })
   const companyId = caller.companyId
 
@@ -79,6 +84,28 @@ serve(handle('relay-xero-status', async (req) => {
     const { data, error } = await admin.rpc('xero_enqueue_invoices', { p_company_id: companyId, p_invoice_ids: ids })
     if (error) throw new Error(`Could not queue invoices: ${error.message}`)
     return json({ ...(await status(admin, env, row)), queued: data || 0 })
+  }
+
+  if (body.syncTracking) {
+    if (row?.status !== 'active') throw new HttpError(409, 'Connect Xero first.')
+    const [{ data: centers, error: ccError }, { data: company, error: coError }] = await Promise.all([
+      admin.from('cost_centers').select('*').eq('company_id', companyId).eq('active', true),
+      admin.from('companies').select('settings').eq('id', companyId).maybeSingle(),
+    ])
+    if (ccError || coError) throw new Error(`Could not read cost centers: ${(ccError || coError).message}`)
+    const settings = company?.settings?.xero && typeof company.settings.xero === 'object' ? company.settings.xero : {}
+    const client = clientFor(admin, env, companyId, row.tenant_id, await decryptTokens(row, env.tokenKey))
+    const results = await ensureTracking({ xero: client, costCenters: centers || [], settings, canEdit: canEditTracking(row.scopes) })
+    await saveTrackingLinks(centers || [], results, {
+      updateCostCenter: async (id: string, fields: Record<string, unknown>) => {
+        const { error } = await admin.from('cost_centers').update(fields).eq('id', id)
+        if (error) throw new Error(`Could not save the Xero tracking link: ${error.message}`)
+      },
+    })
+    return json({
+      ...(await status(admin, env, row)),
+      tracking: [...results.entries()].map(([costCenterId, r]) => ({ costCenterId, action: r.action, message: r.message || null, tracking: r.tracking || null })),
+    })
   }
 
   if (body.retry) {

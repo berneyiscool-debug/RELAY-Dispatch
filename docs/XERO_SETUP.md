@@ -4,8 +4,19 @@ Tenants connect **their own** Xero organisation (AUD only) from
 **Settings → Accounting & Xero**. The UI only appears when `FLAGS.xero` is on,
 which is dev builds only until it has been tested against a live org. It's a
 cloud-only tab. **Settings → Cost Centers** is a separate, plain tab for every
-account type (local too); each cost center can carry optional Xero account and
-tracking codes.
+account type (local too); each cost center can carry an optional Xero account.
+
+**Cost centers are Xero tracking options.** Every cost center becomes an option
+with the same name in one tracking category ("Cost Center" unless the company
+picks another on the Accounting page). The worker creates the category and any
+missing option before the invoice that needs it, matches existing ones whatever
+the case (using Xero's spelling), renames the option when the cost center is
+renamed (it remembers `cost_centers.xero_tracking_option_id`), and restores an
+archived option. A cost center can point at another existing option instead.
+Xero's limits (two active categories, 100 options) are reported, never forced;
+an invoice whose tracking can't be set still goes, untagged, with a note.
+"Match with Xero now" (relay-xero-status `{ syncTracking }`) does it all up front.
+Logic: `supabase/functions/_xero/tracking.js`.
 Background: `XERO_INTEGRATION_RESEARCH.md`; build plan: `XERO_PHASE1_PLAN.md`.
 
 ## How it works (connect flow, built)
@@ -34,7 +45,11 @@ connection limit.
    - Stay on the **Starter** tier (free, 5 connections) for building and pilot.
    - Connect the **Demo Company (AU)** for testing.
 2. **Apply the migrations** `supabase/migrations/20261020090000_xero_integration.sql`
-   and `20261022090000_xero_send_to_xero.sql` (the "Send to Xero" backfill RPC).
+   `20261022090000_xero_send_to_xero.sql` (the "Send to Xero" backfill RPC) and
+   `20261023090000_xero_tracking_options.sql` (cost center → Xero option link).
+   Scopes now include `accounting.settings` (write) so RELAY can create tracking.
+   Connections made with the old `accounting.settings.read` keep working but can
+   only match existing tracking; the Accounting page asks an admin to reconnect.
 3. **Set the edge-function secrets:**
 
    | Secret | Value |

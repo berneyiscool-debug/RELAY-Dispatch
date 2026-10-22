@@ -33,6 +33,7 @@ import {
   reconcileTotals,
   whereString,
 } from './mapping.js';
+import { ensureTracking } from './tracking.js';
 
 export const WORKER_ACTIONS = Object.freeze(['upsert', 'void', 'pay', 'refresh']);
 export const MAX_ATTEMPTS = 6;
@@ -138,10 +139,13 @@ async function invoiceUpsert(job, deps) {
       if (existing) invoice.xero_invoice_id = existing.InvoiceID;
     }
 
+    const tracked = await resolveTracking(jobs, costCenters, settings, deps);
+
     const { payload, warnings } = buildInvoice(invoice, {
-      contactId, jobs, costCenters, settings, timeZone: deps.timeZone,
+      contactId, jobs, costCenters, settings, tracking: tracked.results, timeZone: deps.timeZone,
       sourceUrl: invoiceSourceUrl(invoice.id, deps.appBase),
     });
+    warnings.push(...tracked.warnings);
     const { data } = await xero.request('POST', '/Invoices', {
       body: { Invoices: [payload] },
       query: INVOICE_QUERY,
@@ -271,6 +275,42 @@ async function xeroInvoiceRefresh(job, { db, xero }) {
   return relayId ? { status: 'done' } : { status: 'skipped', note: 'Not a RELAY invoice.' };
 }
 
+/**
+ * The Xero tracking for the cost centers on an invoice's jobs, creating what's
+ * missing (tracking.js). A cost center Xero can't take tracking for is sent
+ * without it and noted on the job rather than holding the invoice back; the
+ * Accounting page lists those problems.
+ */
+export async function resolveTracking(jobs, costCenters, settings, deps) {
+  const ids = new Set(jobs.map((j) => j.cost_center_id).filter(Boolean).map(String));
+  const needed = costCenters.filter((cc) => ids.has(String(cc.id)));
+  if (!needed.length) return { results: new Map(), warnings: [] };
+  deps.trackingCache ||= {};
+  let results;
+  try {
+    results = await ensureTracking({
+      xero: deps.xero, costCenters: needed, settings, canEdit: deps.xero.canEditTracking === true, cache: deps.trackingCache,
+    });
+  } catch (err) {
+    if (!(err instanceof XeroError && err.kind === 'validation')) throw err;
+    return { results: new Map(), warnings: [`Sent without tracking: ${err.message}`] };
+  }
+  await saveTrackingLinks(needed, results, deps.db);
+  const warnings = [...results.values()].filter((r) => r.action === 'problem').map((r) => `Sent without tracking: ${r.message}`);
+  return { results, warnings };
+}
+
+/** Remember which Xero option each cost center is, so a rename follows it. */
+export async function saveTrackingLinks(costCenters, results, db) {
+  for (const cc of costCenters) {
+    const optionId = results.get(String(cc.id))?.optionId;
+    if (optionId && optionId !== cc.xero_tracking_option_id) {
+      await db.updateCostCenter(cc.id, { xero_tracking_option_id: optionId });
+      cc.xero_tracking_option_id = optionId;
+    }
+  }
+}
+
 // Only permanent problems are shown on the invoice; a transient blip that the
 // next retry fixes shouldn't flash an error badge.
 async function recordInvoiceError(invoice, err, { db }) {
@@ -368,7 +408,8 @@ export async function runJobs({
       await release(companyJobs, 600, 'Xero is not connected.');
       return;
     }
-    const deps = { db, xero, now, timeZone, appBase };
+    // trackingCache: one tracking-category read per company per run.
+    const deps = { db, xero, now, timeZone, appBase, trackingCache: {} };
 
     for (let i = 0; i < companyJobs.length; i++) {
       const job = companyJobs[i];

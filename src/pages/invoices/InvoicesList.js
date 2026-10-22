@@ -422,7 +422,7 @@ function openAccountingExport(list) {
       <legend class="form-label">Format</legend>
       <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
         <input type="radio" name="export-format" value="xero" checked style="margin-top:3px;" />
-        <span><strong>Xero import file</strong><br><span style="color:var(--text-secondary);font-size:13px;">One row per line, coded with your accounts and tracking. Xero imports them as awaiting payment, so payments aren't included.</span></span>
+        <span><strong>Xero import file</strong><br><span style="color:var(--text-secondary);font-size:13px;">One row per line, coded with your accounts and tagged with each job's cost center as a Xero tracking option. Xero imports them as awaiting payment, so payments aren't included. The tracking options must already exist in Xero; when Xero is connected, RELAY adds them for you.</span></span>
       </label>
       <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
         <input type="radio" name="export-format" value="plain" style="margin-top:3px;" />

@@ -16,7 +16,8 @@ import { router } from '../router.js';
 import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
-import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync } from '../utils/xero.js';
+import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan } from '../utils/xero.js';
+import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
@@ -4447,7 +4448,7 @@ export function renderSettings(container) {
                           <div style="line-height:1.4">
                             ${cc.xeroSalesAccountCode ? `<div><span class="text-tertiary">Sales:</span> <strong>${escapeHTML(cc.xeroSalesAccountCode)}</strong></div>` : ''}
                             ${cc.xeroExpenseAccountCode ? `<div><span class="text-tertiary">Expenses:</span> <strong>${escapeHTML(cc.xeroExpenseAccountCode)}</strong></div>` : ''}
-                            ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}: ${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
+                            ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || xeroSettings().trackingCategoryName || DEFAULT_TRACKING_CATEGORY)} › ${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
                           </div>
                         ` : '<span class="text-tertiary">Uses the defaults</span>'}
                       </td>
@@ -4498,9 +4499,10 @@ export function renderSettings(container) {
         active: true,
         xeroSalesAccountCode: '',
         xeroExpenseAccountCode: '',
-        xeroTrackingCategoryName: 'Department',
+        xeroTrackingCategoryName: '',
         xeroTrackingOptionName: ''
       };
+      const defaultCategory = xeroSettings().trackingCategoryName || DEFAULT_TRACKING_CATEGORY;
       const contentDiv = document.createElement('div');
       contentDiv.innerHTML = `
         <div class="form-group" style="margin-bottom:16px">
@@ -4516,7 +4518,7 @@ export function renderSettings(container) {
           <legend style="padding: 0 6px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 4px; margin: 0">
             <span class="material-icons-outlined" style="font-size:15px" aria-hidden="true">account_balance_wallet</span> Accounting codes (optional)
           </legend>
-          <p style="margin:0 0 10px; color:var(--text-secondary); font-size:12px;">Used by the Xero sync and by accounting exports. Leave blank to use your defaults.</p>
+          <p style="margin:0 0 10px; color:var(--text-secondary); font-size:12px;">Used by the Xero sync and by accounting exports. Leave blank to use your defaults. In Xero, this cost center becomes the tracking option "${escapeHTML(defaultCategory)} › its name" unless you name a different one.</p>
           <div class="form-row" style="margin-bottom:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label" style="margin-bottom:4px">Sales Account Code</label>
@@ -4530,11 +4532,11 @@ export function renderSettings(container) {
           <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label" style="margin-bottom:4px">Tracking Category</label>
-              <input class="form-input" id="cc-xero-category" list="xero-tracking-categories" value="${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}" placeholder="e.g. Department" style="width:100%" />
+              <input class="form-input" id="cc-xero-category" list="xero-tracking-categories" value="${escapeHTML(cc.xeroTrackingOptionName ? cc.xeroTrackingCategoryName || '' : '')}" placeholder="${escapeHTML(defaultCategory)}" maxlength="100" style="width:100%" />
             </div>
             <div class="form-group">
               <label class="form-label" style="margin-bottom:4px">Tracking Option</label>
-              <input class="form-input" id="cc-xero-option" list="xero-tracking-options" value="${escapeHTML(cc.xeroTrackingOptionName || '')}" placeholder="e.g. Electrical" style="width:100%" />
+              <input class="form-input" id="cc-xero-option" list="xero-tracking-options" value="${escapeHTML(cc.xeroTrackingOptionName || '')}" placeholder="Same as the name" maxlength="100" style="width:100%" />
             </div>
           </div>
           ${xeroDatalistsHtml()}
@@ -4572,7 +4574,8 @@ export function renderSettings(container) {
                 active,
                 xeroSalesAccountCode: xeroSalesAccountCode || null,
                 xeroExpenseAccountCode: xeroExpenseAccountCode || null,
-                xeroTrackingCategoryName: xeroTrackingCategoryName || null,
+                // A category alone means nothing: the option is what overrides.
+                xeroTrackingCategoryName: (xeroTrackingOptionName && xeroTrackingCategoryName) || null,
                 xeroTrackingOptionName: xeroTrackingOptionName || null
               };
               if (editId) {
@@ -4788,7 +4791,7 @@ export function renderSettings(container) {
 
         if (!isAdmin) { clearSlots(); return; }
         renderXeroAttention(page, att, () => renderXeroCard(page));
-        renderXeroSetup(page);
+        renderXeroSetup(page, st);
       };
 
       getXeroStatus().then(render).catch((err) => {
@@ -4872,7 +4875,7 @@ export function renderSettings(container) {
 
     // How invoices are coded, where payments land, and each cost center's Xero
     // account — all picked from the organisation's own chart of accounts.
-    async function renderXeroSetup(page) {
+    async function renderXeroSetup(page, st = {}) {
       const defaultsEl = page.querySelector('#xero-defaults');
       const ccEl = page.querySelector('#xero-cc-map');
       if (!defaultsEl) return;
@@ -4967,24 +4970,63 @@ export function renderSettings(container) {
         });
       };
 
-      const drawCostCenters = () => {
+      // Each cost center is a tracking option of the same name in one Xero
+      // category. RELAY adds what's missing on the next sync, or straight away
+      // with "Match with Xero now"; a cost center can point at another option.
+      const drawCostCenters = (report = null) => {
         if (!ccEl) return;
+        const d = xeroSettings();
+        const tagging = d.trackCostCenters !== false;
+        const categoryName = d.trackingCategoryName || DEFAULT_TRACKING_CATEGORY;
         const centers = (store.getAll('costCenters') || []).filter(cc => cc.active);
-        const trackingOptions = (xa.trackingCategories || []).flatMap(c => c.options.map(o => ({ cat: c.name, opt: o })));
+        const categories = xa.trackingCategories || [];
+        const writable = st.trackingWritable !== false;
+        const plan = new Map(costCenterTrackingPlan(centers, d, categories, { writable }).map(p => [String(p.id), p]));
+        const problems = new Map((report || []).filter(r => r.action === 'problem').map(r => [String(r.costCenterId), r.message]));
         const trackKey = (cat, opt) => (cat && opt ? `${cat}\u0000${opt}` : '');
+        const otherOptions = categories.flatMap(c => c.options.map(o => ({ cat: c.name, opt: o })));
+        const badge = (tone, text) => `<span class="badge badge-${tone}">${text}</span>`;
+        const stateLine = (cc) => {
+          const p = plan.get(String(cc.id)) || { state: 'off' };
+          const problem = problems.get(String(cc.id));
+          if (problem) return `${badge('danger', 'Not tagged')} <span style="color:var(--text-secondary);font-size:12px;">${escapeHTML(problem)}</span>`;
+          if (p.state === 'off') return `<span style="color:var(--text-tertiary);font-size:12px;">Lines aren't tagged</span>`;
+          const where = `<span style="color:var(--text-secondary);font-size:12px;">${escapeHTML(p.category)} › ${escapeHTML(p.option)}</span>`;
+          const shared = p.collision ? ` <span style="color:var(--color-warning);font-size:12px;">Shares this option with another cost center of the same name.</span>` : '';
+          if (p.state === 'in_xero') return `${badge('success', 'In Xero')} ${where}${shared}`;
+          if (p.needsReconnect) return `${badge('warning', 'Reconnect to add')} ${where}${shared}`;
+          return `${badge('info', 'Added on next sync')} ${where}${shared}`;
+        };
+
         ccEl.innerHTML = `
           <div class="card" style="max-width:100%">
             <div class="card-header"><h4 style="margin:0">Cost centers in Xero</h4></div>
+            <div class="card-body">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+                <input type="checkbox" id="xero-track-cc" ${tagging ? 'checked' : ''} style="width:16px;height:16px;margin:0;" />
+                Tag every invoice line with its job's cost center
+              </label>
+              <p style="color:var(--text-secondary);margin:6px 0 14px;">Each cost center becomes a Xero tracking option with the same name, so Xero reports split your income exactly the way RELAY does. RELAY adds anything missing to Xero and renames the option when you rename a cost center.</p>
+              <div class="form-group" style="margin:0;max-width:340px;">
+                <label class="form-label" for="xero-track-category">Xero tracking category</label>
+                <input class="form-input" id="xero-track-category" list="xero-track-categories" value="${escapeHTML(categoryName)}" maxlength="100" ${tagging ? '' : 'disabled'} />
+                <datalist id="xero-track-categories">${categories.map(c => `<option value="${escapeHTML(c.name)}"></option>`).join('')}</datalist>
+                <div style="color:var(--text-tertiary);margin-top:4px;font-size:12px;">Pick one you already use in Xero, or keep "${escapeHTML(DEFAULT_TRACKING_CATEGORY)}" and RELAY creates it. Xero allows two active tracking categories.</div>
+              </div>
+              ${!writable ? `<div style="margin-top:14px;">${xeroBanner('warning', 'sync_problem', 'Reconnect Xero so RELAY can add tracking options',
+                'This connection was made before RELAY could create tracking in Xero, so only options that already exist are used.')}
+                <button class="btn btn-secondary btn-sm" id="xero-track-reconnect" style="margin-top:10px;"><span class="material-icons-outlined" aria-hidden="true">link</span> Reconnect Xero</button></div>` : ''}
+            </div>
             ${centers.length ? `
-              <div class="card-body" style="padding:0;">
+              <div class="card-body" style="padding:0;border-top:1px solid var(--border-color);">
                 <table class="data-table">
                   <thead><tr>
                     <th style="padding-left:16px;width:110px;">Code</th><th>Name</th><th>Sales account</th><th>Tracking</th>
                   </tr></thead>
                   <tbody>
                     ${centers.map(cc => {
-                      const current = trackKey(cc.xeroTrackingCategoryName, cc.xeroTrackingOptionName);
-                      const known = trackingOptions.some(t => trackKey(t.cat, t.opt) === current);
+                      const current = trackKey(cc.xeroTrackingCategoryName || categoryName, cc.xeroTrackingOptionName);
+                      const known = otherOptions.some(t => trackKey(t.cat, t.opt) === current);
                       return `
                       <tr data-cc="${escapeHTML(cc.id)}">
                         <td style="padding-left:16px;font-weight:600;">${escapeHTML(cc.code)}</td>
@@ -4998,28 +5040,41 @@ export function renderSettings(container) {
                         </td>
                         <td>
                           <select class="form-select" data-cc-tracking aria-label="Tracking for ${escapeHTML(cc.name)}">
-                            <option value="">No tracking</option>
-                            ${trackingOptions.map(t => `<option value="${escapeHTML(trackKey(t.cat, t.opt))}" ${trackKey(t.cat, t.opt) === current ? 'selected' : ''}>${escapeHTML(t.cat)}: ${escapeHTML(t.opt)}</option>`).join('')}
-                            ${current && !known ? `<option value="${escapeHTML(current)}" selected>${escapeHTML(cc.xeroTrackingCategoryName)}: ${escapeHTML(cc.xeroTrackingOptionName)} (not found in Xero)</option>` : ''}
+                            <option value="">${tagging ? `Same name: ${escapeHTML(categoryName)} › ${escapeHTML(cc.name)}` : 'Not tagged'}</option>
+                            ${otherOptions.map(t => `<option value="${escapeHTML(trackKey(t.cat, t.opt))}" ${trackKey(t.cat, t.opt) === current ? 'selected' : ''}>Use ${escapeHTML(t.cat)} › ${escapeHTML(t.opt)}</option>`).join('')}
+                            ${current && !known ? `<option value="${escapeHTML(current)}" selected>Use ${escapeHTML(cc.xeroTrackingCategoryName || categoryName)} › ${escapeHTML(cc.xeroTrackingOptionName)}</option>` : ''}
                           </select>
+                          <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${stateLine(cc)}</div>
                         </td>
                       </tr>`;
                     }).join('')}
                   </tbody>
                 </table>
-                <div style="padding:14px 16px;border-top:1px solid var(--border-color);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                  <button class="btn btn-primary" id="xero-cc-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save cost centers</button>
-                  ${!trackingOptions.length ? `<span style="color:var(--text-tertiary);font-size:13px;">Add a tracking category in Xero to tag lines by cost center.</span>` : ''}
-                </div>
               </div>` : `
-              <div class="card-body" style="color:var(--text-secondary);">
-                Cost centers let you send each job's lines to its own Xero account and tracking.
+              <div class="card-body" style="color:var(--text-secondary);border-top:1px solid var(--border-color);">
+                Add cost centers and each one shows up in Xero as a tracking option.
                 <a href="#/settings?tab=cost_centers" style="color:var(--color-primary);">Add a cost center</a>
               </div>`}
+            <div style="padding:14px 16px;border-top:1px solid var(--border-color);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="xero-cc-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save</button>
+              ${centers.length && tagging ? `<button class="btn btn-secondary" id="xero-cc-match"><span class="material-icons-outlined" aria-hidden="true">sync</span> Match with Xero now</button>` : ''}
+            </div>
           </div>`;
 
-        ccEl.querySelector('#xero-cc-save')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+        const categoryInput = ccEl.querySelector('#xero-track-category');
+        ccEl.querySelector('#xero-track-cc')?.addEventListener('change', (e) => { categoryInput.disabled = !e.currentTarget.checked; });
+        ccEl.querySelector('#xero-track-reconnect')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, () => startXeroConnect(), 'Could not start the Xero connection'));
+
+        // Saves the tagging settings and each row; returns how many things changed.
+        const save = async () => {
           let changed = 0;
+          const nextTagging = ccEl.querySelector('#xero-track-cc').checked;
+          const nextCategory = categoryInput.value.trim() || DEFAULT_TRACKING_CATEGORY;
+          if (nextTagging !== tagging || nextCategory !== categoryName) {
+            await saveXeroDefaults({ trackCostCenters: nextTagging, trackingCategoryName: nextCategory === DEFAULT_TRACKING_CATEGORY ? '' : nextCategory });
+            window.dispatchEvent(new CustomEvent('relay:settings-updated'));
+            changed++;
+          }
           for (const tr of ccEl.querySelectorAll('tr[data-cc]')) {
             const cc = store.getById('costCenters', tr.dataset.cc);
             if (!cc) continue;
@@ -5031,14 +5086,34 @@ export function renderSettings(container) {
               xeroTrackingOptionName: opt || null,
             };
             if (updates.xeroSalesAccountCode === (cc.xeroSalesAccountCode || null)
-              && updates.xeroTrackingCategoryName === (cc.xeroTrackingOptionName ? cc.xeroTrackingCategoryName || null : null)
-              && updates.xeroTrackingOptionName === (cc.xeroTrackingOptionName || null)) continue;
+              && trackKey(updates.xeroTrackingCategoryName, updates.xeroTrackingOptionName) === trackKey(cc.xeroTrackingCategoryName || categoryName, cc.xeroTrackingOptionName)) continue;
             await store.update('costCenters', cc.id, updates);
             changed++;
           }
-          showToast(changed ? `Saved ${changed} cost center${changed === 1 ? '' : 's'}` : 'No changes to save', changed ? 'success' : 'info');
+          return changed;
+        };
+
+        ccEl.querySelector('#xero-cc-save')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+          const changed = await save();
+          showToast(changed ? 'Saved. Xero picks this up on the next sync.' : 'No changes to save', changed ? 'success' : 'info');
           drawCostCenters();
-        }, 'Could not save cost centers'));
+        }, 'Could not save'));
+
+        ccEl.querySelector('#xero-cc-match')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+          await save();
+          const result = await syncXeroTracking();
+          const rows = result?.tracking || [];
+          const count = (action) => rows.filter(r => r.action === action).length;
+          const added = count('created') + count('restored');
+          const failed = count('problem');
+          xa = (await listXeroAccounts({ force: true })) || xa;
+          const parts = [`${rows.length - count('off') - failed} matched`];
+          if (added) parts.push(`${added} added to Xero`);
+          if (count('renamed')) parts.push(`${count('renamed')} renamed in Xero`);
+          if (failed) parts.push(`${failed} couldn't be tagged`);
+          showToast(`Cost centers: ${parts.join(', ')}.`, failed ? 'error' : 'success');
+          drawCostCenters(rows);
+        }, 'Could not match with Xero'));
       };
 
       drawDefaults();

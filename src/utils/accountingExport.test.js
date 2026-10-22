@@ -47,6 +47,16 @@ describe('Xero import file', () => {
     assert.equal(at(rows[1], '*Description'), 'Valve');
   });
 
+  test('cost centers without an override are tagged with their own name, like the sync', () => {
+    const { csv } = xeroImportCsv([invoice()], ctx({
+      costCenters: [{ id: 'cc-1', name: 'Gas Fitting', xeroSalesAccountCode: '201' }],
+      settings: { defaultSalesAccountCode: '200', trackingCategoryName: 'Trade' },
+    }));
+    const row = parse(csv)[1];
+    assert.equal(row[XERO_IMPORT_HEADERS.indexOf('TrackingName1')], 'Trade');
+    assert.equal(row[XERO_IMPORT_HEADERS.indexOf('TrackingOption1')], 'Gas Fitting');
+  });
+
   test('GST-free invoices and line-type accounts follow the same rules as the sync', () => {
     const { csv } = xeroImportCsv([invoice({ tax: 0, total: 300, jobId: null })], ctx({
       settings: { defaultSalesAccountCode: '200', labourAccountCode: '210' },

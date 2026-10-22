@@ -187,6 +187,22 @@ describe('invoice payload', () => {
     assert.equal(payload.LineItems[0].Tracking, undefined);
   });
 
+  test('a named cost center with no override is tagged with its own name', () => {
+    const named = [{ id: 'cc-gas', name: 'Gas Fitting' }];
+    const jobs = [{ id: 'job-1', cost_center_id: 'cc-gas' }];
+    assert.deepEqual(buildInvoice(invoice(), ctx({ jobs, costCenters: named })).payload.LineItems[0].Tracking, [{ Name: 'Cost Center', Option: 'Gas Fitting' }]);
+    const settings = { ...SETTINGS, trackingCategoryName: 'Trade' };
+    assert.deepEqual(buildInvoice(invoice(), ctx({ jobs, costCenters: named, settings })).payload.LineItems[0].Tracking, [{ Name: 'Trade', Option: 'Gas Fitting' }]);
+    assert.equal(buildInvoice(invoice(), ctx({ jobs, costCenters: named, settings: { ...SETTINGS, trackCostCenters: false } })).payload.LineItems[0].Tracking, undefined);
+  });
+
+  test('what the worker resolved in Xero wins, in Xero\'s spelling; unresolved goes untagged', () => {
+    const jobs = [{ id: 'job-1', cost_center_id: 'cc-plumb' }];
+    const tracking = new Map([['cc-plumb', { tracking: [{ Name: 'DIVISION', Option: 'plumbing' }] }]]);
+    assert.deepEqual(buildInvoice(invoice(), ctx({ jobs, tracking })).payload.LineItems[0].Tracking, [{ Name: 'DIVISION', Option: 'plumbing' }]);
+    assert.equal(buildInvoice(invoice(), ctx({ jobs, tracking: new Map() })).payload.LineItems[0].Tracking, undefined);
+  });
+
   test('a line with no resolvable account fails instead of guessing', () => {
     const err = (() => { try { buildInvoice(invoice(), ctx({ settings: { labourAccountCode: '210' } })); } catch (e) { return e; } })();
     assert.equal(err.code, 'no_account');

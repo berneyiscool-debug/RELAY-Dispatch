@@ -72,6 +72,7 @@ const toMappingCustomer = (c) => c && ({
 const toMappingJob = (j) => ({ id: j.id, number: j.number, cost_center_id: j.costCenterId || null });
 const toMappingCostCenter = (cc) => ({
   id: cc.id,
+  name: cc.name,
   xero_sales_account_code: cc.xeroSalesAccountCode || null,
   xero_tracking_category_name: cc.xeroTrackingCategoryName || null,
   xero_tracking_option_name: cc.xeroTrackingOptionName || null,

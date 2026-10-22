@@ -11,10 +11,13 @@
 //   * Line account: the line's job's cost center sales account, else the
 //     labour/materials default for the line type, else the default sales account.
 //     A line with no resolvable account is an error. Never guess.
-//   * Tracking: the cost center's Xero tracking category + option, when both set.
+//   * Tracking: the cost center's option in the company's tracking category
+//     (tracking.js), or the cost center's own override.
 //   * GST: OUTPUT when the invoice carries tax, EXEMPTOUTPUT when it doesn't.
 //   * Negative (deposit credit) lines are fine; a negative invoice total isn't.
 //   * Each RELAY payment is pushed once, keyed by a stable ref.
+
+import { desiredTracking, lineTracking } from './tracking.js';
 
 export const DEFAULT_TIME_ZONE = 'Australia/Sydney';
 
@@ -188,10 +191,12 @@ function accountForLine(line, costCenter, settings) {
   return settings.defaultSalesAccountCode || null;
 }
 
-function trackingFor(costCenter) {
-  const name = clip(costCenter?.xero_tracking_category_name, 100);
-  const option = clip(costCenter?.xero_tracking_option_name, 100);
-  return name && option ? [{ Name: name, Option: option }] : undefined;
+// The worker passes `resolved` (what ensureTracking found or created in Xero,
+// in Xero's spelling). Without it (the import file), the same rule applies.
+function trackingFor(costCenter, settings, resolved) {
+  if (!costCenter) return undefined;
+  if (resolved) return resolved.get(String(costCenter.id))?.tracking;
+  return lineTracking(desiredTracking(costCenter, settings));
 }
 
 /**
@@ -203,6 +208,7 @@ function trackingFor(costCenter) {
  * @param {Array}  [ctx.jobs]                [{ id, number, cost_center_id }] for the invoice's jobs
  * @param {Array}  [ctx.costCenters]         cost_centers rows
  * @param {object} [ctx.settings]            companies.settings.xero
+ * @param {Map}    [ctx.tracking]            ensureTracking() results by cost center id
  * @param {string} [ctx.timeZone]
  * @returns {{ payload: object, warnings: string[], expectedSubtotal: number }}
  */
@@ -258,7 +264,7 @@ export function buildInvoice(invoice, ctx = {}) {
       AccountCode: accountCode,
       TaxType: taxType,
     };
-    const tracking = trackingFor(cc);
+    const tracking = trackingFor(cc, settings, ctx.tracking);
     if (tracking) item.Tracking = tracking;
     return item;
   });

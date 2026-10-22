@@ -50,6 +50,7 @@ function fakeDb(data) {
     getXeroSettings: async () => data.settings,
     updateInvoice: async (id, fields) => { Object.assign(data.invoices[id], fields); },
     updateCustomer: async (id, fields) => { Object.assign(data.customers[id], fields); },
+    updateCostCenter: async (id, fields) => { Object.assign(data.costCenters.find((c) => c.id === id), fields); },
     finishJob: async (id, fields) => { finished[id] = fields; },
     markConnection: async (companyId, fields) => { Object.assign(connection, fields); },
   };
@@ -562,5 +563,70 @@ describe('throughput and pacing', () => {
     assert.equal(paceFor({ minuteRemaining: 3 }).waitSec, 60);
     assert.match(paceFor({ appMinuteRemaining: 1 }).message, /app limit/);
     assert.equal(paceFor({ dayRemaining: 25, minuteRemaining: 1 }).waitSec, 3600);
+  });
+});
+
+describe('cost center tracking on invoices', () => {
+  const tracked = (settings = SETTINGS) => {
+    const data = seed({
+      customers: { 'cust-1': { id: 'cust-1', company_id: COMPANY, company: 'Acme', xero_contact_id: 'xc-1' } },
+      settings,
+    });
+    data.jobs[0].cost_center_id = 'cc-1';
+    data.costCenters = [{ id: 'cc-1', company_id: COMPANY, name: 'Plumbing', code: 'PLB', active: true }];
+    return data;
+  };
+  const invoiceRoutes = {
+    'GET /Invoices': () => ({ Invoices: [] }),
+    'POST /Invoices': ({ body }) => createdInvoice(body),
+  };
+
+  test('the first invoice creates the category and option, tags every line, and links the cost center', async () => {
+    const db = fakeDb(tracked());
+    const xero = fakeXero({
+      ...invoiceRoutes,
+      'GET /TrackingCategories': () => ({ TrackingCategories: [] }),
+      'PUT /TrackingCategories': ({ body }) => ({ TrackingCategories: [{ TrackingCategoryID: 'cat-1', Name: body.Name, Status: 'ACTIVE' }] }),
+      'PUT /TrackingCategories/cat-1/Options': ({ body }) => ({ Options: [{ TrackingOptionID: 'opt-1', Name: body.Name, Status: 'ACTIVE' }] }),
+    });
+    xero.canEditTracking = true;
+    const summary = await run(db, xero, [job(1, 'invoice', 'upsert', 'inv-1')]);
+    assert.equal(summary.done, 1);
+    const lines = xero.calls.find((c) => c.method === 'POST' && c.path === '/Invoices').body.Invoices[0].LineItems;
+    assert.ok(lines.every((l) => JSON.stringify(l.Tracking) === JSON.stringify([{ Name: 'Cost Center', Option: 'Plumbing' }])));
+    assert.equal(db.data.costCenters[0].xero_tracking_option_id, 'opt-1');
+    // Tracking is set up before the invoice that uses it.
+    assert.ok(xero.calls.findIndex((c) => c.path === '/TrackingCategories/cat-1/Options') < xero.calls.findIndex((c) => c.path === '/Invoices' && c.method === 'POST'));
+  });
+
+  test('one tracking read per company per run, however many invoices', async () => {
+    const data = tracked();
+    data.invoices['inv-2'] = { ...structuredClone(data.invoices['inv-1']), id: 'inv-2', number: 'INV-1002' };
+    const db = fakeDb(data);
+    const xero = fakeXero({
+      ...invoiceRoutes,
+      'GET /TrackingCategories': () => ({ TrackingCategories: [{ TrackingCategoryID: 'cat-1', Name: 'Cost Center', Status: 'ACTIVE', Options: [{ TrackingOptionID: 'opt-1', Name: 'Plumbing', Status: 'ACTIVE' }] }] }),
+    });
+    await run(db, xero, [job(1, 'invoice', 'upsert', 'inv-1'), job(2, 'invoice', 'upsert', 'inv-2')]);
+    assert.equal(xero.calls.filter((c) => c.path === '/TrackingCategories').length, 1);
+  });
+
+  test('tracking Xero can\'t take never holds the invoice back: it goes untagged, with a note', async () => {
+    const db = fakeDb(tracked());
+    const xero = fakeXero({ ...invoiceRoutes, 'GET /TrackingCategories': () => ({ TrackingCategories: [] }) });
+    xero.canEditTracking = false; // granted before RELAY asked for accounting.settings
+    const summary = await run(db, xero, [job(1, 'invoice', 'upsert', 'inv-1')]);
+    assert.equal(summary.done, 1);
+    const lines = xero.calls.find((c) => c.method === 'POST' && c.path === '/Invoices').body.Invoices[0].LineItems;
+    assert.ok(lines.every((l) => l.Tracking === undefined));
+    assert.match(db.finished[1].last_error, /Sent without tracking: .*Reconnect Xero/);
+    assert.equal(db.data.invoices['inv-1'].xero_sync_error, null);
+  });
+
+  test('switched off in Settings: no tracking calls at all', async () => {
+    const db = fakeDb(tracked({ ...SETTINGS, trackCostCenters: false }));
+    const xero = fakeXero(invoiceRoutes);
+    await run(db, xero, [job(1, 'invoice', 'upsert', 'inv-1')]);
+    assert.ok(!xero.calls.some((c) => c.path.startsWith('/TrackingCategories')));
   });
 });

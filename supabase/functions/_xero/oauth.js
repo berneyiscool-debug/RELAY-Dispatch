@@ -14,8 +14,10 @@ export const XERO_REVOKE_URL = 'https://identity.xero.com/connect/revocation';
 export const XERO_CONNECTIONS_URL = 'https://api.xero.com/connections';
 
 // Granular scopes (mandatory for apps created after 2 March 2026). Settings is
-// read-only: Phase 1 lists accounts, tracking categories and tax rates but never
-// changes them.
+// read-write only so cost centers can become tracking options (tracking.js):
+// RELAY reads the chart of accounts and tax rates but never changes them.
+// Connections made before this asked for accounting.settings.read; they keep
+// working and can only match tracking until an admin reconnects.
 export const XERO_SCOPES = Object.freeze([
   'openid',
   'profile',
@@ -24,7 +26,7 @@ export const XERO_SCOPES = Object.freeze([
   'accounting.contacts',
   'accounting.invoices',
   'accounting.payments',
-  'accounting.settings.read',
+  'accounting.settings',
 ]);
 
 /** The URL the admin's browser is sent to in order to grant access. */

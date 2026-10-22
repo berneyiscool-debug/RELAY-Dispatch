@@ -7,6 +7,7 @@
 // Plain ESM, no Deno APIs (tested by supabase/tests/xero-connect.test.js).
 
 import { PUBLIC_APP_BASE, fallbackAppBase, isAllowedReturnUrl } from '../_shared/returnUrls.js';
+import { canEditTracking } from './tracking.js';
 
 // Old consents (and the callback's fallback before this change was deployed)
 // land on ?tab=cost_centers; Settings forwards a xero= outcome there to here.
@@ -97,6 +98,9 @@ export function statusPayload(row, { pendingJobs = 0, failedJobs = 0, tenants = 
     updatedAt: row.updated_at || null,
     pendingJobs,
     failedJobs,
+    // Older connections were granted read-only settings: tracking can be
+    // matched but not created until an admin reconnects.
+    trackingWritable: canEditTracking(row.scopes),
   };
   if (row.status === 'choose_tenant') payload.tenants = tenants.map(({ tenantId, tenantName }) => ({ tenantId, tenantName }));
   return payload;

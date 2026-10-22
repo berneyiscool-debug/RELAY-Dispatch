@@ -5,6 +5,7 @@ import {
 import { XeroError } from '../_xero/client.js'
 import { timingSafeEqual } from '../_xero/crypto.js'
 import { IDLE_REFRESH_DAYS, WORKER_ACTIONS, runJobs } from '../_xero/worker.js'
+import { canEditTracking } from '../_xero/tracking.js'
 
 // ============================================
 // RELAY — XERO SYNC WORKER
@@ -46,7 +47,8 @@ serve(handle('relay-xero-sync', async (req) => {
   const xeroFor = async (id: string) => {
     const row = await loadConnection(admin, id)
     if (row?.status !== 'active') return null
-    return clientFor(admin, env, id, row.tenant_id, await decryptTokens(row, env.tokenKey))
+    const client = clientFor(admin, env, id, row.tenant_id, await decryptTokens(row, env.tokenKey))
+    return Object.assign(client, { canEditTracking: canEditTracking(row.scopes) })
   }
 
   const total = { done: 0, skipped: 0, failed: 0, retried: 0, released: 0, paced: 0 }
@@ -98,6 +100,7 @@ function supabaseAdapter(admin: any) {
     // Only xero_* columns are written here, so the enqueue trigger stays quiet.
     updateInvoice: (id: string, fields: Record<string, unknown>) => write(admin.from('invoices').update(fields).eq('id', id)),
     updateCustomer: (id: string, fields: Record<string, unknown>) => write(admin.from('customers').update(fields).eq('id', id)),
+    updateCostCenter: (id: string, fields: Record<string, unknown>) => write(admin.from('cost_centers').update(fields).eq('id', id)),
     finishJob: (id: number, fields: Record<string, unknown>) =>
       write(admin.from('xero_sync_jobs').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)),
     markConnection: (companyId: string, fields: Record<string, unknown>) => saveConnection(admin, companyId, fields),

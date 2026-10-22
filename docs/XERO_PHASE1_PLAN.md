@@ -186,7 +186,10 @@ Shared ESM helpers in `supabase/functions/_xero/` (plain JS, unit-tested):
 > - The Settings UI moved to its own tab, `renderAccountingTab` (status tiles,
 >   needs attention, coding defaults, per-cost-center codes). Cost Centers is a
 >   plain tab for everyone; its modal suggests Xero codes through datalists.
->   Old `?tab=cost_centers&xero=` returns are redirected to `tab=accounting`. `src/utils/xero.js` (tested) is the
+>   Old `?tab=cost_centers&xero=` returns are redirected to `tab=accounting`.
+> - Tracking is automatic: each cost center is an option of the same name in one
+>   category, created/matched/renamed by `_xero/tracking.js` (needs the
+>   `accounting.settings` scope; read-only connections only match). `src/utils/xero.js` (tested) is the
 >   client.
 > - Deploy steps are in `docs/XERO_SETUP.md`.
 

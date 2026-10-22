@@ -77,8 +77,11 @@ Adds only what genuinely needs the internet:
   - lists what needs attention, with Fix/Retry and a **Send to Xero** backfill
 
   brny can answer "did INV-1042 go to Xero?". See `docs/XERO_SETUP.md`.
-- **Cost Centers** (Settings) is available to every account type. Invoices can
-  be exported from the invoice list as a Xero import file or a spreadsheet.
+- **Cost Centers** (Settings) is available to every account type. With Xero
+  connected, each cost center becomes a Xero tracking option of the same name
+  (created, matched and renamed automatically), so Xero reports split income the
+  way RELAY does. Invoices can be exported from the invoice list as a Xero import
+  file or a spreadsheet, tagged the same way.
 
 ## How it works
 

@@ -10,6 +10,7 @@ import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
 import { invoke } from './payments.js';
 import { supabase } from './supabase.js';
+import { desiredTracking, trackingCollisions, trackingName } from '../../supabase/functions/_xero/tracking.js';
 
 export const XERO_RETURN_PATH = '/settings?tab=accounting';
 
@@ -36,18 +37,27 @@ const DEFAULT_KEYS = [
   'stripeAccountCode',
   'taxTypeTaxed',
   'defaultDueDays',
+  'trackingCategoryName',
+  'trackCostCenters',
 ];
 
 /**
  * Normalise the defaults form into what relay-xero-sync reads. Blank values are
  * dropped so the worker's fallbacks apply; due days must be a whole 0–365.
+ * Cost center tracking is on unless turned off, so only `false` is stored.
  */
 export function normaliseXeroDefaults(input = {}) {
   const out = {};
   for (const key of DEFAULT_KEYS) {
     const raw = input[key];
+    if (key === 'trackCostCenters') {
+      if (raw === false || raw === 'false') out[key] = false;
+      continue;
+    }
     if (raw === undefined || raw === null || String(raw).trim() === '') continue;
-    if (key === 'defaultDueDays') {
+    if (key === 'trackingCategoryName') {
+      out[key] = trackingName(raw);
+    } else if (key === 'defaultDueDays') {
       const days = Number(raw);
       if (!Number.isInteger(days) || days < 0 || days > 365) throw new Error('Payment terms must be a whole number of days between 0 and 365.');
       out[key] = days;
@@ -70,9 +80,10 @@ export function xeroDefaultsWarnings(defaults = xeroSettings()) {
   return warnings;
 }
 
+/** Save some of the Xero settings; keys left out keep their saved value, blanks clear. */
 export async function saveXeroDefaults(input) {
   const s = store.getSettings() || {};
-  s.xero = { ...normaliseXeroDefaults(input) };
+  s.xero = { ...normaliseXeroDefaults({ ...xeroSettings(), ...input }) };
   await store.saveSettings(s);
   return s.xero;
 }
@@ -173,6 +184,52 @@ export async function listXeroAccounts({ force = false } = {}) {
 
 export function cachedXeroAccounts() {
   return accountsCache;
+}
+
+/**
+ * Match every active cost center to its Xero tracking option now, creating
+ * what's missing. Returns the status plus `tracking`: per cost center
+ * { costCenterId, action, message, tracking }.
+ */
+export async function syncXeroTracking() {
+  const data = await invoke('relay-xero-status', { syncTracking: true });
+  accountsCache = null; // new categories and options show in the pickers
+  remember(data);
+  return data;
+}
+
+/** A store cost center in the row shape tracking.js reads. */
+export const trackingRow = (cc) => ({
+  id: cc.id,
+  name: cc.name,
+  xero_tracking_category_name: cc.xeroTrackingCategoryName || null,
+  xero_tracking_option_name: cc.xeroTrackingOptionName || null,
+});
+
+/**
+ * What each cost center's lines are tagged with in Xero, for the Accounting
+ * page, given the tracking categories Xero has now (listXeroAccounts).
+ * state: in_xero (exists, active) | will_create (RELAY adds it on the next
+ * sync, or needs a reconnect first when `writable` is false) | off
+ */
+export function costCenterTrackingPlan(costCenters, settings, xeroCategories = [], { writable = true } = {}) {
+  const lower = (s) => trackingName(s).toLowerCase();
+  const collided = new Set(trackingCollisions(costCenters.map(trackingRow), settings).flat());
+  return costCenters.map((cc) => {
+    const want = desiredTracking(trackingRow(cc), settings);
+    if (!want) return { id: cc.id, state: 'off' };
+    const category = xeroCategories.find((c) => lower(c.name) === lower(want.category));
+    const option = category?.options.find((o) => lower(o) === lower(want.option));
+    return {
+      id: cc.id,
+      source: want.source,
+      category: category?.name || want.category,
+      option: option || want.option,
+      state: option ? 'in_xero' : 'will_create',
+      needsReconnect: !option && !writable,
+      collision: collided.has(String(cc.id)),
+    };
+  });
 }
 
 export function clearXeroAccountsCache() {
