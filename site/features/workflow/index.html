@@ -18,7 +18,7 @@
 <header class="site-header">
   <div class="site-header__inner">
     <a class="site-header__brand" href="/" aria-label="RELAY Dispatch home">
-      <img src="assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
+      <img src="/assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
     </a>
     <nav class="nav-links" aria-label="Main">
       <div class="nav-dropdown">
@@ -26,11 +26,11 @@
         <div class="nav-dropdown__panel" role="list">
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/dashboard/" class="nav-dropdown__section">Dashboard</a>
-            <a href="/features/dashboard/#dashboard" class="nav-dropdown__link">Dashboard</a>
+
           </div>
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/schedule/" class="nav-dropdown__section">Schedule</a>
-            <a href="/features/schedule/#schedule" class="nav-dropdown__link">Schedule</a>
+
           </div>
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/workflow/" class="nav-dropdown__section">Workflow</a>
@@ -94,6 +94,10 @@
 
       <section class="feature-tab" id="notifications" aria-labelledby="notifications-heading">
         <h2 class="feature-tab__title" id="notifications-heading">Notifications</h2>
+        <p class="feature-tab__summary">Requests and alerts from clients, the field and your maintenance plans, ready to turn into a quote, a job or a dispatch.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/notifications-1080.webp" srcset="/assets/screens/tabs/notifications-1080.webp 1080w, /assets/screens/tabs/notifications.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Notifications screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Client requests, field faults and maintenance alerts in one list</li>
           <li>Turn a request into a quote, a job or a dispatch</li>
@@ -104,6 +108,10 @@
 
       <section class="feature-tab" id="leads" aria-labelledby="leads-heading">
         <h2 class="feature-tab__title" id="leads-heading">Leads</h2>
+        <p class="feature-tab__summary">Tracks each enquiry through its stages until it becomes a quote.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/leads-1080.webp" srcset="/assets/screens/tabs/leads-1080.webp 1080w, /assets/screens/tabs/leads.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Leads screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Leads grouped by stage, so you can see the whole pipeline at once</li>
           <li>Assign a sales representative and a priority to each lead</li>
@@ -114,6 +122,10 @@
 
       <section class="feature-tab" id="quotes" aria-labelledby="quotes-heading">
         <h2 class="feature-tab__title" id="quotes-heading">Quotes</h2>
+        <p class="feature-tab__summary">Builds quotes in sections, has the customer sign them, and turns accepted quotes into jobs.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/quotes-1080.webp" srcset="/assets/screens/tabs/quotes-1080.webp 1080w, /assets/screens/tabs/quotes.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Quotes screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Quotes built in sections for equipment, installation and labour, with subtotals</li>
           <li>Labour rates and materials per line, with your own markup</li>
@@ -125,6 +137,10 @@
 
       <section class="feature-tab" id="jobs" aria-labelledby="jobs-heading">
         <h2 class="feature-tab__title" id="jobs-heading">Jobs</h2>
+        <p class="feature-tab__summary">Follows each job from scheduling through to invoicing, with the people, hours and materials on it.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/jobs-1080.webp" srcset="/assets/screens/tabs/jobs-1080.webp 1080w, /assets/screens/tabs/jobs.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Jobs screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Assign technicians, change status and reschedule from the list</li>
           <li>Book time against each job's tasks, so labour is recorded as the work happens</li>
@@ -135,17 +151,25 @@
 
       <section class="feature-tab" id="invoices" aria-labelledby="invoices-heading">
         <h2 class="feature-tab__title" id="invoices-heading">Invoices</h2>
+        <p class="feature-tab__summary">Bills completed work from a quote or a job, and tracks it through to paid.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/invoices-1080.webp" srcset="/assets/screens/tabs/invoices-1080.webp 1080w, /assets/screens/tabs/invoices.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Invoices screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Invoices from a quote or a job, with the original quoted amount kept alongside</li>
           <li>Margin analysis on each invoice, so you know what it earned</li>
           <li>Record payments by bank transfer, cheque, card or other, then mark the invoice paid</li>
           <li>Send payment reminders in bulk, or one at a time</li>
-          <li>Combine invoices and export a CSV for your accounting package</li>
+          <li>Combine invoices, and export paid invoices as a CSV that Xero or MYOB can import</li>
         </ul>
       </section>
 
       <section class="feature-tab" id="recurring-templates" aria-labelledby="recurring-templates-heading">
         <h2 class="feature-tab__title" id="recurring-templates-heading">Recurring Templates</h2>
+        <p class="feature-tab__summary">Sets up work that repeats on a schedule, and creates the jobs for you.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/recurring-templates-1080.webp" srcset="/assets/screens/tabs/recurring-templates-1080.webp 1080w, /assets/screens/tabs/recurring-templates.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Recurring Templates screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Set up work that repeats, with a frequency and the days it runs</li>
           <li>See every job a template has created</li>
@@ -154,6 +178,10 @@
 
       <section class="feature-tab" id="projects" aria-labelledby="projects-heading">
         <h2 class="feature-tab__title" id="projects-heading">Projects</h2>
+        <p class="feature-tab__summary">Groups jobs under one site or build, with a financial summary for the whole project.</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/projects-1080.webp" srcset="/assets/screens/tabs/projects-1080.webp 1080w, /assets/screens/tabs/projects.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Projects screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
           <li>Projects with a site address, a description and a scope</li>
           <li>Parent and child projects for larger builds</li>
@@ -174,12 +202,12 @@
 
 <footer class="site-footer">
   <div class="site-footer__inner">
-    <img src="assets/img/logo-relay-mark.svg" alt="RELAY" width="150" height="104">
+    <img src="/assets/img/logo-relay-mark.svg" alt="RELAY" width="150" height="104">
     <nav aria-label="Footer">
       <a href="/terms/">Terms of Service</a>
-      <a href="privacy/">Privacy Policy</a>
-      <a href="refunds/">Refund &amp; Cancellation</a>
-      <a href="acceptable-use/">Acceptable Use</a>
+      <a href="/privacy/">Privacy Policy</a>
+      <a href="/refunds/">Refund &amp; Cancellation</a>
+      <a href="/acceptable-use/">Acceptable Use</a>
       <a href="/app/#/login">Sign in</a>
       <a href="mailto:support@relaydispatch.com.au">Contact</a>
     </nav>

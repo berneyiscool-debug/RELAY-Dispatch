@@ -20,6 +20,29 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const siteDir = path.join(repoRoot, 'site');
 const home = readFileSync(path.join(siteDir, 'index.html'), 'utf8');
 
+// A short introduction to each tab, shown above its bullets.
+const SUMMARIES = {
+  dashboard: 'Your first screen after sign-in. It shows the money and work that need attention, with widgets you can add, move and resize.',
+  schedule: 'Plans the day and the week for the whole crew, with jobs, leave and activities in one place.',
+  notifications: 'Requests and alerts from clients, the field and your maintenance plans, ready to turn into a quote, a job or a dispatch.',
+  leads: 'Tracks each enquiry through its stages until it becomes a quote.',
+  quotes: 'Builds quotes in sections, has the customer sign them, and turns accepted quotes into jobs.',
+  jobs: 'Follows each job from scheduling through to invoicing, with the people, hours and materials on it.',
+  invoices: 'Bills completed work from a quote or a job, and tracks it through to paid.',
+  'recurring-templates': 'Sets up work that repeats on a schedule, and creates the jobs for you.',
+  projects: 'Groups jobs under one site or build, with a financial summary for the whole project.',
+  customers: 'Keeps each customer\'s contacts, sites, assets and account status in one record.',
+  contractors: 'Keeps subcontractors\' business and compliance details, and limits what they can see.',
+  suppliers: 'Keeps the businesses you buy from, with their contacts and payment terms.',
+  assets: 'Records what you have installed for customers, and when it needs service.',
+  stock: 'Keeps track of what you hold, where it is stored and what it costs.',
+  'purchase-orders': 'Orders materials for a job and tracks each order until it is received.',
+  'time-tracking': 'Records the hours your team works against jobs and tasks, for pay and reporting.',
+  documents: 'A folder-based store for the documents your business keeps, with sharing built in.',
+  reports: 'Shows how the business is doing, with reports on revenue, jobs, invoices and costs.',
+  settings: 'Controls users and permissions, the emails your customers receive, and your document templates.',
+};
+
 /** Each section is a page; each tab is a block on that page. */
 export const SECTIONS = [
   {
@@ -115,7 +138,7 @@ export const SECTIONS = [
           'Margin analysis on each invoice, so you know what it earned',
           'Record payments by bank transfer, cheque, card or other, then mark the invoice paid',
           'Send payment reminders in bulk, or one at a time',
-          'Combine invoices and export a CSV for your accounting package',
+          'Combine invoices, and export paid invoices as a CSV that Xero or MYOB can import',
         ],
       },
       {
@@ -272,6 +295,7 @@ const headHtml = grab(/<meta name="viewport"[^>]*>/, 'viewport meta');
 
 /** Homepage fragments become absolute, so they resolve from /features/<slug>/. */
 const absolutise = (html) => html
+  .replace(/(src|href)="assets\//g, '$1="/assets/')
   .replace(/href="#top"/g, 'href="/"')
   .replace(/href="#(features|pricing|compare|download)"/g, 'href="/#$1"')
   .replace(/href="(terms|privacy|refunds|acceptable-use)\/"/g, 'href="/$1/"');
@@ -285,7 +309,7 @@ const dropdownHtml = () => `<div class="nav-dropdown">
         <div class="nav-dropdown__panel" role="list">
 ${SECTIONS.map((section) => `          <div class="nav-dropdown__group" role="listitem">
             <a href="/features/${section.slug}/" class="nav-dropdown__section">${section.name}</a>
-${section.tabs.map((tab) => `            <a href="/features/${section.slug}/#${tab.id}" class="nav-dropdown__link">${tab.name}</a>`).join('\n')}
+${section.tabs.length === 1 ? '' : section.tabs.map((tab) => `            <a href="/features/${section.slug}/#${tab.id}" class="nav-dropdown__link">${tab.name}</a>`).join('\n')}
           </div>`).join('\n')}
         </div>
       </div>`;
@@ -311,6 +335,10 @@ ${section.tabs.map((t) => `        <a href="#${t.id}">${escapeHtml(t.name)}</a>`
     : '';
   const blocks = section.tabs.map((tab) => `      <section class="feature-tab" id="${tab.id}" aria-labelledby="${tab.id}-heading">
         <h2 class="feature-tab__title" id="${tab.id}-heading">${escapeHtml(tab.name)}</h2>
+        <p class="feature-tab__summary">${escapeHtml(SUMMARIES[tab.id])}</p>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/${tab.id}-1080.webp" srcset="/assets/screens/tabs/${tab.id}-1080.webp 1080w, /assets/screens/tabs/${tab.id}.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The ${escapeHtml(tab.name)} screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
         <ul class="feature-tab__list">
 ${tab.items.map((item) => `          <li>${escapeHtml(item)}</li>`).join('\n')}
         </ul>
@@ -353,7 +381,7 @@ ${blocks}
   </div>
 </main>
 
-${footerHtml.replace(/href="\/terms\/"|href="terms\/"/g, 'href="/terms/"')}
+${absolutise(footerHtml)}
 
 </body>
 </html>
@@ -369,11 +397,20 @@ for (const section of SECTIONS) {
   console.log(`site/features/${section.slug}/index.html  (${section.tabs.length} tab${section.tabs.length === 1 ? '' : 's'})`);
 }
 
-// The homepage header gets the same dropdown. Once it is in place the plain
-// link is gone, so running the script again leaves the file untouched.
+// The homepage header gets the same dropdown. Its block is replaced on every
+// run, so a change to the section list reaches the homepage too.
+const homeEol = home.includes('\r\n') ? '\r\n' : '\n';
+const homeDropdown = dropdownHtml().replace('href="/#features"', 'href="#features"');
 const homeLink = '<a href="#features">Features</a>';
-if (home.includes(homeLink)) {
-  const homeDropdown = dropdownHtml().replace('href="/#features"', 'href="#features"');
-  writeFileSync(path.join(siteDir, 'index.html'), home.replace(homeLink, homeDropdown));
-  console.log('site/index.html  (Features dropdown added)');
+let nextHome = null;
+if (home.includes('<div class="nav-dropdown">')) {
+  const start = home.indexOf('<div class="nav-dropdown">');
+  const end = home.indexOf('<a href="#pricing"');
+  nextHome = home.slice(0, start) + homeDropdown.replace(/\n/g, homeEol) + homeEol + '      ' + home.slice(end);
+} else if (home.includes(homeLink)) {
+  nextHome = home.replace(homeLink, homeDropdown.replace(/\n/g, homeEol));
+}
+if (nextHome && nextHome !== home) {
+  writeFileSync(path.join(siteDir, 'index.html'), nextHome);
+  console.log('site/index.html  (Features dropdown updated)');
 }

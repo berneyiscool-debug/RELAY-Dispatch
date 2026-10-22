@@ -1208,6 +1208,45 @@ section[id] {
   letter-spacing: -0.01em;
 }
 
+.feature-tab__summary {
+  margin: 0 0 20px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+/* The same window frame as the homepage tour, without its halo. */
+.feature-tab .shot {
+  position: relative;
+  margin: 0 0 24px;
+  padding-top: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.feature-tab .shot::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  border-bottom: 1px solid var(--line);
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(circle at 12px 14px, var(--line-2) 3.5px, transparent 4px),
+    radial-gradient(circle at 24px 14px, var(--line-2) 3.5px, transparent 4px),
+    radial-gradient(circle at 36px 14px, var(--line-2) 3.5px, transparent 4px);
+}
+
+.feature-tab .shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .feature-tab__list {
   margin: 0;
   padding-left: 20px;
