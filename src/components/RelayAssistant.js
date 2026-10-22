@@ -13,6 +13,7 @@ import { dispatchChat, AILimitError } from '../utils/aiEngine.js';
 import { usageBarsHtml, refreshUsageBars } from './UsageBars.js';
 import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
+import { isWriteLocked, showSubscribeRequiredPrompt } from '../utils/writeLock.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 import { extractActions } from '../utils/relayActionTags.js';
 import { visionUserContent } from '../utils/visionContent.js';
@@ -1679,6 +1680,21 @@ function canUseAI() {
   return isCloudUser();
 }
 
+// An expired trial pauses brny completely. It is a paid Cloud feature, every
+// turn spends AI allowance, and most of what people ask for ends in a write the
+// store is going to refuse — so the answer belongs at the trigger, not three
+// messages into a conversation that cannot act. Every entry point (top bar,
+// Shift+B, help centre, "Copy to brny", dashboard asks) funnels through here.
+function brnyPaused() {
+  return isWriteLocked();
+}
+
+// A trial can lapse while the panel is open; the store's settings event is what
+// tells us, so close it rather than leaving a panel that no longer works.
+store.on('settings', () => {
+  if (panel && brnyPaused()) closeRelay();
+});
+
 function getUserId() {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   return currentUser ? currentUser.id : 'default';
@@ -1738,12 +1754,22 @@ async function autoTitleThread(threadId, history) {
 export function isRelayOpen() { return !!panel; }
 export function onRelayToggle(cb) { onStateChange = cb; }
 
-export function toggleRelay() { panel ? closeRelay() : openRelay(); }
+export function toggleRelay() {
+  if (brnyPaused()) {
+    if (panel) closeRelay();
+    showSubscribeRequiredPrompt();
+    return;
+  }
+  panel ? closeRelay() : openRelay();
+}
 
 export async function openDeputyWithPrompt(promptText) {
   if (!panel) {
     await openRelay();
   }
+  // openRelay() refuses for a paused trial or a user without AI permission; there
+  // is no panel to type into, and the refusal has already been shown.
+  if (!panel) return;
   const input = panel.querySelector('#relay-input');
   if (input) {
     input.value = promptText;
@@ -1760,6 +1786,7 @@ export async function openDeputyWithPrompt(promptText) {
  * @throws a user-readable Error when brny cannot take attachments
  */
 export async function attachFilesToRelay(files) {
+  if (brnyPaused()) throw new Error('brny is paused until you subscribe. Your files are safe and still in Documents.');
   if (!isCloudUser()) throw new Error('Attaching files to brny needs a cloud account.');
   if (!panel) await openRelay();
   if (!panel) throw new Error('brny is not available for your account.');
@@ -1782,6 +1809,11 @@ export async function openRelay() {
   if (panel) return;
 
   if (!hasPermission('AI Assistant', 'use')) return;
+
+  if (brnyPaused()) {
+    showSubscribeRequiredPrompt();
+    return;
+  }
 
   // Deputy Max (expanding to the full workspace) is the sole Cloud+ feature.
   // Cloud/local get Deputy minimized-only, so never honour a stored expanded

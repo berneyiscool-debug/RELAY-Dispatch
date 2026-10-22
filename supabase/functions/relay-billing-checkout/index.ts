@@ -19,8 +19,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //
 // Secrets (Supabase → Edge Function secrets):
 //   STRIPE_SECRET_KEY          — sk_live_... / sk_test_...
-//   STRIPE_PRICE_CLOUD         — recurring per-seat Price id for Cloud   ($24/user/mo)
-//   STRIPE_PRICE_CLOUD_PLUS    — recurring per-seat Price id for Cloud+  ($27/user/mo)
+//   STRIPE_PRICE_CLOUD         — recurring per-seat Price id for Cloud   ($18/user/mo)
+//   STRIPE_PRICE_CLOUD_PLUS    — recurring per-seat Price id for Cloud+  ($21/user/mo)
 //   SUPABASE_URL               — auto-injected
 //   SUPABASE_SERVICE_ROLE_KEY  — service role (write stripe_customer_id, bypass RLS)
 

@@ -32,6 +32,7 @@ import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { subscriptionRequired } from './utils/subscription.js';
+import { applyWriteLock, installWriteLock, isWriteLocked, isWriteRoute, showSubscribeRequiredPrompt, writeRouteFallback } from './utils/writeLock.js';
 import { mountTrialBanner, unmountTrialBanner } from './components/TrialBanner.js';
 import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
 import { bindWalkthroughListeners, refreshWalkthrough } from './components/Walkthrough.js';
@@ -60,6 +61,7 @@ checkMaintenancePlans();
 scheduleEngineChecks();
 initSearchableSelects();
 installDelegatedEvents();
+installWriteLock();
 
 // Expose app globals for cross-component access
 window.__relay = { router, store };
@@ -246,7 +248,13 @@ initTooltips();
 
 // The trial clock is refreshed on sign-in and on every page load, so a trial
 // that lapsed while the tab sat open flips to read-only without a reload.
-store.on('settings', () => mountTrialBanner(mainContent));
+store.on('settings', () => {
+  mountTrialBanner(mainContent);
+  // Subscription state can arrive after the page has rendered, so re-apply the
+  // write lock here as well as after each route render. Document-wide, because
+  // the top bar's brny trigger lives outside mainContent.
+  applyWriteLock();
+});
 
 // ---- Page Header to Breadcrumb Actions Relocation ----
 // Override mainContent querySelector/querySelectorAll to find moved buttons inside breadcrumb-actions
@@ -544,17 +552,24 @@ function renderPage(handler) {
     mainContent.classList.toggle('is-detail-page', isDetailPage);
 
     const result = handler(mainContent, params);
+    // A read-only account keeps the page, but its create/edit controls are
+    // greyed out. Applied to the whole document because the shell relocates
+    // header actions into the breadcrumb and the top bar sits outside
+    // mainContent. Applied again once a lazy page has actually rendered.
+    applyWriteLock();
     // Lazy routes hand back a promise; a chunk that fails to load (offline install,
     // bad deploy) must not leave the user staring at a blank page.
     if (result && typeof result.then === 'function') {
-      result.catch((err) => {
-        console.error('Failed to load page:', err);
-        mainContent.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span>'
-          + '<h3>This page could not be loaded</h3><p>Check your connection and try again.</p></div>';
-        import('./components/Notifications.js')
-          .then(({ showToast }) => showToast('This page could not be loaded.', 'error'))
-          .catch(() => {});
-      });
+      result
+        .then(() => applyWriteLock())
+        .catch((err) => {
+          console.error('Failed to load page:', err);
+          mainContent.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span>'
+            + '<h3>This page could not be loaded</h3><p>Check your connection and try again.</p></div>';
+          import('./components/Notifications.js')
+            .then(({ showToast }) => showToast('This page could not be loaded.', 'error'))
+            .catch(() => {});
+        });
     }
   };
 }
@@ -831,6 +846,16 @@ router.onNavigate = (path, params) => {
     if (!isPortal && !PUBLIC_PATHS.has(basePath) && subscriptionRequired()) {
       router.navigate('/subscribe');
       return false;
+    }
+
+    // Read-only trial: create/edit screens are not reachable even by editing the
+    // hash. Greyed-out controls normally stop the click before this point; this
+    // catches deep links and any control the UI selector missed. A replacement
+    // path is returned rather than `false` so the hash cannot bounce back to the
+    // blocked route (see Router.resolve).
+    if (!isPortal && !PUBLIC_PATHS.has(basePath) && isWriteLocked() && isWriteRoute(path)) {
+      showSubscribeRequiredPrompt();
+      return writeRouteFallback(path);
     }
 
     // Local (single-user) accounts have no My Profile page — Settings → Local Storage
