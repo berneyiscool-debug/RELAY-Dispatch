@@ -486,7 +486,7 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     technicians: [], customers: [], leads: [], quotes: [], jobs: [], invoices: [], schedule: [], timesheets: [],
     jobMaterials: [], purchaseOrders: [], projects: [], costCenters: [], stock: [], storageLocations: [], suppliers: [],
     contractors: [], assets: [], maintenancePlans: [], notifications: [], formInstances: [], kits: [], kitTypes: [],
-    locationTypes: [], taskTemplates: [], todos: [],
+    locationTypes: [], taskTemplates: [], todos: [], expectedWorkRosters: [], expectedWorkRosterDismissals: [], timeClocks: [],
   };
   const geo = {};
 
@@ -1540,6 +1540,210 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     },
     demoDataset: { version: 1, seededAt: now.toISOString(), anchor: dateKey(anchor) },
   };
+
+  // ---- 21. Rosters and the time clock
+  // The field crew's recurring roster, and a clock record behind every day they worked,
+  // so Clock History, Clocked vs Job Hours and the attendance board all have a true
+  // story to show. Only the field crew clocks on: the demo's Office Staff and Admin
+  // user types carry the default Time & Attendance rules (utils/workRules.js), under
+  // which neither clocks on nor books job time, so Bec and the owner have no roster
+  // and no clock records. A field day's clock times are built from the hours
+  // booked to jobs: on a few minutes before the first job, off a few after the last,
+  // with smoko and lunch taken in the gaps between jobs. A handful of days then get the
+  // things that happen in real life (an unbooked afternoon, a forgotten clock-off,
+  // times written in by hand) so the flags have something to point at.
+  const rosterStart = addDays(weekStart, -7 * 8);
+  const MON_FRI = [[true, true, true, true, true, false, false]];
+  const roster = (name, keys, startTime, endTime, shiftHours, weekShiftTimes) => {
+    const rec = {
+      id: id('roster'), name, startDate: dateKey(rosterStart), repeatEveryWeeks: 1, weekPatterns: MON_FRI,
+      defaultStartTime: startTime, defaultEndTime: endTime, shiftHours, technicianIds: keys.map((k) => T[k].id),
+      createdAt: isoAt(addDays(rosterStart, -3), 10), updatedAt: isoAt(addDays(rosterStart, -3), 10),
+    };
+    if (weekShiftTimes) rec.weekShiftTimes = weekShiftTimes;
+    C.expectedWorkRosters.push(rec);
+    return rec;
+  };
+  const FIELD = ['dale', 'priya', 'sam', 'tom'];
+  const rosterFor = {};
+  const rField = roster('Field crew', FIELD, '07:00', '15:30', 8.5);
+  FIELD.forEach((k) => { rosterFor[k] = rField; });
+  const ROSTER_HOURS = [7, 15.5];
+
+  // Rostered days nobody should be chased for: Tom's TAFE Wednesdays and Priya's leave.
+  const dismiss = (k, d, reason) => C.expectedWorkRosterDismissals.push({
+    id: id('rdis'), rosterId: rosterFor[k].id, technicianId: T[k].id, date: dateKey(d), reason, dismissedBy: T.bec.name,
+    createdAt: isoAt(addDays(rosterStart, -2), 9), updatedAt: isoAt(addDays(rosterStart, -2), 9),
+  });
+  for (let d = new Date(rosterStart); d <= bd(10); d = addDays(d, 1)) {
+    if (d.getDay() === 3) dismiss('tom', d, 'TAFE block day');
+  }
+  [6, 7].forEach((n) => dismiss('priya', bd(n), 'Annual leave — family wedding'));
+
+  // Booked time per person per day, from job hours (and job bookings with no hours yet).
+  const keyOf = Object.fromEntries(Object.entries(T).map(([k, t]) => [t.id, k]));
+  const booked = {};
+  const addBlock = (k, day, s, e) => { ((booked[k] = booked[k] || {})[day] = booked[k][day] || []).push([s, e]); };
+  const hourOf = (stamp) => +stamp.slice(11, 13) + +stamp.slice(14, 16) / 60;
+  C.timesheets.forEach((t) => {
+    const k = keyOf[t.technicianId];
+    if (k) addBlock(k, t.date, hourOf(t.startTime), hourOf(t.startTime) + t.hours);
+  });
+  C.schedule.forEach((s) => {
+    const k = keyOf[s.technicianId];
+    if (!k || !s.jobId || s.type) return;
+    if (booked[k] && booked[k][s.date] && C.timesheets.some((t) => t.technicianId === s.technicianId && t.date === s.date)) return;
+    addBlock(k, s.date, s.startHour, s.endHour);
+  });
+
+  // Gaps of half an hour or more are smoko and lunch: the session closes for a break.
+  const sessionsFromBlocks = (blocks) => {
+    const sorted = blocks.slice().sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    sorted.forEach(([s, e]) => {
+      const last = merged[merged.length - 1];
+      if (last && s - last[1] < 0.5) last[1] = Math.max(last[1], e);
+      else merged.push([s, e]);
+    });
+    const early = 0.03 + r() * 0.07;
+    const late = 0.03 + r() * 0.08;
+    return merged.map(([s, e], i) => [
+      i === 0 ? s - early : s,
+      i === merged.length - 1 ? e + late : e,
+    ]);
+  };
+  // Workshop days (rostered, nothing booked): one lunch break.
+  const officeSessions = (start, end) => {
+    const s = start - 0.05 + r() * 0.12;
+    const e = end + r() * 0.2;
+    if (e - s <= 5.5) return [[s, e]];
+    return [[s, 12.5], [13, e]];
+  };
+
+  const CARDIFF = { lat: -32.9405, lng: 151.6627 };
+  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const todayKey = dateKey(today);
+  const isPast = (d) => dateKey(d) < todayKey;
+  const where = (d, h) => ({
+    lat: Math.round((CARDIFF.lat + (r() - 0.5) * 0.002) * 1e5) / 1e5,
+    lng: Math.round((CARDIFF.lng + (r() - 0.5) * 0.002) * 1e5) / 1e5,
+    accuracy: 8 + Math.round(r() * 20),
+    timestamp: isoAt(d, h),
+  });
+  // Past weeks were signed off the Monday after; this week is still waiting.
+  const signOffDay = (d) => addDays(d, 7 - ((d.getDay() + 6) % 7));
+  const clock = (k, d, sessions, { open = false, approval, note = null, manual = false, adjustedHours = null, approvedBy = null } = {}) => {
+    const t = T[k];
+    const signedOff = approval || (d < weekStart ? 'approved' : 'pending');
+    sessions.forEach(([s, e], i) => {
+      const last = i === sessions.length - 1;
+      const closed = !(open && last);
+      const hours = closed ? round2(e - s) : null;
+      const approved = closed && (signedOff === 'approved' || signedOff === 'adjusted');
+      C.timeClocks.push({
+        id: id('clk'), technicianId: t.id, technicianName: t.name,
+        clockInAt: isoAt(d, s), clockOutAt: closed ? isoAt(d, e) : null,
+        clockInLocation: manual ? null : where(d, s), clockOutLocation: manual || !closed ? null : where(d, e),
+        status: !closed ? 'in' : last ? 'out' : 'break',
+        approvalStatus: closed ? signedOff : 'pending',
+        approvedHours: !approved ? null : (last && adjustedHours != null ? adjustedHours : hours),
+        approvedBy: approved ? (approvedBy || T.bec.name) : (manual ? approvedBy : null),
+        approvedAt: approved ? isoAt(d < weekStart ? signOffDay(d) : d, d < weekStart ? 9 : 17) : (manual ? isoAt(d, 17) : null),
+        note,
+        createdAt: isoAt(d, s), updatedAt: isoAt(d, closed ? e : s),
+      });
+    });
+  };
+
+  // The ordinary sessions for one person's day, or null when they didn't work it.
+  const dayPlan = (k, d) => {
+    const day = dateKey(d);
+    const blocks = booked[k] && booked[k][day];
+    if (blocks && blocks.length) return sessionsFromBlocks(blocks);
+    const rostered = d >= rosterStart && !isWeekend(d)
+      && !(k === 'tom' && d.getDay() === 3);
+    if (!rostered) return null;
+    // A field day with nothing booked is a workshop day: van stock, quotes, tool tags.
+    return officeSessions(...ROSTER_HOURS);
+  };
+
+  // The days that get a real-life twist, picked from days each person actually worked.
+  const workedDay = (k, from, to) => {
+    for (let n = from; n >= to; n--) {
+      const d = bd(n);
+      if (isPast(d) && booked[k] && booked[k][dateKey(d)]) return dateKey(d);
+    }
+    return null;
+  };
+  const twists = {
+    // Clocked on well after the last job and never booked it: a supply run.
+    [`dale|${workedDay('dale', -3, -6)}`]: (s) => { s[s.length - 1][1] += 1.75; return {}; },
+    // Drove an hour to a job out past Maitland before the first booking.
+    [`sam|${workedDay('sam', -6, -9)}`]: (s) => { s[0][0] -= 1; return {}; },
+    // Went to lunch and never clocked back on: more booked to jobs than clocked.
+    [`priya|${workedDay('priya', -1, -4)}`]: (s) => (s.length > 1 ? { sessions: s.slice(0, -1) } : {}),
+    // Forgot to clock off; clocked off from home that night, corrected to the roster.
+    [`tom|${workedDay('tom', -6, -10)}`]: (s) => {
+      s[s.length - 1][1] = 21.75;
+      return { approval: 'adjusted', adjustedHours: round2(Math.max(0, 15.5 - s[s.length - 1][0])), note: 'Forgot to clock off — paid to the 3:30 finish' };
+    },
+    // Phone was flat: the office wrote the day in from the site sign-in sheet.
+    [`priya|${workedDay('priya', -7, -12)}`]: () => ({ manual: true, approval: 'approved', note: 'Clock times entered by hand — Phone was flat; times from the site sign-in sheet' }),
+    // Forgot to clock on this week; Dale entered it, still waiting on the office.
+    [`tom|${workedDay('tom', -1, -4)}`]: () => ({ manual: true, approval: 'pending', approvedBy: T.dale.name, note: 'Clock times entered by hand — Forgot to clock on, confirmed by Dale' }),
+  };
+
+  // Workshop days (rostered, nothing booked) carry the roster stories: a late start
+  // last week, and one day this week nobody clocked at all, which holds up approval.
+  const workshopDay = (k, from, to, test) => {
+    for (let n = from; n >= to; n--) {
+      const d = bd(n);
+      if (isPast(d) && d >= rosterStart && test(d) && !(k === 'tom' && d.getDay() === 3)
+        && !(booked[k] && booked[k][dateKey(d)])) return dateKey(d);
+    }
+    return null;
+  };
+  const lateStart = FIELD.map((k) => [k, workshopDay(k, -5, -15, (d) => d < weekStart)]).find(([, day]) => day);
+  // Only this week: a gap in a week already signed off would not have got through.
+  // With no workshop day yet this week, Sam's phone died on a booked day instead: the
+  // jobs are booked but there is no clock record until the office enters one.
+  const samThisWeek = workedDay('sam', -1, -4);
+  const missedDay = FIELD.map((k) => [k, workshopDay(k, -1, -5, (d) => d >= weekStart)]).find(([, day]) => day)
+    || (samThisWeek && samThisWeek >= dateKey(weekStart) && !twists[`sam|${samThisWeek}`] ? ['sam', samThisWeek] : null);
+
+  for (let d = addDays(today, -200); d <= today; d = addDays(d, 1)) {
+    const day = dateKey(d);
+    FIELD.forEach((k) => {
+      if (missedDay && k === missedDay[0] && day === missedDay[1]) return;
+      let sessions = dayPlan(k, d);
+      if (!sessions) return;
+
+      if (day === todayKey) {
+        // Today runs live: whoever's day has started is on the clock now. Only part of
+        // the day is booked yet, so a rostered shift runs at least to its roster finish.
+        if (rosterFor[k] && !isWeekend(d)) {
+          const lastPlanned = sessions[sessions.length - 1];
+          lastPlanned[1] = Math.max(lastPlanned[1], ROSTER_HOURS[1]);
+        }
+        const startH = sessions[0][0];
+        if (nowHour <= startH) return;
+        const kept = sessions.filter(([s]) => s < nowHour).map(([s, e]) => [s, Math.min(e, nowHour)]);
+        const lastS = sessions[sessions.length - 1];
+        const stillGoing = nowHour < lastS[1];
+        const lastKept = kept[kept.length - 1];
+        const onBreakNow = stillGoing && lastKept[1] < nowHour;
+        clock(k, d, kept, { open: stillGoing && !onBreakNow, approval: 'pending' });
+        if (onBreakNow) C.timeClocks[C.timeClocks.length - 1].status = 'break';
+        return;
+      }
+
+      if (lateStart && k === lateStart[0] && day === lateStart[1]) sessions = officeSessions(8.2, 15.5);
+      const twist = twists[`${k}|${day}`];
+      const opts = twist ? twist(sessions) : {};
+      if (opts.sessions) sessions = opts.sessions;
+      clock(k, d, sessions, opts);
+    });
+  }
 
   // The office address is the dispatch start point for the map and routes.
   geo[settings.address] = { lat: -32.9405, lng: 151.6627, formattedAddress: `${settings.address}, Australia`, placeId: null, partialMatch: false };
