@@ -391,7 +391,7 @@ Two rules keep the page honest:
 - **Nothing is promised that does not exist.** Xero, Groundwork and the leads
   marketplace sit under "Coming next". The screenshots show the fictional
   demo company Harbourline Electrical & Air — no real customer names or testimonials
-  anywhere. Prices are $24 / $27 per user per month + GST, with the inc-GST
+  anywhere. Prices are $18 / $21 per user per month + GST, discounted from $24 / $27 while the launch price runs, with the inc-GST
   figures in small print.
 
 The published contact address is `support@relaydispatch.com.au`. It appears in
@@ -467,6 +467,11 @@ npx serve .
   `#FF5C00`, which passes as large text (3.10:1 against a 3:1 threshold).
 - **Placeholders are visible on purpose.** The footer's business name and ABN
   render as bracketed placeholders until the real values are supplied.
+- **"Shipped recently" is hand-written.** It has one card per minor release
+  (1.2, 1.3 and so on), with the patch releases folded in. Write the entries from
+  `git log <previous minor>..<new minor>`, in plain language, without commit
+  jargon. Add a card for each new minor release and drop the oldest, so the
+  section never goes stale. Only list features that are finished and shipped.
 - **The comparison table is dated.** The Tradify and Simpro cells were checked
   in October 2026 against the vendors' own pages: Tradify's AU pricing page
   (Lite/Pro/Plus at $48/$52/$62 ex GST, month to month, 14-day trial, no setup

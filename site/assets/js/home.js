@@ -100,3 +100,40 @@
       // Anchors keep their static releases-page href.
     });
 })();
+
+/**
+ * "Shipped recently" carousel: the arrows step the track by one card. Each
+ * arrow disables itself at the end it cannot go past. Swipe and the arrow keys
+ * also work, because the track is a native scroll container.
+ */
+(function () {
+  'use strict';
+
+  var track = document.getElementById('shipped-track');
+  var prev = document.querySelector('[data-shipped-prev]');
+  var next = document.querySelector('[data-shipped-next]');
+
+  if (!track || !prev || !next) {
+    return;
+  }
+
+  var step = function (direction) {
+    var card = track.querySelector('.card');
+    var gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+    var distance = card ? card.offsetWidth + gap : track.clientWidth;
+    track.scrollBy({ left: direction * distance });
+  };
+
+  var sync = function () {
+    var max = track.scrollWidth - track.clientWidth;
+    // The track has 4px of padding, so the ends sit a few pixels off zero.
+    prev.disabled = track.scrollLeft <= 8;
+    next.disabled = track.scrollLeft >= max - 8;
+  };
+
+  prev.addEventListener('click', function () { step(-1); });
+  next.addEventListener('click', function () { step(1); });
+  track.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
+})();

@@ -63,9 +63,8 @@ const pick = (collection, filter, sort) => `
 const SHOTS = [
   ['dashboard', '#/', null, DASHBOARD],
   ['schedule', '#/schedule', null, SCHEDULE],
-  ['job', pick('jobs', "(j) => j.status === 'In Progress' && j.quoteId", '(a, b) => (b.estimatedHours || 0) - (a.estimatedHours || 0)'), '#/jobs/{id}?tab=financials'],
   ['quote', pick('quotes', "(q) => q.status === 'Sent'", '(a, b) => b.total - a.total'), '#/quotes/{id}'],
-  ['reports', '#/reports'],
+  ['invoice', pick('invoices', "(i) => i.status === 'Overdue'", '(a, b) => b.total - a.total'), '#/invoices/{id}'],
 ];
 
 // The demo is dated relative to the day it loads (src/data/demoDataset.js), so
