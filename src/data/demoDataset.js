@@ -1516,7 +1516,6 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
   ]);
 
   // ---- Company settings ----------------------------------------------------
-  const allHours = Array.from({ length: 48 }, (_, i) => i);
   const settings = {
     name: DEMO_COMPANY_NAME, abn: '12 345 678 901', phone: '02 5550 1100', email: 'office@harbourline-electrical.example', domain: 'harbourline-electrical.example',
     website: 'www.harbourline-electrical.example', address: 'Unit 4, 18 Tradesman Way, Cardiff NSW 2285', licenceNumber: 'NSW Contractor Licence 271938C (demo)',
@@ -1526,11 +1525,11 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     jobTypes: ['Service Call', 'Installation', 'Switchboard', 'Air Conditioning', 'Solar & Battery', 'EV Charging', 'Compliance & Testing', 'Maintenance', 'Emergency', 'Project'],
     supplierCategories: ['Electrical', 'HVAC', 'Fire Safety', 'General'],
     laborRates: [
-      { id: 'rate_1', name: 'Standard Rate', rate: RATE.std, description: 'Mon–Fri 7am–4pm', overtimeMultiplier: 1.0, minCallOutFee: 0, applicableDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], activeHours: allHours.slice(14, 32), isDefault: true },
-      { id: 'rate_2', name: 'After Hours Rate', rate: RATE.ah, description: 'Weekday evenings and early mornings', overtimeMultiplier: 1.5, minCallOutFee: RATE.emergencyCallout, applicableDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], activeHours: [...allHours.slice(0, 14), ...allHours.slice(32)], isDefault: false },
-      { id: 'rate_3', name: 'Saturday Rate', rate: RATE.ah, description: 'Saturday work', overtimeMultiplier: 1.5, minCallOutFee: RATE.emergencyCallout, applicableDays: ['Sat'], activeHours: allHours, isDefault: false },
-      { id: 'rate_4', name: 'Sunday & Public Holiday Rate', rate: RATE.emergency, description: 'Sundays and public holidays', overtimeMultiplier: 2.0, minCallOutFee: RATE.emergencyCallout, applicableDays: ['Sun', 'PH'], activeHours: allHours, isDefault: false },
-      { id: 'rate_5', name: 'Emergency Rate', rate: RATE.emergency, description: 'Urgent call-outs, any day', overtimeMultiplier: 2.0, minCallOutFee: RATE.emergencyCallout, applicableDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'PH'], activeHours: allHours, isDefault: false },
+      { id: 'rate_1', name: 'Standard Rate', rate: RATE.std, description: 'Mon–Fri 7am–4pm', minCallOutFee: 0, isDefault: true },
+      { id: 'rate_2', name: 'After Hours Rate', rate: RATE.ah, description: 'Weekday evenings and early mornings', minCallOutFee: RATE.emergencyCallout, isDefault: false },
+      { id: 'rate_3', name: 'Saturday Rate', rate: RATE.ah, description: 'Saturday work', minCallOutFee: RATE.emergencyCallout, isDefault: false },
+      { id: 'rate_4', name: 'Sunday & Public Holiday Rate', rate: RATE.emergency, description: 'Sundays and public holidays', minCallOutFee: RATE.emergencyCallout, isDefault: false },
+      { id: 'rate_5', name: 'Emergency Rate', rate: RATE.emergency, description: 'Urgent call-outs, any day', minCallOutFee: RATE.emergencyCallout, isDefault: false },
     ],
     documentTheme: {
       invoiceTerms: 'Residential: payment due within 7 days. Commercial: as per your account terms.',

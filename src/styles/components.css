@@ -2421,33 +2421,6 @@ body > .searchable-select-dropdown {
   color: var(--text-primary);
 }
 
-/* ---- 48-slot Timeline Editor styles ---- */
-.timeline-block {
-  height: 20px;
-  background: rgba(0, 0, 0, 0.08);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-.timeline-block:hover {
-  transform: scale(1.15);
-  background: rgba(0, 0, 0, 0.15);
-}
-.timeline-block.active {
-  background: var(--color-primary) !important;
-  box-shadow: 0 0 8px var(--color-primary-light);
-}
-[data-theme-mode="dark"] .timeline-block {
-  background: rgba(255, 255, 255, 0.08);
-}
-[data-theme-mode="dark"] .timeline-block:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-[data-theme-mode="dark"] .timeline-block.active {
-  background: var(--color-primary) !important;
-  box-shadow: 0 0 8px var(--color-primary-light);
-}
-
 /* ============================================================
    RELAY — TOOLTIPS (utils/tooltip.js)
    ============================================================
