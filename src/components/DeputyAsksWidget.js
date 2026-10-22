@@ -65,7 +65,7 @@ export function renderDeputyAsksWidget(data, item) {
         ${escapeHTML(ask.description)}
       </div>
       <div style="display: flex; gap: 8px; padding-left: 24px;">
-        <button class="btn btn-primary btn-sm btn-approve-ask" data-id="${ask.id}">Approve</button>
+        <button class="btn btn-primary btn-sm btn-approve-ask" data-id="${ask.id}" data-write-action>Approve</button>
         <button class="btn btn-secondary btn-sm btn-dismiss-ask" data-id="${ask.id}">Dismiss</button>
       </div>
     </div>
