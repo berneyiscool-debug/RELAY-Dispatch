@@ -1520,6 +1520,15 @@ class DataStore {
     }
 
     // 2. Standard Browser File System Access API
+    return URL.createObjectURL(await this.readLocalDocumentFile(doc));
+  }
+
+  /**
+   * The File behind a document stored in the synced local folder (a relative
+   * `dir/file` url). Callers that need the bytes use this rather than the blob:
+   * URL from getDocumentUrl, which the CSP's connect-src does not let fetch() read.
+   */
+  async readLocalDocumentFile(doc) {
     if (!this.dirHandle) {
       throw new Error('Local directory sync is not configured.');
     }
@@ -1536,8 +1545,7 @@ class DataStore {
 
       const dir = await this.dirHandle.getDirectoryHandle(dirName);
       const fileHandle = await dir.getFileHandle(fileName);
-      const file = await fileHandle.getFile();
-      return URL.createObjectURL(file);
+      return await fileHandle.getFile();
     } catch (err) {
       console.error('Failed to read file from local directory:', err);
       throw err;

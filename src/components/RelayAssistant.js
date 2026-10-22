@@ -1751,6 +1751,33 @@ export async function openDeputyWithPrompt(promptText) {
   }
 }
 
+/**
+ * Open brny with files ready to send with the next message, as if they had
+ * been picked with the paperclip (the Document Center's "Copy to brny").
+ * Attachments are a cloud feature and brny reads images and PDFs only.
+ * @param {File[]} files
+ * @returns {Promise<{added: number, skipped: number}>}
+ * @throws a user-readable Error when brny cannot take attachments
+ */
+export async function attachFilesToRelay(files) {
+  if (!isCloudUser()) throw new Error('Attaching files to brny needs a cloud account.');
+  if (!panel) await openRelay();
+  if (!panel) throw new Error('brny is not available for your account.');
+  let added = 0;
+  let skipped = 0;
+  (files || []).forEach(file => {
+    if (isSupportedAttachment(file)) {
+      pendingAttachments.push({ file, name: file.name, kind: fileKind(file) });
+      added++;
+    } else {
+      skipped++;
+    }
+  });
+  renderAttachmentChips();
+  panel.querySelector('#relay-input')?.focus();
+  return { added, skipped };
+}
+
 export async function openRelay() {
   if (panel) return;
 
