@@ -74,33 +74,70 @@
         Start free
       </a>
     </div>
+    <details class="nav-mobile">
+      <summary class="nav-mobile__summary">
+        <span class="nav-mobile__icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Menu</span>
+      </summary>
+      <div class="nav-mobile__panel">
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#compare">Compare</a>
+        <a href="/#download">Download</a>
+        <p class="nav-mobile__label">Feature guides</p>
+        <a href="/features/dashboard/">Dashboard</a>
+        <a href="/features/schedule/">Schedule</a>
+        <a href="/features/workflow/">Workflow</a>
+        <a href="/features/people/">People</a>
+        <a href="/features/resources/">Resources</a>
+        <a href="/features/admin/">Admin</a>
+      </div>
+    </details>
   </div>
 </header>
 
 <main id="main" class="feature-page">
-  <div class="feature-page__inner">
-    <p class="eyebrow"><a href="/#features">All features</a></p>
-    <h1 class="feature-page__title">Schedule</h1>
-    <p class="feature-page__intro">Where the day is planned. One column for each person, with jobs, leave and activities in the same place.</p>
+  <div class="feature-page__head">
+    <div class="feature-page__inner">
+      <p class="eyebrow"><a href="/#features">All features</a></p>
+      <h1 class="feature-page__title">Schedule</h1>
+      <p class="feature-page__intro">Where the day is planned. One column for each person, with jobs, leave and activities in the same place.</p>
+    </div>
+  </div>
+
+  <div class="feature-page__inner feature-page__body">
 
       <section class="feature-tab" id="schedule" aria-labelledby="schedule-heading">
-        <h2 class="feature-tab__title" id="schedule-heading">Schedule</h2>
-        <p class="feature-tab__summary">Plans the day and the week for the whole crew, with jobs, leave and activities in one place.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="schedule-heading"><span class="feature-tab__num" aria-hidden="true">01</span>Schedule</h2>
+          <p class="feature-tab__summary">Plans the day and the week for the whole crew, with jobs, leave and activities in one place.</p>
+          <ul class="feature-tab__list">
+            <li>Day and week views with a column for each crew member</li>
+            <li>Add a job to the schedule, a team meeting, a calendar blockout or leave and time off</li>
+            <li>Route panel to order a crew's jobs and re-time the day</li>
+            <li>See who is clocked in and what attendance looks like across the team</li>
+            <li>Right-click or drag a job to change its status</li>
+            <li>Activity calendar for calls, callbacks and meetings, on a daily, fortnightly or monthly repeat</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/schedule-1080.webp" srcset="/assets/screens/tabs/schedule-1080.webp 1080w, /assets/screens/tabs/schedule.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Schedule screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/schedule-1080.webp" srcset="/assets/screens/tabs/schedule-1080.webp 1080w, /assets/screens/tabs/schedule.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Schedule screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Day and week views with a column for each crew member</li>
-          <li>Add a job to the schedule, a team meeting, a calendar blockout or leave and time off</li>
-          <li>Route panel to order a crew's jobs and re-time the day</li>
-          <li>See who is clocked in and what attendance looks like across the team</li>
-          <li>Right-click or drag a job to change its status</li>
-          <li>Activity calendar for calls, callbacks and meetings, on a daily, fortnightly or monthly repeat</li>
-        </ul>
       </section>
 
+      <nav class="feature-more" aria-label="Other feature sections">
+        <p class="feature-more__label">More features</p>
+        <div class="feature-more__links">
+          <a href="/features/dashboard/">Dashboard</a>
+          <a href="/features/workflow/">Workflow</a>
+          <a href="/features/people/">People</a>
+          <a href="/features/resources/">Resources</a>
+          <a href="/features/admin/">Admin</a>
+        </div>
+      </nav>
+
     <div class="feature-cta">
-      <p>Free for one user, forever. Add the crew from $18 + GST per user a month.</p>
+      <p>Free for one user, forever. Add the crew from $18 + GST per user a month while the beta runs.</p>
       <div class="feature-cta__actions">
         <a class="btn btn--md btn--primary" href="/#download">Download free for Windows</a>
         <a class="btn btn--md btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
@@ -124,5 +161,6 @@
   </div>
 </footer>
 
+<script src="/assets/js/home.js" defer></script>
 </body>
 </html>

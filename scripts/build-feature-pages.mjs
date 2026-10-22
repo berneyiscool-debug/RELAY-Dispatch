@@ -333,16 +333,28 @@ ${section.tabs.map((t) => `        <a href="#${t.id}">${escapeHtml(t.name)}</a>`
       </nav>
 `
     : '';
-  const blocks = section.tabs.map((tab) => `      <section class="feature-tab" id="${tab.id}" aria-labelledby="${tab.id}-heading">
-        <h2 class="feature-tab__title" id="${tab.id}-heading">${escapeHtml(tab.name)}</h2>
-        <p class="feature-tab__summary">${escapeHtml(SUMMARIES[tab.id])}</p>
+  const blocks = section.tabs.map((tab, index) => `      <section class="feature-tab" id="${tab.id}" aria-labelledby="${tab.id}-heading">
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="${tab.id}-heading"><span class="feature-tab__num" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span>${escapeHtml(tab.name)}</h2>
+          <p class="feature-tab__summary">${escapeHtml(SUMMARIES[tab.id])}</p>
+          <ul class="feature-tab__list">
+${tab.items.map((item) => `            <li>${escapeHtml(item)}</li>`).join('\n')}
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/${tab.id}-1080.webp" srcset="/assets/screens/tabs/${tab.id}-1080.webp 1080w, /assets/screens/tabs/${tab.id}.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The ${escapeHtml(tab.name)} screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/${tab.id}-1080.webp" srcset="/assets/screens/tabs/${tab.id}-1080.webp 1080w, /assets/screens/tabs/${tab.id}.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The ${escapeHtml(tab.name)} screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-${tab.items.map((item) => `          <li>${escapeHtml(item)}</li>`).join('\n')}
-        </ul>
       </section>`).join('\n\n');
+
+  // Every other section, so a reader who lands on one page can reach the rest
+  // without going back through the header.
+  const more = `      <nav class="feature-more" aria-label="Other feature sections">
+        <p class="feature-more__label">More features</p>
+        <div class="feature-more__links">
+${SECTIONS.filter((s) => s.slug !== section.slug).map((s) => `          <a href="/features/${s.slug}/">${escapeHtml(s.name)}</a>`).join('\n')}
+        </div>
+      </nav>
+`;
 
   return `<!DOCTYPE html>
 <html lang="en-AU">
@@ -364,15 +376,21 @@ ${headHtml}
 ${headerWithDropdown}
 
 <main id="main" class="feature-page">
-  <div class="feature-page__inner">
-    <p class="eyebrow"><a href="/#features">All features</a></p>
-    <h1 class="feature-page__title">${escapeHtml(section.name)}</h1>
-    <p class="feature-page__intro">${escapeHtml(section.intro)}</p>
+  <div class="feature-page__head">
+    <div class="feature-page__inner">
+      <p class="eyebrow"><a href="/#features">All features</a></p>
+      <h1 class="feature-page__title">${escapeHtml(section.name)}</h1>
+      <p class="feature-page__intro">${escapeHtml(section.intro)}</p>
+    </div>
+  </div>
+
+  <div class="feature-page__inner feature-page__body">
 ${jump}
 ${blocks}
 
+${more}
     <div class="feature-cta">
-      <p>Free for one user, forever. Add the crew from $18 + GST per user a month.</p>
+      <p>Free for one user, forever. Add the crew from $18 + GST per user a month while the beta runs.</p>
       <div class="feature-cta__actions">
         <a class="btn btn--md btn--primary" href="/#download">Download free for Windows</a>
         <a class="btn btn--md btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
@@ -383,6 +401,7 @@ ${blocks}
 
 ${absolutise(footerHtml)}
 
+<script src="/assets/js/home.js" defer></script>
 </body>
 </html>
 `;
