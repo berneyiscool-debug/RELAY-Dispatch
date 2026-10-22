@@ -2,6 +2,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showAlert } from '../../utils/confirmDialog.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 export function renderAssetForm(container, params) {
   const isNew = params.id === 'new';
@@ -65,6 +66,7 @@ export function renderAssetForm(container, params) {
               <select id="customerId" class="form-select">
                 <option value="">Select customer...</option>
                 ${customers.map(c => `<option value="${c.id}" ${asset.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+                ${newCustomerOptionHtml()}
               </select>
             </div>
           </div>
@@ -146,6 +148,8 @@ export function renderAssetForm(container, params) {
   const customerGroup = container.querySelector('#customer-select-group');
   const customerSelect = container.querySelector('#customerId');
   const siteSelect = container.querySelector('#site');
+  // "+ New customer" adds a missing customer without leaving the asset.
+  wireNewCustomerOption(customerSelect, { customers });
   
   const bizFields = container.querySelector('#business-fields');
   

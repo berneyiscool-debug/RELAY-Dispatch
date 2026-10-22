@@ -85,18 +85,23 @@ export function enhanceSelect(select) {
       // Exclude empty-value placeholder options if there is typing
       if (opt.value === '' && filterQuery !== '') return;
 
+      // An action option (data-always-show, e.g. "+ New customer") stays listed
+      // whatever is typed, and names what was typed so it can be carried over.
+      const isAction = opt.dataset.alwaysShow === 'true';
       const text = opt.text;
-      if (q && !text.toLowerCase().includes(q)) return;
+      if (q && !isAction && !text.toLowerCase().includes(q)) return;
 
       const item = document.createElement('div');
       item.className = 'searchable-select-option';
+      if (isAction) item.classList.add('is-action');
       if (idx === select.selectedIndex) item.classList.add('selected');
-      item.textContent = text;
+      item.textContent = isAction && filterQuery ? `${text} “${filterQuery}”` : text;
       item.dataset.index = idx;
 
       // Use mousedown to select instantly before input blur hides dropdown
       item.addEventListener('mousedown', (e) => {
         e.preventDefault(); // Keep input focused
+        select.dataset.searchQuery = isAction ? filterQuery : '';
         selectOption(idx);
       });
 
@@ -253,6 +258,7 @@ export function enhanceSelect(select) {
       e.preventDefault();
       const targetIndex = activeIndex >= 0 && activeIndex < items.length ? activeIndex : 0;
       const realIndex = parseInt(items[targetIndex].dataset.index, 10);
+      select.dataset.searchQuery = items[targetIndex].classList.contains('is-action') ? input.value.trim() : '';
       selectOption(realIndex);
     } else if (e.key === 'Escape') {
       e.preventDefault();

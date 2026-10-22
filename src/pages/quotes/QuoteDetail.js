@@ -18,6 +18,7 @@ import { quoteEmail } from '../../utils/emailTemplates.js';
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 export function renderQuoteDetail(container, params) {
   const { id, customerId, type, tab } = params;
@@ -182,6 +183,7 @@ export function renderQuoteDetail(container, params) {
               <select class="form-select" id="quote-customer" ${quote.status === 'Archived' ? 'disabled' : ''}>
                 <option value="">Select customer...</option>
                 ${customers.map(c => `<option value="${c.id}" ${quote.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+                ${newCustomerOptionHtml()}
               </select>
             </div>
             <div class="form-group">
@@ -704,6 +706,9 @@ export function renderQuoteDetail(container, params) {
         });
       });
     });
+
+    // "+ New customer" adds a missing customer without leaving the quote.
+    wireNewCustomerOption(container.querySelector('#quote-customer'), { customers });
 
     container.querySelectorAll('#quote-name, #quote-desc, #quote-customer, #quote-title, #quote-status, #quote-valid, #quote-labor-profile').forEach(input => {
       input.addEventListener('change', () => {

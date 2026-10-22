@@ -100,11 +100,13 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
     btn.addEventListener('click', () => (action.onClick ? action.onClick(close) : close()));
   });
 
-  // ESC key
+  // ESC key. Only the topmost modal closes, so a modal opened from inside another
+  // (a quick-create from a form in a modal) doesn't take the one beneath it too.
   escHandler = (e) => {
-    if (e.key === 'Escape') {
-      close();
-    }
+    if (e.key !== 'Escape') return;
+    const overlays = document.querySelectorAll('.modal-overlay');
+    if (overlays.length && overlays[overlays.length - 1] !== overlay) return;
+    close();
   };
   document.addEventListener('keydown', escHandler);
 

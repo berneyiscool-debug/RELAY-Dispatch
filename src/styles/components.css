@@ -4835,3 +4835,28 @@ button.widget-picker-card {
   .help-pane { padding: 16px; }
   .help-item { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ---- Quick-create customer (components/QuickCustomer.js) ---- */
+.quick-customer .quick-customer-type { margin-bottom: var(--space-md); }
+.quick-customer .form-group[hidden] { display: none; }
+.quick-customer-hint { margin: 4px 0 0; font-size: var(--font-size-sm); }
+.quick-customer-dupe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--border-radius);
+  background: var(--color-warning-bg);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.quick-customer-dupe[hidden] { display: none; }
+
+/* An "always show" option in a searchable dropdown (e.g. "+ New customer"). */
+.searchable-select-option.is-action {
+  color: var(--color-primary);
+  font-weight: 600;
+  border-top: 1px solid var(--border-color);
+}
