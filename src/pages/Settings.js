@@ -10,6 +10,7 @@ import { renderStorageOptions } from '../components/StorageOptions.js';
 import { usageBarsHtml, refreshUsageBars } from '../components/UsageBars.js';
 import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
+import { WORK_RULES, defaultWorkRules, workRulesForType, workRulesFromPermissions, withWorkRules } from '../utils/workRules.js';
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
@@ -107,108 +108,38 @@ function buildGranularPerms(valueFn) {
 
 // Collections that only hold data once a company starts entering real (or demo) work
 
-// Helper to render visual timeline
-function renderTimelineHtml(activeHours = []) {
-  const hours = ['12am', '4am', '8am', '12pm', '4pm', '8pm', '12am'];
-  
-  // Format tooltip time range
-  const formatTimeRange = (i) => {
-    const pad = (num) => String(num).padStart(2, '0');
-    const sh = Math.floor(i / 2);
-    const sm = (i % 2) * 30;
-    const eh = Math.floor((i + 1) / 2);
-    const em = ((i + 1) % 2) * 30;
-    return `${pad(sh)}:${pad(sm)} – ${pad(eh)}:${pad(em)}`;
-  };
-
-  let blocksHtml = '';
-  for (let i = 0; i < 48; i++) {
-    const isActive = activeHours.includes(i);
-    blocksHtml += `
-      <div class="timeline-block ${isActive ? 'active' : ''}" 
-           data-slot="${i}" 
-           title="${formatTimeRange(i)}"
-      ></div>
-    `;
-  }
-
+// One labour rate profile as a row of the Labour Rates list: name, hourly
+// charge-out rate and minimum call-out fee. The default rate prices task
+// estimates and is preselected when labour is added, so it cannot be deleted.
+function rateRowHtml(rate) {
+  const id = escapeHTML(rate.id);
+  const money = (n) => (Number(n) || 0).toFixed(2);
   return `
-    <div class="form-group timeline-container" style="margin:0; grid-column:1/-1; user-select:none; position:relative;">
-      <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span style="font-weight:600; display:flex; align-items:center; gap:6px;">
-          <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">schedule</span>
-          Active Hours Timeline
-        </span>
-        <span class="text-tertiary timeline-hint">Click & drag to highlight active hours</span>
+    <div class="labor-rate-row${rate.isDefault ? ' is-default' : ''}" data-id="${id}">
+      <input class="form-input rate-name" value="${escapeHTML(rate.name || '')}" placeholder="Rate name" aria-label="Rate name" />
+      <label class="rate-money">
+        <span class="rate-money-unit">$</span>
+        <input class="form-input rate-val" type="number" value="${money(rate.rate)}" min="0" step="0.50" aria-label="Hourly rate" />
+        <span class="rate-money-unit">/hr</span>
       </label>
-      
-      <!-- Hour labels -->
-      <div class="timeline-hour-labels">
-        ${hours.map(h => `<span>${h}</span>`).join('')}
-      </div>
-      
-      <!-- Grid -->
-      <div class="timeline-grid" style="display:grid; 
-        grid-template-columns:repeat(48, 1fr); 
-        gap:3px; 
-        background: rgba(0, 0, 0, 0.2); 
-        padding:6px; 
-        border-radius:8px; 
-        border:1px solid var(--border-color);
-        touch-action:none;">
-        ${blocksHtml}
-      </div>
-    </div>
-  `;
+      <label class="rate-money">
+        <span class="rate-money-unit">$</span>
+        <input class="form-input rate-min-fee" type="number" value="${money(rate.minCallOutFee)}" min="0" step="1.00" aria-label="Minimum call-out fee" />
+      </label>
+      <div class="rate-row-actions">${rateRowActionsHtml(rate.id, !!rate.isDefault)}</div>
+    </div>`;
 }
 
-// Setup drag drawing / erasing
-function setupTimelineDragSelection(container) {
-  let isDrawing = false;
-  let drawMode = true; // true = draw, false = erase
-
-  const onStart = (block) => {
-    isDrawing = true;
-    drawMode = !block.classList.contains('active');
-    toggleBlock(block, drawMode);
-  };
-
-  const onMove = (block) => {
-    if (isDrawing) {
-      toggleBlock(block, drawMode);
-    }
-  };
-
-  const toggleBlock = (block, active) => {
-    if (active) {
-      block.classList.add('active');
-    } else {
-      block.classList.remove('active');
-    }
-  };
-
-  // Attach mouse listeners
-  container.addEventListener('mousedown', (e) => {
-    const block = e.target.closest('.timeline-block');
-    if (block) {
-      e.preventDefault();
-      onStart(block);
-    }
-  });
-
-  // Use delegated mouseover which bubbles correctly
-  container.addEventListener('mouseover', (e) => {
-    const block = e.target.closest('.timeline-block');
-    if (block) {
-      onMove(block);
-    }
-  });
-
-  const stopDrawing = () => {
-    isDrawing = false;
-  };
-
-  window.addEventListener('mouseup', stopDrawing);
+function rateRowActionsHtml(id, isDefault) {
+  const safeId = escapeHTML(id);
+  return `
+    ${isDefault
+      ? '<span class="badge rate-default-badge" data-tooltip="Prices task estimates and is preselected when adding labour" data-tooltip-pos="top">Default</span>'
+      : `<button type="button" class="btn btn-ghost btn-sm btn-set-default" data-id="${safeId}">Set default</button>`}
+    <button type="button" class="btn btn-ghost btn-sm btn-icon remove-rate-btn" data-id="${safeId}" aria-label="Delete rate"
+      ${isDefault ? 'disabled data-tooltip="The default rate can\'t be deleted" data-tooltip-pos="left"' : 'data-tooltip="Delete rate" data-tooltip-pos="left"'}>
+      <span class="material-icons-outlined" style="font-size:18px;pointer-events:none">delete</span>
+    </button>`;
 }
 
 export function renderSettings(container) {
@@ -281,8 +212,6 @@ export function renderSettings(container) {
         }
       }
     </style>
-
-    <div class="page-header"><h1>Settings</h1></div>
 
     <div id="settings-content" style="padding-top:0;"></div>
   `;
@@ -603,93 +532,33 @@ export function renderSettings(container) {
         </div>
 
         <div class="card" style="margin-top:var(--space-lg)">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-md)">
             <div>
-              <h4 style="margin:0">Labour Rate Profiles</h4>
-              <p class="text-secondary" style="margin:4px 0 0">Define charge-out rates for different job types or time periods. These appear as selectable options when adding labour to a quote or job.</p>
+              <h4 style="margin:0">Labour Rates</h4>
+              <p class="text-secondary" style="margin:4px 0 0">Hourly charge-out rates to choose from when adding labour to a quote, job or invoice. The default rate prices task estimates.</p>
             </div>
-            <button class="btn btn-primary btn-sm" id="add-rate-btn" data-tooltip="Create a new custom charge-out rate profile">
-              <span class="material-icons-outlined" style="font-size:16px">add</span> Add Profile
+            <button class="btn btn-primary btn-sm" id="add-rate-btn" data-tooltip="Add another charge-out rate">
+              <span class="material-icons-outlined" style="font-size:16px">add</span> Add Rate
             </button>
           </div>
-          <div class="card-body">
-            <div id="labor-rates-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap:16px;">
-              ${settings.laborRates.map((rate) => {
-                const allDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'];
-                const dayLabels = { Mon:'Mon', Tue:'Tue', Wed:'Wed', Thu:'Thu', Fri:'Fri', Sat:'Sat', Sun:'Sun', PH:'P.H.' };
-                const applicable = rate.applicableDays || ['Mon','Tue','Wed','Thu','Fri'];
-                return `
-                <div class="labor-rate-card${rate.isDefault ? ' is-default' : ''}" data-id="${rate.id}">
-                  <!-- Card Header -->
-                  <div class="rate-card-head">
-                    <div class="rate-card-title">
-                      <span class="material-icons-outlined">sell</span>
-                      <input class="rate-name" value="${escapeHTML(rate.name)}" placeholder="Rate Profile Name" />
-                      ${rate.isDefault ? '<span class="badge rate-default-badge">DEFAULT</span>' : ''}
-                    </div>
-                    <div class="rate-card-actions">
-                      ${!rate.isDefault ? `<button class="btn btn-ghost btn-sm btn-set-default" data-id="${rate.id}" title="Set as default rate">Set Default</button>` : ''}
-                      <button class="btn btn-ghost btn-sm btn-icon remove-rate-btn" data-id="${rate.id}" title="Delete profile" ${rate.isDefault ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>
-                        <span class="material-icons-outlined" style="font-size:18px;pointer-events:none">delete</span>
-                      </button>
-                    </div>
-                  </div>
-                  <!-- Card Body -->
-                  <div class="rate-card-body">
-                    <!-- Charge-out Rate -->
-                    <div class="form-group" style="margin:0">
-                      <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
-                      <div style="display:flex;align-items:center;gap:6px">
-                        <span style="color:var(--text-secondary)">$</span>
-                        <input class="form-input rate-val" type="number" value="${rate.rate.toFixed(2)}" min="0" step="0.50" style="width:120px" />
-                        <span class="text-secondary">/hr</span>
-                      </div>
-                    </div>
-                    <!-- Overtime Multiplier (hidden) -->
-                    <input type="hidden" class="rate-multiplier" value="${rate.overtimeMultiplier || 1}" />
-                    <!-- Minimum Call-out Fee -->
-                    <div class="form-group" style="margin:0">
-                      <label class="form-label" data-tooltip="Minimum flat fee billed if calculated hours compute below this value" data-tooltip-pos="left">Min Call-out Fee ($)</label>
-                      <div style="display:flex;align-items:center;gap:6px">
-                        <span style="color:var(--text-secondary)">$</span>
-                        <input class="form-input rate-min-fee" type="number" value="${(rate.minCallOutFee || 0).toFixed(2)}" min="0" step="1.00" style="width:120px" />
-                      </div>
-                    </div>
-                    <!-- Description (hidden) & Active Hours Timeline -->
-                    <input type="hidden" class="rate-desc" value="${escapeHTML(rate.description || '')}" />
-                    ${renderTimelineHtml(rate.activeHours || [])}
-
-                    <!-- Applicable Days -->
-                    <div class="form-group" style="margin:0;grid-column:1/-1">
-                      <label class="form-label">Applicable Days</label>
-                      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-                        ${allDays.map(day => {
-                          const active = applicable.includes(day);
-                          return `
-                          <label style="cursor:pointer">
-                            <input type="checkbox" class="rate-day" data-day="${day}" ${active ? 'checked' : ''} style="display:none" />
-                            <span class="rate-day-pill${active ? ' is-active' : ''}" data-day="${day}">
-                              ${dayLabels[day]}
-                            </span>
-                          </label>
-                        `}).join('')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              `}).join('')}
+          <div class="card-body labor-rates-body">
+            <div class="labor-rates-list" id="labor-rates-container">
+              <div class="labor-rates-head" aria-hidden="true">
+                <span>Name</span>
+                <span>Hourly rate</span>
+                <span data-tooltip="Smallest labour charge for a visit: shorter jobs are billed this flat amount instead" data-tooltip-pos="top">Min call-out fee</span>
+                <span></span>
+              </div>
+              ${settings.laborRates.map(rateRowHtml).join('')}
             </div>
           </div>
           <div class="card-footer" style="display:flex;justify-content:flex-end">
-            <button class="btn btn-primary" id="save-tax-settings" data-tooltip="Save tax rates, markup, rounding and profiles" data-tooltip-pos="top">
+            <button class="btn btn-primary" id="save-tax-settings" data-tooltip="Save tax, rounding and labour rates" data-tooltip-pos="top">
               <span class="material-icons-outlined">save</span> Save All Settings
             </button>
           </div>
         </div>
       `;
-
-      // Set up interactive timeline drag-selection
-      setupTimelineDragSelection(tc);
 
       // Toggle tax rate container visibility
       tc.querySelector('#tax-enabled')?.addEventListener('change', (e) => {
@@ -699,143 +568,55 @@ export function renderSettings(container) {
         }
       });
 
-      // ---- Day pill toggle ----
-      tc.addEventListener('click', (e) => {
-        const pill = e.target.closest('.rate-day-pill');
-        if (pill) {
-          // The pill lives inside a <label> wrapping the hidden checkbox, so the browser
-          // would also toggle the checkbox here. Suppress that and own the toggle below,
-          // otherwise the pill state and the saved checkbox state drift apart.
-          e.preventDefault();
-          const day = pill.dataset.day;
-          const card = pill.closest('.labor-rate-card');
-          const chk = card.querySelector(`.rate-day[data-day="${day}"]`);
-          chk.checked = !chk.checked;
-          const active = chk.checked;
-          pill.classList.toggle('is-active', active);
-        }
-      });
-
-      // ---- Add new profile ----
+      // ---- Add a rate ----
       tc.querySelector('#add-rate-btn').addEventListener('click', () => {
-        const id = 'rate_' + Date.now().toString(36);
         const container = tc.querySelector('#labor-rates-container');
-        const allDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'];
-        const dayLabels = { Mon:'Mon', Tue:'Tue', Wed:'Wed', Thu:'Thu', Fri:'Fri', Sat:'Sat', Sun:'Sun', PH:'P.H.' };
-        const div = document.createElement('div');
-        div.className = "labor-rate-card";
-        div.dataset.id = id;
-        div.innerHTML = `
-          <div class="rate-card-head">
-            <div class="rate-card-title">
-              <span class="material-icons-outlined">sell</span>
-              <input class="rate-name" value="New Rate Profile" />
-            </div>
-            <div class="rate-card-actions">
-              <button class="btn btn-ghost btn-sm btn-set-default" data-id="${id}">Set Default</button>
-              <button class="btn btn-ghost btn-sm btn-icon remove-rate-btn" data-id="${id}"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>
-            </div>
-          </div>
-          <div class="rate-card-body">
-            <div class="form-group" style="margin:0">
-              <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span style="color:var(--text-secondary)">$</span>
-                <input class="form-input rate-val" type="number" value="0.00" min="0" step="0.50" style="width:120px" />
-              </div>
-            </div>
-            <!-- Overtime Multiplier (hidden) -->
-            <input type="hidden" class="rate-multiplier" value="1.0" />
-            <div class="form-group" style="margin:0">
-              <label class="form-label" data-tooltip="Minimum flat fee billed if calculated hours compute below this value" data-tooltip-pos="left">Min Call-out Fee ($)</label>
-              <input class="form-input rate-min-fee" type="number" value="0.00" min="0" step="1.00" style="width:120px" />
-            </div>
-            <!-- Description (hidden) & Active Hours Timeline -->
-            <input type="hidden" class="rate-desc" value="" />
-            ${renderTimelineHtml(Array.from({length: 18}, (_, i) => i + 16))}
-
-            <div class="form-group" style="margin:0;grid-column:1/-1">
-              <label class="form-label">Applicable Days</label>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-                ${allDays.map(day => `
-                  <label style="cursor:pointer">
-                    <input type="checkbox" class="rate-day" data-day="${day}" ${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? 'checked' : ''} style="display:none" />
-                    <span class="rate-day-pill${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? ' is-active' : ''}" data-day="${day}">
-                      ${dayLabels[day]}
-                    </span>
-                  </label>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-        `;
-        container.appendChild(div);
+        const holder = document.createElement('div');
+        holder.innerHTML = rateRowHtml({ id: 'rate_' + Date.now().toString(36), name: '', rate: 0, minCallOutFee: 0, isDefault: false });
+        const row = holder.firstElementChild;
+        container.appendChild(row);
+        row.querySelector('.rate-name').focus();
       });
 
-      // ---- Delete profile ----
+      // ---- Delete a rate (not saved until Save) ----
       tc.addEventListener('click', (e) => {
-        if (e.target.closest('.remove-rate-btn')) {
-          const card = e.target.closest('.labor-rate-card');
-          if (card) card.remove();
-        }
+        const btn = e.target.closest('.remove-rate-btn');
+        if (!btn || btn.disabled) return;
+        btn.closest('.labor-rate-row')?.remove();
       });
 
-      // ---- Set Default (No immediate save) ----
+      // ---- Set default (not saved until Save) ----
+      // Only the default flag moves in the view, so unsaved edits to the other
+      // fields on this tab survive.
       tc.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-set-default')) {
-          const targetId = e.target.closest('.btn-set-default').dataset.id;
-          const currentRates = _collectRates(tc);
-          currentRates.forEach(r => r.isDefault = (r.id === targetId));
-          
-          // Flip the default flag in the UI only — nothing is persisted until the user
-          // clicks Save, so unsaved field edits elsewhere on the tab survive.
-          tc.querySelectorAll('.labor-rate-card').forEach(card => {
-            const isTarget = card.dataset.id === targetId;
-            card.classList.toggle('is-default', isTarget);
-            
-            // Toggle badge
-            let badge = card.querySelector('.badge');
-            if (isTarget && !badge) {
-               const nameContainer = card.querySelector('.rate-card-title');
-               const b = document.createElement('span');
-               b.className = 'badge rate-default-badge';
-               b.textContent = 'DEFAULT';
-               nameContainer.appendChild(b);
-            } else if (!isTarget && badge) {
-               badge.remove();
-            }
-            
-            // Toggle button
-            let setDefBtn = card.querySelector('.btn-set-default');
-            if (isTarget && setDefBtn) {
-               setDefBtn.remove();
-            } else if (!isTarget && !setDefBtn) {
-               const actions = card.querySelector('.rate-card-actions');
-               const b = document.createElement('button');
-               b.className = 'btn btn-ghost btn-sm btn-set-default';
-               b.dataset.id = card.dataset.id;
-               b.textContent = 'Set Default';
-               actions.prepend(b);
-            }
-          });
-          showToast('Default rate updated in view. Click Save to apply.', 'info');
-        }
+        const btn = e.target.closest('.btn-set-default');
+        if (!btn) return;
+        const targetId = btn.dataset.id;
+        tc.querySelectorAll('.labor-rate-row').forEach(row => {
+          const isTarget = row.dataset.id === targetId;
+          row.classList.toggle('is-default', isTarget);
+          row.querySelector('.rate-row-actions').innerHTML = rateRowActionsHtml(row.dataset.id, isTarget);
+        });
+        showToast('Default rate changed. Click Save to apply.', 'info');
       });
 
-      // Helper to collect all rates from the UI
+      // Collect the rates from the list. Fields this screen doesn't edit (a
+      // description, for example) are kept from the saved rate; the active-hours,
+      // day and overtime settings the old cards carried were never used to price
+      // anything and are dropped.
       function _collectRates(container) {
-        return Array.from(container.querySelectorAll('.labor-rate-card')).map(card => {
-          const id = card.dataset.id;
-          const name = card.querySelector('.rate-name').value;
-          const rate = parseFloat(card.querySelector('.rate-val').value) || 0;
-          const multiplier = parseFloat(card.querySelector('.rate-multiplier').value) || 1;
-          const desc = card.querySelector('.rate-desc').value;
-          const minFee = parseFloat(card.querySelector('.rate-min-fee').value) || 0;
-          const isDefault = card.querySelector('.btn-set-default') === null;
-          const applicableDays = Array.from(card.querySelectorAll('.rate-day:checked')).map(chk => chk.dataset.day);
-          const activeHours = Array.from(card.querySelectorAll('.timeline-block.active')).map(block => parseInt(block.dataset.slot));
-          
-          return { id, name, rate, description: desc, overtimeMultiplier: multiplier, minCallOutFee: minFee, applicableDays, activeHours, isDefault };
+        const saved = new Map((store.getSettings().laborRates || []).map(r => [r.id, r]));
+        return Array.from(container.querySelectorAll('.labor-rate-row')).map(row => {
+          const id = row.dataset.id;
+          const { applicableDays, activeHours, overtimeMultiplier, ...kept } = saved.get(id) || {};
+          return {
+            ...kept,
+            id,
+            name: row.querySelector('.rate-name').value.trim() || 'Labour',
+            rate: parseFloat(row.querySelector('.rate-val').value) || 0,
+            minCallOutFee: parseFloat(row.querySelector('.rate-min-fee').value) || 0,
+            isDefault: row.classList.contains('is-default'),
+          };
         });
       }
 
@@ -1357,6 +1138,7 @@ export function renderSettings(container) {
 
   function openUserTypeModal(editId = null) {
     let ut = editId ? store.getById('userTypes', editId) : { name: '', description: '', template: 'Admin' };
+    const startRules = editId ? workRulesForType(ut) : defaultWorkRules('Admin');
     const contentDiv = document.createElement('div');
     contentDiv.innerHTML = `
         ${!editId ? `
@@ -1382,10 +1164,30 @@ export function renderSettings(container) {
           <label class="form-label">Description</label>
           <input class="form-input" id="ut-desc" value="${escapeHTML(ut.description)}" />
         </div>
+        <div class="form-group ut-work-rules">
+          <label class="form-label">Time &amp; Attendance</label>
+          ${WORK_RULES.map(({ key, label, hint }) => `
+            <label class="ut-work-rule">
+              <input type="checkbox" class="ut-work-rule-input" data-rule="${key}" ${startRules[key] ? 'checked' : ''} />
+              <span><strong>${label}</strong><small>${hint}</small></span>
+            </label>`).join('')}
+        </div>
     `;
+
+    const ruleInputs = () => contentDiv.querySelectorAll('.ut-work-rule-input');
+    const readRules = () => {
+      const rules = {};
+      ruleInputs().forEach(input => { rules[input.dataset.rule] = input.checked; });
+      return rules;
+    };
 
     const templateSelect = contentDiv.querySelector('#ut-template');
     const customEditBtn = contentDiv.querySelector('#ut-custom-edit-perms');
+    // A template sets the starting rules as well as the permissions.
+    templateSelect?.addEventListener('change', (e) => {
+      const rules = defaultWorkRules(e.target.value);
+      ruleInputs().forEach(input => { input.checked = !!rules[input.dataset.rule]; });
+    });
 
     if (templateSelect && customEditBtn) {
       templateSelect.addEventListener('change', (e) => {
@@ -1404,7 +1206,7 @@ export function renderSettings(container) {
            return;
          }
          
-         const perms = buildGranularPerms(() => false);
+         const perms = withWorkRules(buildGranularPerms(() => false), readRules());
          const newUt = store.create('userTypes', { name, description: desc, permissions: perms });
          
          document.getElementById('modal-close-btn')?.click();
@@ -1425,7 +1227,7 @@ export function renderSettings(container) {
           if (!name) { showToast('Name required', 'error'); return; }
           
           if (editId) {
-            store.update('userTypes', editId, { name, description: desc });
+            store.update('userTypes', editId, { name, description: desc, permissions: withWorkRules(ut.permissions, readRules()) });
           } else {
             const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Assets', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
             let perms = [];
@@ -1449,7 +1251,7 @@ export function renderSettings(container) {
             });
             else perms = buildGranularPerms(() => false);
 
-            store.create('userTypes', { name, description: desc, permissions: perms });
+            store.create('userTypes', { name, description: desc, permissions: withWorkRules(perms, readRules()) });
           }
           showToast('User Type saved', 'success');
           renderContent();
@@ -1545,7 +1347,9 @@ export function renderSettings(container) {
             });
             return obj;
           });
-          store.update('userTypes', id, { permissions: newPerms });
+          // The Time & Attendance rules are edited on the type itself; keep them.
+          const keptRules = workRulesFromPermissions(ut.permissions);
+          store.update('userTypes', id, { permissions: keptRules ? withWorkRules(newPerms, keptRules) : newPerms });
           showToast('Permissions updated successfully', 'success');
           renderContent();
           c();

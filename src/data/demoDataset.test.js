@@ -126,6 +126,41 @@ describe('demo dataset', () => {
         assert.ok(C.jobs.some((j) => j.isRecurring));
         assert.ok(C.stock.some((s) => s.quantity < s.reorderLevel), 'low stock');
       });
+
+      test('only the field crew is rostered and on the clock', () => {
+        // Office Staff and Admin don't clock on under the default Time & Attendance rules.
+        assert.deepStrictEqual(C.expectedWorkRosters.map((r) => r.name), ['Field crew']);
+        const field = new Set(C.technicians.filter((t) => t.fieldStaff === true).map((t) => t.id));
+        assert.strictEqual(field.size, 4);
+        assert.deepStrictEqual(new Set(C.expectedWorkRosters[0].technicianIds), field);
+        C.timeClocks.forEach((c) => assert.ok(field.has(c.technicianId), `${c.technicianName} has no clock records`));
+        const rostered = C.expectedWorkRosters.flatMap((r) => r.technicianIds);
+        rostered.forEach((tid) => assert.ok(techs.has(tid)));
+        C.expectedWorkRosters.forEach((r) => assert.strictEqual(new Date(`${r.startDate}T12:00`).getDay(), 1, `${r.name} starts on a Monday`));
+        const rosterIds = ids(C.expectedWorkRosters);
+        C.expectedWorkRosterDismissals.forEach((x) => { assert.ok(rosterIds.has(x.rosterId)); assert.ok(techs.has(x.technicianId)); });
+      });
+
+      test('clock records are real, in the past and never overlap', () => {
+        const nowMs = now.getTime();
+        const byTech = {};
+        C.timeClocks.forEach((c) => {
+          assert.ok(techs.has(c.technicianId), 'clock technician');
+          const start = new Date(c.clockInAt).getTime();
+          const end = c.clockOutAt ? new Date(c.clockOutAt).getTime() : null;
+          assert.ok(start <= nowMs, 'clocked in in the future');
+          if (end != null) { assert.ok(end > start, 'clock-out after clock-in'); assert.ok(end <= nowMs, 'clocked out in the future'); }
+          else assert.strictEqual(key(new Date(c.clockInAt)), today, 'only today can still be open');
+          (byTech[c.technicianId] = byTech[c.technicianId] || []).push([start, end ?? Infinity]);
+        });
+        Object.values(byTech).forEach((list) => {
+          list.sort((a, b) => a[0] - b[0]);
+          for (let i = 1; i < list.length; i++) assert.ok(list[i - 1][1] <= list[i][0], 'overlapping sessions');
+        });
+        assert.ok(C.timeClocks.some((c) => c.approvalStatus === 'adjusted'), 'a corrected session');
+        assert.ok(C.timeClocks.some((c) => String(c.note || '').startsWith('Clock times entered by hand')), 'a manual entry');
+        assert.ok(C.timeClocks.some((c) => c.approvalStatus === 'pending'), 'this week waiting on approval');
+      });
     });
   }
 });

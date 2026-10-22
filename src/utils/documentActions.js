@@ -165,6 +165,65 @@ function pdfName(name) {
   return `${base.replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
 }
 
+// A storage host that refuses a script fetch (no CORS). Downloads can still hand
+// the URL to the browser; anything that needs the bytes cannot.
+class UnreadableUrlError extends Error {
+  constructor(url) {
+    super("The file's host does not allow it to be read here. Download it instead.");
+    this.url = url;
+  }
+}
+
+// The document's bytes and file name. Invoices, quotes, POs and forms are
+// rendered to a PDF on the spot; files are read as they are.
+async function readDocumentBlob(doc) {
+  if (isRendered(doc)) {
+    const source = resolveRenderable(doc.render);
+    if (!source) throw new Error('The linked record could not be found.');
+    const { renderDocumentPdf } = await import('./documentPdf.js');
+    const pdf = await renderDocumentPdf(source.type, source.data, { filename: pdfName(doc.name) });
+    return { blob: base64ToBlob(pdf.base64, 'application/pdf'), filename: pdf.filename };
+  }
+
+  const url = await store.getDocumentUrl(doc);
+  if (!url) throw new Error('The file location is missing.');
+  const filename = doc.name || 'document';
+
+  // Uploaded files are usually inline data URLs; decode them directly (the
+  // CSP's connect-src does not allow fetching data: or blob: URLs).
+  const inline = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url);
+  if (inline) {
+    const [, mime, isB64, payload] = inline;
+    const blob = isB64
+      ? base64ToBlob(payload, mime || doc.type || 'application/octet-stream')
+      : new Blob([decodeURIComponent(payload)], { type: mime || 'text/plain' });
+    return { blob, filename };
+  }
+  // Synced-folder files: read the file itself rather than its blob: URL.
+  if (url.startsWith('blob:')) {
+    URL.revokeObjectURL(url);
+    return { blob: await store.readLocalDocumentFile(doc), filename };
+  }
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { blob: await res.blob(), filename };
+  } catch {
+    throw new UnreadableUrlError(url);
+  }
+}
+
+/**
+ * The document as a File, for attaching to brny, emailing or sharing.
+ * @returns {Promise<File>} rejects with a user-readable message on failure
+ */
+export async function documentFile(doc) {
+  if (!canDownload(doc)) throw new Error('This item has no file.');
+  const { blob, filename } = await readDocumentBlob(doc);
+  return new File([blob], filename, { type: blob.type || doc.type || 'application/octet-stream' });
+}
+
 /**
  * Save the document to the computer. Invoices, quotes and forms are rendered
  * to a PDF on the spot; files are saved as they are.
@@ -172,48 +231,20 @@ function pdfName(name) {
  */
 export async function downloadDocument(doc) {
   if (!canDownload(doc)) throw new Error('This item has no file to download.');
-
-  if (isRendered(doc)) {
-    const source = resolveRenderable(doc.render);
-    if (!source) throw new Error('The linked record could not be found.');
-    const { renderDocumentPdf } = await import('./documentPdf.js');
-    const pdf = await renderDocumentPdf(source.type, source.data, { filename: pdfName(doc.name) });
-    saveBlob(base64ToBlob(pdf.base64, 'application/pdf'), pdf.filename);
-    return;
-  }
-
-  const url = await store.getDocumentUrl(doc);
-  if (!url) throw new Error('The file location is missing.');
-
-  // Uploaded files are usually inline data URLs; decode them directly (the
-  // CSP's connect-src does not allow fetching data: URLs).
-  const inline = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url);
-  if (inline) {
-    const [, mime, isB64, payload] = inline;
-    const blob = isB64
-      ? base64ToBlob(payload, mime || doc.type || 'application/octet-stream')
-      : new Blob([decodeURIComponent(payload)], { type: mime || 'text/plain' });
-    saveBlob(blob, doc.name);
-    return;
-  }
-
-  let blob;
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    blob = await res.blob();
-  } catch {
-    // The host refused a script fetch (no CORS). Hand the URL to the browser
-    // directly: it still downloads same-origin files and opens the rest.
+    const { blob, filename } = await readDocumentBlob(doc);
+    saveBlob(blob, filename);
+  } catch (err) {
+    if (!(err instanceof UnreadableUrlError)) throw err;
+    // Hand the URL to the browser directly: it still downloads same-origin
+    // files and opens the rest.
     const a = document.createElement('a');
-    a.href = url;
+    a.href = err.url;
     a.download = doc.name || 'document';
     a.target = '_blank';
     a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    return;
   }
-  saveBlob(blob, doc.name);
 }

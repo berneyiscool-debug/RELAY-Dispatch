@@ -29,6 +29,7 @@ import {
   msToHours, payableHours, round2
 } from '../../utils/hoursMath.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
+import { getWorkRules } from '../../utils/workRules.js';
 
 // Small gaps are rounding and travel, not a finding — only flag a day past this.
 const TOLERANCE_HOURS = 0.25;
@@ -42,10 +43,14 @@ function getContext() {
   const canExport = hasPermission('Timesheets', 'export')
     || ['admin', 'manager', 'office'].includes(currentUser.role)
     || isLocalAdmin;
-  const technicians = (store.getAll('technicians') || [])
-    .filter(t => !t.deactivated)
+  // Only people whose user type books time to jobs are compared: an office day has
+  // nothing to book against, so it would read as "Nothing booked" every day.
+  const allTechs = store.getAll('technicians') || [];
+  const notCompared = new Set(allTechs.filter(t => !getWorkRules(t).booksJobTime).map(t => String(t.id)));
+  const technicians = allTechs
+    .filter(t => !t.deactivated && !notCompared.has(String(t.id)))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  return { currentUser, canViewAll, canExport, technicians };
+  return { currentUser, canViewAll, canExport, technicians, notCompared };
 }
 
 const h2 = n => Number(n || 0).toFixed(2);
@@ -108,6 +113,7 @@ export function renderClockedVsJobsView(container, params = {}) {
 
     (store.getAll('timeClocks') || []).forEach(c => {
       if (!c.clockInAt || c.technicianId == null) return;
+      if (ctx.notCompared.has(String(c.technicianId))) return;
       if (allow && !allow.has(String(c.technicianId))) return;
       const date = isoOf(new Date(c.clockInAt));
       if (!inRange(date)) return;
@@ -116,6 +122,7 @@ export function renderClockedVsJobsView(container, params = {}) {
 
     (store.getAll('timesheets') || []).forEach(t => {
       if (t.technicianId == null) return;
+      if (ctx.notCompared.has(String(t.technicianId))) return;
       if (allow && !allow.has(String(t.technicianId))) return;
       const date = t.date ? String(t.date).slice(0, 10) : (t.startTime ? String(t.startTime).slice(0, 10) : '');
       if (!inRange(date)) return;

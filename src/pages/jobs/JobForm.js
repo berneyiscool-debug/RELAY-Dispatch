@@ -10,6 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import DOMPurify from 'dompurify';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 const AVAILABLE_TAGS = [
   'Urgent', 'Follow-up', 'Warranty', 'Inspection', 'After-Hours',
@@ -300,6 +301,7 @@ export function renderJobForm(container, params) {
               <select class="form-select" id="jf-customer" name="customerId" required>
                 <option value="">Select customer...</option>
                 ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+                ${newCustomerOptionHtml()}
               </select>
             </div>
 
@@ -635,6 +637,9 @@ export function renderJobForm(container, params) {
     siteHint.textContent = initialOpt.dataset.address;
   }
 
+  // Forgot to add the customer first? "+ New customer" adds them in a modal and
+  // picks them here, so the job carries on where it was.
+  wireNewCustomerOption(custSelect, { customers });
   custSelect.addEventListener('change', e => refreshCustomerDependents(e.target.value));
 
   // Site hint update on site change

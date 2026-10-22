@@ -7,6 +7,7 @@ import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 export function renderProjectsList(container) {
   const projects = store.getAll('projects') || [];
@@ -198,6 +199,7 @@ export function renderProjectsList(container) {
           ${customers.map(c => `
             <option value="${c.id}">${escapeHTML(c.company || `${c.firstName} ${c.lastName}`)}</option>
           `).join('')}
+          ${newCustomerOptionHtml()}
         </select>
       </div>
       <div class="form-group" style="margin-bottom:16px">
@@ -224,6 +226,8 @@ export function renderProjectsList(container) {
 
     const customerSelect = modalContent.querySelector('#p-customer');
     const siteSelect = modalContent.querySelector('#p-site');
+    // "+ New customer" opens the quick-create modal over this one.
+    wireNewCustomerOption(customerSelect, { customers });
 
     customerSelect.addEventListener('change', () => {
       const custId = customerSelect.value;

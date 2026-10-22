@@ -21,6 +21,7 @@ import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { HOURS_SOURCE, hoursSourceLabel } from '../../utils/invoiceLabour.js';
 import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState, xeroHoldsPayment, xeroInvoiceUrl, retryInvoiceSync } from '../../utils/xero.js';
+import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 export function renderInvoiceDetail(container, params) {
   const { id, tab } = params;
@@ -392,6 +393,7 @@ export function renderInvoiceDetail(container, params) {
               <select class="form-select" id="inv-customer">
                 <option value="">Select customer...</option>
                 ${customers.map(c => `<option value="${c.id}" ${invoice.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+                ${newCustomerOptionHtml()}
               </select>
             </div>
             <div class="form-group">
@@ -706,6 +708,15 @@ export function renderInvoiceDetail(container, params) {
   }
 
   function bindEvents() {
+    // The customer is kept on the invoice as soon as it's picked, so a re-render (adding
+    // a line, changing the rate) doesn't put the old one back. "+ New customer" adds a
+    // missing customer without leaving the invoice.
+    const customerSelect = container.querySelector('#inv-customer');
+    if (customerSelect) {
+      wireNewCustomerOption(customerSelect, { customers });
+      customerSelect.addEventListener('change', () => { invoice.customerId = customerSelect.value; });
+    }
+
     container.querySelector('#btn-add-invoice-history-note')?.addEventListener('click', () => {
       const inp = container.querySelector('#inp-invoice-history-note');
       const text = (inp ? inp.value : '').trim();

@@ -4023,17 +4023,9 @@ body.relay-assistant-open .relay-topbar-actions {
 .sidebar.two-level.rail-collapsed .sidebar-profile-info { display: none; }
 
 /* Submenu panels */
-.sidebar.two-level .submenu-panel { display: none; flex-direction: column; height: 100%; padding: 10px 8px; }
+.sidebar.two-level .submenu-panel { display: none; flex-direction: column; height: 100%; padding: 8px; }
 .sidebar.two-level .submenu-panel.active { display: flex; }
-.submenu-head {
-  font-size: 15px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  padding: 6px 10px 12px;
-  white-space: nowrap;
-}
-.submenu-nav { 
+.submenu-nav {
   display: flex; 
   flex-direction: column; 
   gap: 2px; 
@@ -4129,6 +4121,48 @@ body.relay-assistant-open .relay-topbar-actions {
   text-overflow: ellipsis;
   width: 100%;
   text-align: center;
+}
+
+/* One row grid for both menu columns. Rail items and submenu items share a row
+   height and gap, and a submenu's header (back arrow + icon on the first row,
+   title on the second) spans exactly two rows, so every submenu item sits on
+   the same line as a rail item. */
+.sidebar.two-level { --nav-row: 36px; --nav-gap: 2px; }
+.sidebar.two-level .rail-nav,
+.sidebar.two-level .submenu-nav { gap: var(--nav-gap); }
+.sidebar.two-level .rail-nav .rail-item,
+.sidebar.two-level .submenu-item { height: var(--nav-row); padding-top: 0; padding-bottom: 0; }
+.sidebar.two-level .submenu-context-header {
+  position: relative;
+  display: block;
+  height: calc(2 * var(--nav-row) + var(--nav-gap));
+  padding: 0;
+  margin: 0 0 var(--nav-gap);
+  border-bottom: none;
+  /* Drawn in the gap below, so the line takes no room from the grid. */
+  box-shadow: 0 1px 0 var(--border-color);
+}
+.sidebar.two-level .submenu-context-back-row {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: auto;
+  height: var(--nav-row);
+  z-index: 1;
+}
+.sidebar.two-level .submenu-context-body {
+  display: grid;
+  grid-template-rows: var(--nav-row) var(--nav-row);
+  row-gap: var(--nav-gap);
+  align-items: center;
+  justify-items: center;
+  height: 100%;
+  gap: var(--nav-gap);
+}
+.sidebar.two-level .submenu-context-body .submenu-context-title { padding: 0 8px; }
+/* A divider lives inside the gap between two items instead of adding height. */
+.sidebar.two-level .submenu-divider {
+  margin: calc(-0.5 * var(--nav-gap)) 8px calc(-1 * var(--nav-gap));
 }
 
 /* Rail bottom toggle */

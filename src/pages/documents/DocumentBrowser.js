@@ -4,16 +4,25 @@
 // A file-explorer style browser over every document the business holds: the
 // folder's contents (details list or tiles) with a details pane on the right
 // for the selected item. Documents can be viewed in a new tab, their record
-// opened, or downloaded.
+// opened, downloaded, copied, attached to brny or shared; files (uploads and
+// job / customer attachments) can also be renamed, moved and deleted.
+//
+// The page has no toolbar of its own. Back / forward / up and the file
+// commands live in the app's breadcrumb bar, and the top bar search filters
+// the current folder while the Document Center is open.
 
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
+import { setListSearch } from '../../utils/listSearch.js';
 import {
-  canView, canOpenRecord, canDownload,
-  viewDocumentInNewTab, openRecordInNewTab, downloadDocument,
+  canView, canOpenRecord, canDownload, recordPath,
+  viewDocumentInNewTab, openRecordInNewTab, downloadDocument, documentFile,
 } from '../../utils/documentActions.js';
+import {
+  canEditFile, renameFile, deleteFiles, duplicateFile, withExtension, COPY_FOLDER,
+} from './documentEdits.js';
 
 const ROOT = 'All Documents';
 const VIEW_KEY = 'documentCenter.view';
@@ -107,6 +116,7 @@ function collectDocuments() {
       id: doc.id, name: doc.name, url: doc.url, type: doc.type, size: doc.size,
       uploadedAt: doc.uploadedAt, folder: doc.folder || 'Company Docs',
       entityType: 'Global', entityId: 'global', entityName: 'Company',
+      source: { type: 'doc', id: doc.id },
     });
   });
 
@@ -118,7 +128,7 @@ function collectDocuments() {
         id: att.id || `job_${job.id}_att_${i}`, name: att.name, url: att.url || att.data || '#',
         type: att.type, size: att.size,
         uploadedAt: att.uploadedAt || att.date || job.createdAt || new Date().toISOString(),
-        ...jobRef,
+        ...jobRef, source: { type: 'list', collection: 'jobs', recordId: job.id, index: i },
       });
     });
 
@@ -127,6 +137,7 @@ function collectDocuments() {
         push({
           id: log.id, name: log.file.name, url: log.file.url || log.file.data || '#',
           type: log.file.type, size: log.file.size, uploadedAt: log.date, ...jobRef,
+          source: { type: 'log', recordId: job.id, logId: log.id, fileIndex: null },
         });
       }
       if (log.type === 'combined' && Array.isArray(log.files)) {
@@ -134,6 +145,7 @@ function collectDocuments() {
           push({
             id: `${log.id}_${idx}`, name: f.name, url: f.url || f.data || '#',
             type: f.type, size: f.size, uploadedAt: log.date, ...jobRef,
+            source: { type: 'log', recordId: job.id, logId: log.id, fileIndex: idx },
           });
         });
       }
@@ -172,6 +184,7 @@ function collectDocuments() {
         type: att.type, size: att.size,
         uploadedAt: att.uploadedAt || customer.createdAt || new Date().toISOString(),
         folder: 'Customer Attachments', entityType: 'Customer', entityId: customer.id, entityName: customer.company,
+        source: { type: 'list', collection: 'customers', recordId: customer.id, index: i },
       });
     });
   });
@@ -315,19 +328,6 @@ export function renderDocumentBrowser(container, params) {
     return `${n} item${n === 1 ? '' : 's'}`;
   }
 
-  function addressHtml() {
-    const crumbs = [`<button type="button" class="dx-crumb" data-folder="${ROOT}"><span class="material-icons-outlined">folder_special</span>Documents</button>`];
-    if (state.folder !== ROOT) {
-      crumbs.push('<span class="material-icons-outlined dx-crumb-sep">chevron_right</span>');
-      crumbs.push(`<button type="button" class="dx-crumb" data-folder="${escapeHTML(state.folder)}">${escapeHTML(state.folder)}</button>`);
-    }
-    if (state.query.trim()) {
-      crumbs.push('<span class="material-icons-outlined dx-crumb-sep">chevron_right</span>');
-      crumbs.push(`<span class="dx-crumb dx-crumb-static">Search results</span>`);
-    }
-    return crumbs.join('');
-  }
-
   function iconHtml(doc, size = '') {
     const kind = fileKind(doc);
     return `<span class="material-icons-outlined dx-icon dx-icon-${kind}${size}">${KIND_META[kind].icon}</span>`;
@@ -400,14 +400,10 @@ export function renderDocumentBrowser(container, params) {
     }
     if (sel.length > 1) {
       const bytes = sel.reduce((s, d) => s + (d.size || 0), 0);
-      const dl = sel.filter(canDownload).length;
       return `
         <div class="dx-preview-thumb"><span class="material-icons-outlined dx-icon dx-icon-xl">library_books</span></div>
         <div class="dx-preview-name">${sel.length} items selected</div>
-        ${bytes ? `<div class="dx-preview-sub">${formatSize(bytes)}</div>` : ''}
-        <div class="dx-preview-actions">
-          <button type="button" class="btn btn-primary btn-sm" data-act="download-selected" ${dl ? '' : 'disabled'}><span class="material-icons-outlined">download</span> Download ${dl === sel.length ? 'all' : `${dl} files`}</button>
-        </div>`;
+        ${bytes ? `<div class="dx-preview-sub">${formatSize(bytes)}</div>` : ''}`;
     }
     const d = sel[0];
     const isImage = fileKind(d) === 'image' && canDownload(d) && !d.render;
@@ -421,11 +417,6 @@ export function renderDocumentBrowser(container, params) {
     return `
       <div class="dx-preview-thumb">${isImage ? '<div class="dx-thumb-loading"></div>' : iconHtml(d, ' dx-icon-xl')}</div>
       <div class="dx-preview-name" title="${escapeHTML(d.name)}">${escapeHTML(d.name)}</div>
-      <div class="dx-preview-actions">
-        ${canView(d) ? `<button type="button" class="btn btn-primary btn-sm" data-act="view" data-id="${escapeHTML(d.id)}"><span class="material-icons-outlined">visibility</span> View</button>` : ''}
-        ${canDownload(d) ? `<button type="button" class="btn btn-secondary btn-sm" data-act="download" data-id="${escapeHTML(d.id)}"><span class="material-icons-outlined">download</span> Download</button>` : ''}
-        ${canOpenRecord(d) ? `<button type="button" class="btn btn-secondary btn-sm" data-act="record" data-id="${escapeHTML(d.id)}"><span class="material-icons-outlined">open_in_new</span> Open record</button>` : ''}
-      </div>
       <dl class="dx-props">
         ${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHTML(v || '—')}</dd>`).join('')}
       </dl>
@@ -434,7 +425,10 @@ export function renderDocumentBrowser(container, params) {
 
   function statusHtml() {
     const sel = selectedDocs();
-    const parts = [`${shown.length} item${shown.length === 1 ? '' : 's'}`];
+    const q = state.query.trim();
+    const parts = [q
+      ? `${shown.length} result${shown.length === 1 ? '' : 's'} for “${escapeHTML(q)}”`
+      : `${shown.length} item${shown.length === 1 ? '' : 's'}`];
     if (sel.length) {
       const bytes = sel.reduce((s, d) => s + (d.size || 0), 0);
       parts.push(`${sel.length} selected${bytes ? ` · ${formatSize(bytes)}` : ''}`);
@@ -442,17 +436,78 @@ export function renderDocumentBrowser(container, params) {
     return parts.map(p => `<span>${p}</span>`).join('');
   }
 
+  // Which actions the current selection allows. Linked files (uploads, job and
+  // customer attachments) can be renamed and deleted here; invoices, quotes,
+  // POs, forms and templates are records, so only copies of them are made.
   function toolbarState() {
     const sel = selectedDocs();
     const one = sel.length === 1 ? sel[0] : null;
-    const allGlobal = sel.length > 0 && sel.every(d => d.entityType === 'Global');
+    const allUploads = sel.length > 0 && sel.every(d => d.source && d.source.type === 'doc');
     return {
+      any: sel.length > 0,
       view: !!(one && canView(one)),
       record: !!(one && canOpenRecord(one)),
       download: sel.some(canDownload),
-      move: allGlobal,
-      del: allGlobal,
+      rename: !!(one && canEditFile(one)),
+      duplicate: sel.some(canDownload),
+      brny: sel.some(canDownload),
+      share: sel.some(canDownload) || !!(one && canOpenRecord(one)),
+      move: allUploads,
+      del: sel.some(canEditFile),
     };
+  }
+
+  // ---- Breadcrumb bar -------------------------------------------------------
+  // The Document Center has no toolbar of its own: navigation sits in front of
+  // the breadcrumb trail and the file commands in the bar's action slot, both
+  // rebuilt by the app shell on every navigation.
+
+  const BC_ACTIONS = [
+    { act: 'view-selected', icon: 'visibility', label: 'View', tip: 'View in a new tab (Enter)' },
+    { act: 'record-selected', icon: 'open_in_new', label: 'Open record', tip: 'Open the job, invoice or customer it belongs to' },
+    { act: 'download-selected', icon: 'download', label: 'Download', tip: 'Download to this computer' },
+    { sep: true },
+    { act: 'rename', icon: 'drive_file_rename_outline', label: 'Rename', tip: 'Rename (F2)' },
+    { act: 'duplicate', icon: 'file_copy', label: 'Duplicate', tip: 'Make a copy' },
+    { act: 'move', icon: 'drive_file_move', label: 'Move', tip: 'Move uploaded documents to another folder' },
+    { act: 'brny', icon: 'smart_toy', label: 'Copy to brny', tip: 'Attach to a brny message' },
+    { act: 'share', icon: 'share', label: 'Share', tip: 'Email, share or copy a link' },
+    { act: 'delete', icon: 'delete', label: 'Delete', tip: 'Delete (Del)', danger: true },
+  ];
+
+  function mountBreadcrumbControls() {
+    const links = document.querySelector('#breadcrumb .breadcrumb-links');
+    if (links && !links.querySelector('.dx-bc-nav')) {
+      const nav = document.createElement('span');
+      nav.className = 'dx-bc-nav';
+      nav.innerHTML = `
+        <button type="button" class="dx-bc-btn" data-act="back" aria-label="Back" data-tooltip="Back" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_back</span></button>
+        <button type="button" class="dx-bc-btn" data-act="forward" aria-label="Forward" data-tooltip="Forward" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_forward</span></button>
+        <button type="button" class="dx-bc-btn" data-act="up" aria-label="All documents" data-tooltip="Up to all documents (Backspace)" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_upward</span></button>
+        <span class="dx-bc-divider"></span>`;
+      links.prepend(nav);
+      nav.addEventListener('click', onCommandClick);
+    }
+
+    const actions = document.getElementById('breadcrumb-actions');
+    if (actions) {
+      actions.innerHTML = `
+        <div class="dx-bc-actions">
+          <span class="dx-bc-count" id="dx-bc-count" hidden></span>
+          <span class="dx-bc-selection" id="dx-bc-selection" hidden>
+            ${BC_ACTIONS.map(a => a.sep
+              ? '<span class="dx-bc-divider"></span>'
+              : `<button type="button" class="dx-bc-btn${a.danger ? ' dx-bc-danger' : ''}" data-act="${a.act}" aria-label="${a.label}" data-tooltip="${a.tip}" data-tooltip-pos="bottom"><span class="material-icons-outlined">${a.icon}</span></button>`).join('')}
+            <span class="dx-bc-divider"></span>
+          </span>
+          <span class="dx-viewtoggle" role="group" aria-label="View">
+            <button type="button" class="dx-bc-btn" data-view="details" aria-label="Details view" data-tooltip="Details" data-tooltip-pos="bottom"><span class="material-icons-outlined">view_list</span></button>
+            <button type="button" class="dx-bc-btn" data-view="tiles" aria-label="Large icons view" data-tooltip="Large icons" data-tooltip-pos="bottom"><span class="material-icons-outlined">grid_view</span></button>
+          </span>
+          <button type="button" class="btn btn-primary btn-sm dx-bc-upload" data-act="upload" aria-label="Upload" data-tooltip="Upload a document" data-tooltip-pos="bottom"><span class="material-icons-outlined">upload_file</span><span class="dx-bc-upload-label">Upload</span></button>
+        </div>`;
+      actions.querySelector('.dx-bc-actions').addEventListener('click', onCommandClick);
+    }
   }
 
   // ---- Render ---------------------------------------------------------------
@@ -463,30 +518,6 @@ export function renderDocumentBrowser(container, params) {
 
     container.innerHTML = `
       <div class="dx" tabindex="0" aria-label="Document Center">
-        <div class="dx-toolbar">
-          <button type="button" class="btn btn-primary btn-sm" data-act="upload"><span class="material-icons-outlined">upload_file</span> Upload</button>
-          <span class="dx-tb-sep"></span>
-          <button type="button" class="dx-tb-btn" data-act="view-selected" data-tooltip="View the document in a new tab (Enter)" data-tooltip-pos="bottom"><span class="material-icons-outlined">visibility</span><span>View</span></button>
-          <button type="button" class="dx-tb-btn" data-act="record-selected" data-tooltip="Open the job, invoice or customer it belongs to" data-tooltip-pos="bottom"><span class="material-icons-outlined">open_in_new</span><span>Open record</span></button>
-          <button type="button" class="dx-tb-btn" data-act="download-selected" data-tooltip="Download to this computer" data-tooltip-pos="bottom"><span class="material-icons-outlined">download</span><span>Download</span></button>
-          <button type="button" class="dx-tb-btn" data-act="move" data-tooltip="Move uploaded documents to another folder" data-tooltip-pos="bottom"><span class="material-icons-outlined">drive_file_move</span><span>Move</span></button>
-          <button type="button" class="dx-tb-btn dx-tb-danger" data-act="delete" data-tooltip="Delete uploaded documents (Del)" data-tooltip-pos="bottom"><span class="material-icons-outlined">delete</span><span>Delete</span></button>
-          <span class="dx-tb-spacer"></span>
-          <div class="dx-viewtoggle" role="group" aria-label="View">
-            <button type="button" class="dx-tb-btn" data-view="details" data-tooltip="Details" data-tooltip-pos="bottom" aria-label="Details view"><span class="material-icons-outlined">view_list</span></button>
-            <button type="button" class="dx-tb-btn" data-view="tiles" data-tooltip="Large icons" data-tooltip-pos="bottom" aria-label="Large icons view"><span class="material-icons-outlined">grid_view</span></button>
-          </div>
-        </div>
-        <div class="dx-addressbar">
-          <button type="button" class="dx-nav-btn" data-act="back" aria-label="Back" data-tooltip="Back" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_back</span></button>
-          <button type="button" class="dx-nav-btn" data-act="forward" aria-label="Forward" data-tooltip="Forward" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_forward</span></button>
-          <button type="button" class="dx-nav-btn" data-act="up" aria-label="Up" data-tooltip="Up to Documents" data-tooltip-pos="bottom"><span class="material-icons-outlined">arrow_upward</span></button>
-          <div class="dx-address" id="dx-address"></div>
-          <div class="dx-search">
-            <span class="material-icons-outlined">search</span>
-            <input type="text" id="dx-search" placeholder="Search" value="${escapeHTML(state.query)}" />
-          </div>
-        </div>
         <div class="dx-body">
           <div class="dx-main" id="dx-main"></div>
           <aside class="dx-preview" id="dx-preview"></aside>
@@ -494,35 +525,55 @@ export function renderDocumentBrowser(container, params) {
         <div class="dx-status" id="dx-status"></div>
       </div>
     `;
+    mountBreadcrumbControls();
+    // The top bar search filters this folder while the Document Center is open.
+    setListSearch('Search documents...', (q) => {
+      state.query = q || '';
+      refresh();
+    });
     wire();
     refresh();
   }
 
-  // Re-render the dynamic regions without rebuilding the shell, so the search
-  // box keeps focus while typing.
   function refresh() {
     computeShown();
-    const q = (s) => container.querySelector(s);
-    q('#dx-address').innerHTML = addressHtml();
     const hasItems = shown.length || (showFolderEntries() && folderEntries().length);
-    q('#dx-main').innerHTML = hasItems ? (state.view === 'tiles' ? tilesViewHtml() : detailsViewHtml()) : emptyHtml();
+    container.querySelector('#dx-main').innerHTML = hasItems ? (state.view === 'tiles' ? tilesViewHtml() : detailsViewHtml()) : emptyHtml();
     refreshSelection();
-    q('[data-act="up"]').disabled = state.folder === ROOT;
-    container.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
+    const up = document.querySelector('.dx-bc-nav [data-act="up"]');
+    if (up) up.disabled = state.folder === ROOT;
+    document.querySelectorAll('#breadcrumb-actions [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
   }
 
-  // Selection-only changes: restyle rows, update toolbar, preview and status.
+  // Selection-only changes: restyle rows, update the commands, preview and status.
   function refreshSelection() {
     container.querySelectorAll('#dx-main [data-id]').forEach(el => {
       el.classList.toggle('selected', state.selected.has(el.dataset.id));
     });
     const ts = toolbarState();
-    const set = (act, on) => { const b = container.querySelector(`.dx-toolbar [data-act="${act}"]`); if (b) b.disabled = !on; };
+    const set = (act, on) => {
+      const b = document.querySelector(`#breadcrumb-actions [data-act="${act}"]`);
+      if (b) b.disabled = !on;
+    };
     set('view-selected', ts.view);
     set('record-selected', ts.record);
     set('download-selected', ts.download);
+    set('rename', ts.rename);
+    set('duplicate', ts.duplicate);
     set('move', ts.move);
+    set('brny', ts.brny);
+    set('share', ts.share);
     set('delete', ts.del);
+    // The file commands only show while something is selected, so the bar
+    // stays short; the count says what they will act on.
+    const selBar = document.getElementById('dx-bc-selection');
+    if (selBar) selBar.hidden = !ts.any;
+    const count = document.getElementById('dx-bc-count');
+    if (count) {
+      const n = state.selected.size;
+      count.textContent = n ? `${n} selected` : '';
+      count.hidden = !n;
+    }
     container.querySelector('#dx-preview').innerHTML = previewPaneHtml();
     container.querySelector('#dx-status').innerHTML = statusHtml();
     loadPreviewImage();
@@ -618,26 +669,294 @@ export function renderDocumentBrowser(container, params) {
     });
   }
 
+  function afterEdit(selectIds = []) {
+    loadData();
+    state.selected = new Set(selectIds);
+    refresh();
+  }
+
   function deleteSelected() {
     const sel = selectedDocs();
-    const ids = sel.filter(d => d.entityType === 'Global').map(d => d.id);
-    if (!ids.length) return;
-    const skipped = sel.length - ids.length;
+    const files = sel.filter(canEditFile);
+    if (!files.length) return;
+    const skipped = sel.length - files.length;
+    const linked = files.filter(d => d.source.type !== 'doc').length;
+    const n = files.length;
+    // An element, not a string: showModal escapes string content.
+    const content = document.createElement('div');
+    content.innerHTML = `
+        <p>Delete ${n === 1 ? `<strong>${escapeHTML(files[0].name)}</strong>` : `these ${n} files`}? This cannot be undone.</p>
+        ${linked ? `<p class="text-secondary">${linked === n ? (n === 1 ? 'It is' : 'They are') : `${linked} of them are`} removed from the job or customer ${linked === 1 ? 'it is' : 'they are'} attached to.</p>` : ''}
+        ${skipped ? `<p class="text-secondary">${skipped} invoice, quote, order or form ${skipped === 1 ? 'record is' : 'records are'} kept — delete those from their own page.</p>` : ''}`;
     showModal({
-      title: 'Delete documents',
-      content: `<p>Delete ${ids.length} uploaded document${ids.length === 1 ? '' : 's'}? This cannot be undone.</p>${skipped ? `<p class="text-secondary">${skipped} linked attachment${skipped === 1 ? '' : 's'} will be kept — remove those from their job or customer.</p>` : ''}`,
+      title: `Delete ${n === 1 ? 'file' : `${n} files`}`,
+      content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
         { label: 'Delete', className: 'btn-danger', onClick: c => {
-          ids.forEach(id => store.delete('documents', id));
-          state.selected.clear();
-          loadData();
-          refresh();
-          showToast(`Deleted ${ids.length} document${ids.length === 1 ? '' : 's'}`, 'success');
+          try {
+            const { deleted } = deleteFiles(files);
+            showToast(`Deleted ${deleted} file${deleted === 1 ? '' : 's'}`, 'success');
+          } catch (err) {
+            showToast(err.message || String(err), 'error');
+          }
+          afterEdit();
           c();
         }},
       ],
     });
+  }
+
+  function renameSelected() {
+    const sel = selectedDocs();
+    const doc = sel.length === 1 ? sel[0] : null;
+    if (!doc || !canEditFile(doc)) return;
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label" for="dx-rename-input">Name</label>
+        <input type="text" class="form-input" id="dx-rename-input" value="${escapeHTML(doc.name)}" autocomplete="off" />
+      </div>`;
+    const input = content.querySelector('#dx-rename-input');
+    const save = (close) => {
+      const name = withExtension(input.value, doc.name);
+      if (!name) { showToast('Enter a name.', 'error'); return; }
+      if (name === doc.name) { close(); return; }
+      try {
+        renameFile(doc, name);
+        showToast('Renamed', 'success');
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      afterEdit([doc.id]);
+      close();
+    };
+    const modal = showModal({
+      title: 'Rename',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        { label: 'Rename', className: 'btn-primary', onClick: c => save(c) },
+      ],
+    });
+    // Select the name without its extension, as Explorer does.
+    setTimeout(() => {
+      input.focus();
+      const dot = doc.name.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : doc.name.length);
+    }, 0);
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      save(modal.close);
+    });
+  }
+
+  async function duplicateSelected() {
+    const files = selectedDocs().filter(canDownload);
+    if (!files.length) return;
+    const created = [];
+    let failed = 0;
+    for (const d of files) {
+      try {
+        created.push(await duplicateFile(d, documentFile));
+      } catch (err) {
+        failed++;
+        console.error('Duplicate failed:', d.name, err);
+        if (files.length === 1) showToast(`Could not copy ${d.name}: ${err.message || err}`, 'error');
+      }
+    }
+    if (!created.length) return;
+    const elsewhere = created.some(c => c.folder !== state.folder) && state.folder !== ROOT;
+    showToast(`${created.length === 1 ? 'Copy' : `${created.length} copies`} saved${elsewhere ? ` to ${COPY_FOLDER}` : ''}${failed ? ` · ${failed} failed` : ''}`, failed ? 'info' : 'success');
+    afterEdit(created.map(c => c.id));
+  }
+
+  // Read the selection's files (rendering records to PDF), reporting progress
+  // for bigger batches. Returns the files that could be read.
+  async function readSelectedFiles(purpose) {
+    const docs = selectedDocs().filter(canDownload);
+    if (!docs.length) { showToast(`Nothing in the selection can be ${purpose}.`, 'error'); return []; }
+    if (docs.length > 1 || docs.some(d => d.render)) showToast(`Preparing ${docs.length} file${docs.length === 1 ? '' : 's'}…`, 'info');
+    const files = [];
+    let failed = 0;
+    for (const d of docs) {
+      try {
+        files.push(await documentFile(d));
+      } catch (err) {
+        failed++;
+        console.error('Could not read file:', d.name, err);
+      }
+    }
+    if (failed) showToast(`${failed} file${failed === 1 ? '' : 's'} could not be read.`, 'error');
+    return files;
+  }
+
+  async function copyToBrny() {
+    // Checked up front so nothing is rendered for an account that can't attach.
+    const { isCloudUser } = await import('../../utils/aiTier.js');
+    if (!isCloudUser()) { showToast('Attaching files to brny needs a cloud account.', 'error'); return; }
+    const files = await readSelectedFiles('sent to brny');
+    if (!files.length) return;
+    try {
+      const { attachFilesToRelay } = await import('../../components/RelayAssistant.js');
+      const { added, skipped } = await attachFilesToRelay(files);
+      if (added) showToast(`Attached ${added} file${added === 1 ? '' : 's'} to brny`, 'success');
+      if (skipped) showToast(`${skipped} file${skipped === 1 ? '' : 's'} skipped — brny reads images and PDFs only.`, 'info');
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+    }
+  }
+
+  function linkFor(doc) {
+    const path = recordPath(doc);
+    return path ? `${window.location.origin}${window.location.pathname}${path}` : '';
+  }
+
+  function shareSelected() {
+    const sel = selectedDocs();
+    if (!sel.length) return;
+    const files = sel.filter(canDownload);
+    const one = sel.length === 1 ? sel[0] : null;
+    const link = one ? linkFor(one) : '';
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <p class="text-secondary" style="margin-top:0">${sel.length === 1 ? escapeHTML(sel[0].name) : `${sel.length} items`}</p>
+      <div class="dx-share-options">
+        <button type="button" class="dx-share-option" data-share="email" ${files.length ? '' : 'disabled'}>
+          <span class="material-icons-outlined">mail</span>
+          <span><strong>Email</strong><small>Send ${files.length === 1 ? 'it' : 'them'} as attachments</small></span>
+        </button>
+        <button type="button" class="dx-share-option" data-share="system" ${files.length ? '' : 'disabled'}>
+          <span class="material-icons-outlined">ios_share</span>
+          <span><strong>Share to an app</strong><small>Your device's share menu</small></span>
+        </button>
+        <button type="button" class="dx-share-option" data-share="link" ${link ? '' : 'disabled'}>
+          <span class="material-icons-outlined">link</span>
+          <span><strong>Copy link</strong><small>${link ? 'For teammates signed in to RELAY' : 'Only items linked to a record have a link'}</small></span>
+        </button>
+      </div>
+      <form class="dx-share-email" hidden>
+        <div class="form-group">
+          <label class="form-label" for="dx-share-to">To</label>
+          <input type="text" class="form-input" id="dx-share-to" placeholder="name@example.com, another@example.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="dx-share-subject">Subject</label>
+          <input type="text" class="form-input" id="dx-share-subject" value="${escapeHTML(files.length === 1 ? files[0].name : `${files.length} documents`)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="dx-share-message">Message</label>
+          <textarea class="form-textarea" id="dx-share-message" rows="3">Please find the attached ${files.length === 1 ? 'document' : 'documents'}.</textarea>
+        </div>
+      </form>`;
+
+    const emailForm = content.querySelector('.dx-share-email');
+    let modal = null;
+
+    content.addEventListener('click', async (e) => {
+      const opt = e.target.closest('[data-share]');
+      if (!opt || opt.disabled) return;
+      const how = opt.dataset.share;
+      if (how === 'link') {
+        let copied = false;
+        try {
+          await navigator.clipboard.writeText(link);
+          copied = true;
+        } catch {
+          // Clipboard API refused (permissions, embedded browsers): fall back
+          // to copying from a selected field.
+          const ta = document.createElement('textarea');
+          ta.value = link;
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+          document.body.appendChild(ta);
+          ta.select();
+          try { copied = document.execCommand('copy'); } catch { copied = false; }
+          ta.remove();
+        }
+        if (copied) {
+          showToast('Link copied', 'success');
+        } else {
+          // Last resort: show the link, selected, to copy by hand.
+          let field = content.querySelector('.dx-share-link');
+          if (!field) {
+            field = document.createElement('input');
+            field.className = 'form-input dx-share-link';
+            field.readOnly = true;
+            field.value = link;
+            content.querySelector('.dx-share-options').after(field);
+          }
+          field.focus();
+          field.select();
+          showToast('Copy the link from the box below.', 'info');
+        }
+        return;
+      }
+      if (how === 'email') {
+        const { emailBlockedReason } = await import('../../utils/email.js');
+        const reason = emailBlockedReason();
+        if (reason) { showToast(reason, 'error'); return; }
+        emailForm.hidden = false;
+        modal.modal.querySelector('.modal-action-1').hidden = false;
+        content.querySelector('#dx-share-to').focus();
+        return;
+      }
+      if (how === 'system') {
+        const read = await readSelectedFiles('shared');
+        if (!read.length) return;
+        if (!navigator.canShare || !navigator.canShare({ files: read })) {
+          showToast("This browser can't share files to other apps. Use Email or Download instead.", 'error');
+          return;
+        }
+        try {
+          await navigator.share({ files: read, title: read.length === 1 ? read[0].name : `${read.length} documents` });
+          modal.close();
+        } catch (err) {
+          if (err && err.name !== 'AbortError') showToast(`Could not share: ${err.message || err}`, 'error');
+        }
+      }
+    });
+
+    async function sendEmailNow(close) {
+      const to = content.querySelector('#dx-share-to').value.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      const subject = content.querySelector('#dx-share-subject').value.trim();
+      const message = content.querySelector('#dx-share-message').value.trim();
+      if (!to.length || to.some(a => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) { showToast('Enter a valid email address.', 'error'); return; }
+      if (!subject) { showToast('Enter a subject.', 'error'); return; }
+      const read = await readSelectedFiles('emailed');
+      if (!read.length) return;
+      try {
+        const attachments = await Promise.all(read.map(async f => ({
+          filename: f.name,
+          content: await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result).split(',')[1] || '');
+            r.onerror = () => reject(r.error);
+            r.readAsDataURL(f);
+          }),
+        })));
+        const { sendEmail } = await import('../../utils/email.js');
+        const html = `<p>${escapeHTML(message).replace(/\n/g, '<br>')}</p>`;
+        await sendEmail({ to, subject, html, text: message, template: 'custom', relatedType: 'document', attachments });
+        showToast(`Sent to ${to.join(', ')}`, 'success');
+        close();
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+    }
+
+    modal = showModal({
+      title: 'Share',
+      content,
+      actions: [
+        { label: 'Close', className: 'btn-secondary', onClick: c => c() },
+        { label: 'Send', className: 'btn-primary', onClick: c => sendEmailNow(c) },
+      ],
+    });
+    // "Send" belongs to the email form, so it waits until Email is picked.
+    modal.modal.querySelector('.modal-action-1').hidden = true;
   }
 
   function upload() {
@@ -752,7 +1071,13 @@ export function renderDocumentBrowser(container, params) {
       ${item('download', 'download', sel.length > 1 ? `Download (${sel.filter(canDownload).length})` : 'Download', ts.download)}
       ${item('record', 'open_in_new', 'Open record in new tab', ts.record)}
       <div class="dropdown-divider"></div>
+      ${item('rename', 'drive_file_rename_outline', 'Rename', ts.rename)}
+      ${item('duplicate', 'file_copy', 'Duplicate', ts.duplicate)}
       ${item('move', 'drive_file_move', 'Move to…', ts.move)}
+      <div class="dropdown-divider"></div>
+      ${item('brny', 'smart_toy', 'Copy to brny', ts.brny)}
+      ${item('share', 'share', 'Share…', ts.share)}
+      <div class="dropdown-divider"></div>
       ${item('delete', 'delete', 'Delete', ts.del, true)}`;
     document.body.appendChild(contextMenu);
 
@@ -769,12 +1094,53 @@ export function renderDocumentBrowser(container, params) {
       if (act === 'view') viewDoc(one);
       else if (act === 'download') downloadDocs(sel);
       else if (act === 'record') openRecord(one);
+      else if (act === 'rename') renameSelected();
+      else if (act === 'duplicate') duplicateSelected();
       else if (act === 'move') moveSelected();
+      else if (act === 'brny') copyToBrny();
+      else if (act === 'share') shareSelected();
       else if (act === 'delete') deleteSelected();
     });
   }
 
   // ---- Wiring ---------------------------------------------------------------
+
+  // Commands from the breadcrumb bar and from buttons inside the explorer
+  // (row actions, the details pane). Returns true when the click was one.
+  function onCommandClick(e) {
+    const viewBtn = e.target.closest('[data-view]');
+    if (viewBtn) {
+      state.view = viewBtn.dataset.view;
+      try { localStorage.setItem(VIEW_KEY, state.view); } catch { /* per-viewer nicety */ }
+      refresh();
+      return true;
+    }
+
+    const actBtn = e.target.closest('[data-act]');
+    if (!actBtn || actBtn.disabled) return false;
+    e.stopPropagation();
+    const act = actBtn.dataset.act;
+    const doc = actBtn.dataset.id ? byId(actBtn.dataset.id) : null;
+    switch (act) {
+      case 'view': viewDoc(doc); break;
+      case 'record': openRecord(doc); break;
+      case 'download': downloadDocs([doc]); break;
+      case 'view-selected': { const s = selectedDocs(); if (s.length === 1) viewDoc(s[0]); break; }
+      case 'record-selected': { const s = selectedDocs(); if (s.length === 1) openRecord(s[0]); break; }
+      case 'download-selected': downloadDocs(selectedDocs()); break;
+      case 'rename': renameSelected(); break;
+      case 'duplicate': duplicateSelected(); break;
+      case 'move': moveSelected(); break;
+      case 'brny': copyToBrny(); break;
+      case 'share': shareSelected(); break;
+      case 'delete': deleteSelected(); break;
+      case 'upload': upload(); break;
+      case 'back': window.history.back(); break;
+      case 'forward': window.history.forward(); break;
+      case 'up': goTo(ROOT); break;
+    }
+    return true;
+  }
 
   function wire() {
     const root = container.querySelector('.dx');
@@ -792,35 +1158,7 @@ export function renderDocumentBrowser(container, params) {
         return;
       }
 
-      const viewBtn = e.target.closest('[data-view]');
-      if (viewBtn) {
-        state.view = viewBtn.dataset.view;
-        try { localStorage.setItem(VIEW_KEY, state.view); } catch { /* per-viewer nicety */ }
-        refresh();
-        return;
-      }
-
-      const actBtn = e.target.closest('[data-act]');
-      if (actBtn) {
-        e.stopPropagation();
-        const act = actBtn.dataset.act;
-        const doc = actBtn.dataset.id ? byId(actBtn.dataset.id) : null;
-        switch (act) {
-          case 'view': viewDoc(doc); break;
-          case 'record': openRecord(doc); break;
-          case 'download': downloadDocs([doc]); break;
-          case 'view-selected': { const s = selectedDocs(); if (s.length === 1) viewDoc(s[0]); break; }
-          case 'record-selected': { const s = selectedDocs(); if (s.length === 1) openRecord(s[0]); break; }
-          case 'download-selected': downloadDocs(selectedDocs()); break;
-          case 'move': moveSelected(); break;
-          case 'delete': deleteSelected(); break;
-          case 'upload': upload(); break;
-          case 'back': window.history.back(); break;
-          case 'forward': window.history.forward(); break;
-          case 'up': goTo(ROOT); break;
-        }
-        return;
-      }
+      if (onCommandClick(e)) return;
 
       const item = e.target.closest('#dx-main [data-id]');
       if (item) { selectFromClick(item.dataset.id, e); return; }
@@ -858,6 +1196,7 @@ export function renderDocumentBrowser(container, params) {
       else if (tiles && e.key === 'ArrowRight') { e.preventDefault(); moveFocus(1, e.shiftKey); }
       else if (tiles && e.key === 'ArrowLeft') { e.preventDefault(); moveFocus(-1, e.shiftKey); }
       else if (e.key === 'Enter') { const s = selectedDocs(); if (s.length === 1) viewDoc(s[0]); }
+      else if (e.key === 'F2') { e.preventDefault(); if (toolbarState().rename) renameSelected(); }
       else if (e.key === 'Delete') { if (toolbarState().del) deleteSelected(); }
       else if (e.key === 'Backspace') { e.preventDefault(); goTo(ROOT); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -865,12 +1204,6 @@ export function renderDocumentBrowser(container, params) {
         state.selected = new Set(shown.map(d => d.id));
         refreshSelection();
       } else if (e.key === 'Escape') { state.selected.clear(); refreshSelection(); }
-    });
-
-    const search = container.querySelector('#dx-search');
-    search.addEventListener('input', () => { state.query = search.value; refresh(); });
-    search.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { search.value = ''; state.query = ''; refresh(); }
     });
 
     document.addEventListener('mousedown', onDocMouseDown, true);

@@ -53,7 +53,7 @@ const navItems = [
     category: 'Admin', id: 'cat-admin', icon: 'bolt',
     items: [
       { id: 'timesheets', icon: 'schedule', label: 'Time Tracking', path: '/timesheets', hasChildren: true },
-      { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents', hasChildren: true },
+      { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
       { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', hasChildren: true, dividerAfter: true },
       { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings', hasChildren: true },
     ],
@@ -126,7 +126,17 @@ export function createSidebar() {
     });
     panelsHtml += `
       <div class="submenu-panel" data-section="${item.id}">
-        <div class="submenu-head">${item.category}</div>
+        <div class="submenu-context-header">
+          <div class="submenu-context-back-row">
+            <button class="submenu-context-back" data-close-submenu="1" title="Hide menu" aria-label="Hide ${item.category} menu">
+              <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
+            </button>
+          </div>
+          <div class="submenu-context-body">
+            <span class="material-icons-outlined submenu-context-icon" aria-hidden="true">${item.icon}</span>
+            <div class="submenu-context-title" title="${item.category}">${item.category}</div>
+          </div>
+        </div>
         <nav class="submenu-nav">${itemsHtml}</nav>
       </div>`;
   });
@@ -159,10 +169,20 @@ export function createSidebar() {
   sidebar.addEventListener('click', (e) => {
     // Group opener → reveal its submenu panel (does not navigate).
     const opener = e.target.closest('.rail-opener');
-    if (opener) { setActiveSection(sidebar, opener.dataset.id); return; }
+    if (opener) { setSubmenuHidden(false); setActiveSection(sidebar, opener.dataset.id); return; }
 
     // Logout handled by its own listener.
     if (e.target.closest('#btn-logout')) return;
+
+    // A category panel's back button hides the panel so the page gets the room.
+    // It stays hidden across pages until a rail category is opened again.
+    if (e.target.closest('[data-close-submenu]')) {
+      e.preventDefault();
+      setSubmenuHidden(true);
+      sidebar.querySelectorAll('.submenu-panel:not(.contextual-panel)').forEach(p => p.classList.remove('active'));
+      sidebar.classList.remove('submenu-open');
+      return;
+    }
 
     // Contextual back button that re-opens its parent group submenu (no navigation).
     const backSectionBtn = e.target.closest('.submenu-context-back[data-back-section]');
@@ -170,6 +190,7 @@ export function createSidebar() {
       e.preventDefault();
       const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
       if (ctxPanel) ctxPanel.remove();
+      setSubmenuHidden(false);
       setActiveSection(sidebar, backSectionBtn.dataset.backSection);
       return;
     }
@@ -420,17 +441,9 @@ export function getContextualMenu(hash, panelEl) {
     };
   }
 
-  // Documents List (/documents). Folders are browsed inside the page's own
-  // file explorer, so the panel is just the header with a way back to Admin.
-  if (resource === 'documents' && !id) {
-    return {
-      railId: 'cat-admin',
-      headerTitle: 'Document Center',
-      icon: 'folder',
-      backSection: 'cat-admin',
-      items: [],
-    };
-  }
+  // Documents (/documents) has no panel of its own: folders are browsed inside
+  // the page's file explorer, so the Admin menu stays open with Documents
+  // highlighted.
 
   // Reports List (/reports)
   if (resource === 'reports' && !id) {
@@ -439,6 +452,8 @@ export function getContextualMenu(hash, panelEl) {
       railId: 'cat-admin',
       headerTitle: 'Reports & Analytics',
       icon: 'bar_chart',
+      backSection: 'cat-admin',
+      backLabel: 'Back to Admin',
       items: [
         { id: 'overview', icon: 'dashboard', label: 'Business Overview', path: '/reports?tab=overview' },
         { id: 'revenue', icon: 'trending_up', label: 'Revenue & Profit', path: '/reports?tab=revenue' },
@@ -821,16 +836,33 @@ function drillPanel(sidebar, step) {
   syncActiveFromRoute(sidebar, window.location.hash.slice(1) || '/');
 }
 
-// Show a section's submenu panel and mark its rail item active.
-function setActiveSection(sidebar, sectionId) {
+// Whether the user hid the category panel with its back button. Remembered
+// like the rail collapse, so the page keeps its width across navigation.
+const SUBMENU_HIDDEN_KEY = 'relay_submenu_hidden';
+
+function isSubmenuHidden() {
+  try { return localStorage.getItem(SUBMENU_HIDDEN_KEY) === 'true'; } catch { return false; }
+}
+
+function setSubmenuHidden(hidden) {
+  try {
+    if (hidden) localStorage.setItem(SUBMENU_HIDDEN_KEY, 'true');
+    else localStorage.removeItem(SUBMENU_HIDDEN_KEY);
+  } catch { /* preference only */ }
+}
+
+// Show a section's submenu panel and mark its rail item active. A route change
+// passes `fromRoute`, which leaves a panel the user hid closed.
+function setActiveSection(sidebar, sectionId, { fromRoute = false } = {}) {
   sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
   sidebar.querySelectorAll('.rail-item').forEach(r => {
     r.classList.toggle('active', r.dataset.id === sectionId);
   });
+  const keepHidden = fromRoute && isSubmenuHidden();
   let hasPanel = false;
   sidebar.querySelectorAll('.submenu-panel').forEach(p => {
-    const on = p.dataset.section === sectionId;
+    const on = !keepHidden && p.dataset.section === sectionId;
     p.classList.toggle('active', on);
     if (on) hasPanel = true;
   });
@@ -912,7 +944,7 @@ function syncActiveFromRoute(sidebar, path) {
       if (item.items.some(c => c.path === basePath)) { sectionId = item.id; break; }
     } else if (item.path === basePath) { sectionId = item.id; break; }
   }
-  if (sectionId) setActiveSection(sidebar, sectionId);
+  if (sectionId) setActiveSection(sidebar, sectionId, { fromRoute: true });
 
   // Highlight the exact current page inside the panel.
   sidebar.querySelectorAll('.submenu-item').forEach(it => {

@@ -46,23 +46,46 @@ export async function attachAddressAutocomplete(targetInput, opts = {}) {
     return;
   }
 
-  // Wrap the input so the dropdown can be positioned relative to it.
-  const wrap = document.createElement('div');
-  wrap.style.position = 'relative';
-  targetInput.parentElement.insertBefore(wrap, targetInput);
-  wrap.appendChild(targetInput);
+  // The suggestions list is drawn on <body>, fixed under the field, and only
+  // exists while it is showing. Drawn inside the field's own container it was
+  // clipped by any scrolling parent — a modal body, a drawer, a table cell — which
+  // is exactly where the quick-create forms put address fields.
+  const MENU_MAX_HEIGHT = 320;
+  let menu = null;
 
-  const menu = document.createElement('div');
-  Object.assign(menu.style, {
-    position: 'absolute', top: 'calc(100% + 2px)', left: '0',
-    // At least as wide as the field, but never narrower than a full street
-    // address needs — so suggestions read on one consistent line.
-    width: 'max(100%, 460px)', zIndex: '9999',
-    background: 'var(--card-bg, #fff)', border: '1px solid var(--border-color, #ddd)',
-    borderRadius: 'var(--border-radius-md, 6px)', boxShadow: 'var(--shadow-lg, 0 8px 24px rgba(0,0,0,.15))',
-    maxHeight: '320px', overflowY: 'auto', display: 'none', padding: '4px',
-  });
-  wrap.appendChild(menu);
+  const placeMenu = () => {
+    if (!menu) return;
+    if (!targetInput.isConnected) return hideMenu();
+    const rect = targetInput.getBoundingClientRect();
+    const gutter = 8;
+    // At least as wide as the field, and wide enough for a full street address
+    // to read on one line, but never wider than the window.
+    const width = Math.min(Math.max(rect.width, 460), window.innerWidth - gutter * 2);
+    const left = Math.min(Math.max(gutter, rect.left), window.innerWidth - width - gutter);
+    const below = window.innerHeight - rect.bottom - gutter;
+    const height = Math.min(menu.scrollHeight, MENU_MAX_HEIGHT);
+    const top = below < height && rect.top > below ? rect.top - height - 2 : rect.bottom + 2;
+    Object.assign(menu.style, { left: `${left}px`, top: `${top}px`, width: `${width}px` });
+  };
+
+  const ensureMenu = () => {
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.className = 'places-suggestions';
+    menu.setAttribute('role', 'listbox');
+    Object.assign(menu.style, {
+      position: 'fixed', boxSizing: 'border-box',
+      // Above modals (--z-modal: 2000) so a field inside one shows its suggestions.
+      zIndex: '2100',
+      background: 'var(--card-bg, #fff)', border: '1px solid var(--border-color, #ddd)',
+      borderRadius: 'var(--border-radius-md, 6px)', boxShadow: 'var(--shadow-lg, 0 8px 24px rgba(0,0,0,.15))',
+      maxHeight: `${MENU_MAX_HEIGHT}px`, overflowY: 'auto', padding: '4px',
+    });
+    document.body.appendChild(menu);
+    window.addEventListener('scroll', placeMenu, true);
+    window.addEventListener('resize', placeMenu);
+    return menu;
+  };
 
   let sessionToken = new AutocompleteSessionToken();
   let suggestions = [];
@@ -70,16 +93,26 @@ export async function attachAddressAutocomplete(targetInput, opts = {}) {
   let debounceTimer = null;
   let suppress = false; // guards against our own value-set re-triggering a fetch
 
-  const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; suggestions = []; activeIdx = -1; };
+  const hideMenu = () => {
+    suggestions = [];
+    activeIdx = -1;
+    if (!menu) return;
+    menu.remove();
+    menu = null;
+    window.removeEventListener('scroll', placeMenu, true);
+    window.removeEventListener('resize', placeMenu);
+  };
 
   const paintActive = () => {
+    if (!menu) return;
     [...menu.children].forEach((el, i) => {
       el.style.background = i === activeIdx ? 'var(--bg-color, #f2f2f2)' : 'transparent';
     });
   };
 
   const renderMenu = () => {
-    if (!suggestions.length) return hideMenu();
+    if (!suggestions.length || !targetInput.isConnected) return hideMenu();
+    ensureMenu();
     menu.innerHTML = '';
     suggestions.forEach((s, i) => {
       const item = document.createElement('div');
@@ -94,7 +127,7 @@ export async function attachAddressAutocomplete(targetInput, opts = {}) {
       menu.appendChild(item);
     });
     paintActive();
-    menu.style.display = 'block';
+    placeMenu();
   };
 
   async function choose(i) {
@@ -145,11 +178,12 @@ export async function attachAddressAutocomplete(targetInput, opts = {}) {
     debounceTimer = setTimeout(() => fetchSuggestions(val), 250);
   });
   targetInput.addEventListener('keydown', (e) => {
-    if (menu.style.display === 'none' || !suggestions.length) return;
+    if (!menu || !suggestions.length) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, suggestions.length - 1); paintActive(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); paintActive(); }
     else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); choose(activeIdx); }
-    else if (e.key === 'Escape') { hideMenu(); }
+    // Escape closes the suggestions only — not a modal the field sits in.
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hideMenu(); }
   });
   targetInput.addEventListener('blur', () => setTimeout(hideMenu, 150));
 }
