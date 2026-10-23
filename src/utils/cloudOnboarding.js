@@ -18,6 +18,7 @@ import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { setSessionUser } from '../pages/auth/session.js';
 import { TRIAL_DAYS } from './subscription.js';
+import { markTrialWelcomePending } from './trialWelcome.js';
 
 export const PENDING_SIGNUP_KEY = 'relay_pending_cloud_signup';
 export const PENDING_MIGRATION_KEY = 'relay_pending_cloud_migration';
@@ -442,6 +443,11 @@ export async function provisionCloudAccount({ userId, companyName, adminName, ad
   } catch (err) {
     console.error('Failed to start cloud trial:', err);
   }
+
+  // The app shell cannot tell a fresh signup from an old trial by looking at
+  // the company row, so signup leaves a one-tab marker for it to consume and
+  // show the welcome notice once. Only a trial that actually started counts.
+  if (trialEndsAt && data) markTrialWelcomePending(data);
 
   return { companyId: data, trialEndsAt };
 }

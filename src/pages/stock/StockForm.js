@@ -56,7 +56,7 @@ export function renderStockForm(container, { id }) {
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Stock Item' : 'New Stock Item'}</h1></div>
-    <div class="card" style="max-width:720px">
+    <div class="card">
       <div class="card-body">
         <form id="stock-form">
           <div class="form-group">

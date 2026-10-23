@@ -547,9 +547,12 @@ function renderPage(handler) {
 
     // A record's details page (/jobs/:id, /quotes/:id, …) sits in one rounded
     // panel that fills the content area (see .is-detail-page in layout.css).
+    // Create and edit forms are the same kind of record surface, so they get
+    // the same boxed panel instead of the old flat list-page styling.
     const routeParts = hash.slice(1).split('?')[0].split('/').filter(Boolean);
     const isDetailPage = routeParts.length === 2 && routeParts[1] !== 'new' && DETAIL_PAGE_RESOURCES.has(routeParts[0]);
-    mainContent.classList.toggle('is-detail-page', isDetailPage);
+    const isRecordFormPage = isRecordFormRoute(routeParts);
+    mainContent.classList.toggle('is-detail-page', isDetailPage || isRecordFormPage);
 
     const result = handler(mainContent, params);
     // A read-only account keeps the page, but its create/edit controls are
@@ -579,6 +582,21 @@ const DETAIL_PAGE_RESOURCES = new Set([
   'jobs', 'quotes', 'invoices', 'people', 'contractors', 'suppliers', 'leads',
   'assets', 'stock', 'purchase-orders', 'kits', 'projects',
 ]);
+
+// Create/edit routes for the same record types. They are editors, not list
+// views, so they share the detail page's boxed surface. The full-screen studios
+// under /settings (forms, quote templates, documents, email) keep their own
+// layout and are deliberately not matched here.
+const RECORD_FORM_RESOURCES = new Set([
+  'jobs', 'quotes', 'invoices', 'people', 'contractors', 'suppliers', 'leads',
+  'assets', 'stock', 'kits',
+]);
+
+function isRecordFormRoute(parts) {
+  if (!parts || !RECORD_FORM_RESOURCES.has(parts[0])) return false;
+  if (parts[1] === 'new') return parts.length === 2;
+  return parts.length === 3 && parts[2] === 'edit';
+}
 
 // Resolves a route handler that lives in its own chunk. `load` is the dynamic
 // import, `name` the render export, and `mapParams` covers the handful of routes

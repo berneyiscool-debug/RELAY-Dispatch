@@ -15,7 +15,7 @@ import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
 import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription, trialActive, trialDaysLeft, trialEndTime } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan } from '../utils/xero.js';
 import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
@@ -2909,6 +2909,13 @@ export function renderSettings(container) {
     const pastDue = subscriptionPastDue();
     const comp = isComplimentary();   // free "power user" grant, set via Supabase
 
+    // The trial has its own row so a trialing account can see how long is left
+    // without decoding "Trial" in the status line or opening Stripe.
+    const onTrial = trialActive();
+    const trialDays = onTrial ? trialDaysLeft() : null;
+    const trialEnd = onTrial ? trialEndTime() : null;
+    const trialEndLabel = trialEnd ? new Date(trialEnd).toLocaleDateString() : null;
+
     // Live seat estimate = active (non-deactivated) users on this account.
     const techs = store.getAll('technicians') || [];
     const activeSeats = techs.filter(t => !t.deactivated).length || 1;
@@ -3002,6 +3009,12 @@ export function renderSettings(container) {
               <div style="font-weight:700;">${active ? (PLAN_CATALOG[tier]?.name || 'Cloud') : (isCloud ? 'No plan yet' : 'Free')}</div>
               <div style="color:${pastDue ? 'var(--color-danger)' : 'var(--text-secondary)'};margin-top:2px;">${statusLabel}</div>
             </div>
+            ${onTrial ? `
+            <div>
+              <div style="text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Free trial</div>
+              <div style="font-weight:700;color:var(--text-primary);">${trialDays === 0 ? 'Ends today' : `${trialDays} day${trialDays === 1 ? '' : 's'} left`}</div>
+              <div style="color:var(--text-secondary);margin-top:2px;">${trialEndLabel ? `Ends ${trialEndLabel} — ` : ''}no card needed</div>
+            </div>` : ''}
             ${isCloud ? `
             <div>
               <div style="text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>

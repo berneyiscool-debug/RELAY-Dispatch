@@ -12,9 +12,12 @@
 // fires a throttled toast. That toast is the immediate feedback; this banner is
 // the standing explanation.
 
-import { isReadOnly, readOnlyReason, subscriptionRequired, trialActive, trialDaysLeft, trialEndTime } from '../utils/subscription.js';
+import { isReadOnly, readOnlyReason, subscriptionRequired, trialActive, trialDaysLeft, trialEndTime, TRIAL_DAYS } from '../utils/subscription.js';
+import { consumeTrialWelcomePending } from '../utils/trialWelcome.js';
 import { downloadDataSnapshot } from '../utils/dataBackup.js';
 import { showToast } from './Notifications.js';
+import { showModal } from './Modal.js';
+import { store } from '../data/store.js';
 import { escapeHTML } from '../utils/security.js';
 
 export const BANNER_ID = 'relay-trial-banner';
@@ -166,4 +169,47 @@ export function mountTrialBanner(pageContainer) {
 
 export function unmountTrialBanner() {
   document.getElementById(BANNER_ID)?.remove();
+}
+
+// The signup flow drops a tab-scoped marker the moment the trial starts (see
+// utils/trialWelcome.js). This consumes it once, straight after the app shell
+// has loaded, so a brand-new account is told about the trial in the same breath
+// as landing in the app — not left to discover it from the final-week banner.
+//
+// Nothing is shown for an account that is no longer trialing: the marker is
+// still cleared, so a failed or already-converted trial never pops up days later.
+export function maybeShowTrialWelcome() {
+  const pendingCompanyId = consumeTrialWelcomePending();
+  if (!pendingCompanyId) return;
+  if (store.companyId && String(store.companyId) !== String(pendingCompanyId)) return;
+  if (!trialActive()) return;
+
+  const days = trialDaysLeft();
+  const end = trialEndTime();
+  const endLabel = end ? new Date(end).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : null;
+  const daysLabel = days === 1 ? '1 day' : `${days} days`;
+
+  const content = document.createElement('div');
+  content.style.cssText = 'display:flex;flex-direction:column;gap:12px;line-height:1.55;';
+  content.innerHTML = `
+    <p style="margin:0;">Your account is on RELAY's free ${TRIAL_DAYS}-day trial — <strong>${escapeHTML(daysLabel)} left</strong>${endLabel ? `, ending <strong>${escapeHTML(endLabel)}</strong>` : ''}.</p>
+    <p style="margin:0;color:var(--text-secondary);">Everything is unlocked while the trial runs, and no card is needed until it ends. When it does, your account switches to read-only and your data stays safe — subscribing any time keeps you editing.</p>
+    <p style="margin:0;color:var(--text-tertiary);font-size:12px;">You can see the countdown in the top bar, or under Settings → Plan &amp; Billing.</p>
+  `;
+
+  showModal({
+    title: 'Your free trial has started',
+    content,
+    actions: [
+      { label: 'Explore RELAY', className: 'btn-primary', onClick: (close) => close() },
+      {
+        label: 'See plans',
+        className: 'btn-secondary',
+        onClick: (close) => {
+          close();
+          window.__relay?.router?.navigate('/settings?tab=billing');
+        },
+      },
+    ],
+  });
 }
