@@ -31,6 +31,7 @@ import {
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
+import { statCard } from '../../components/StatCard.js';
 
 // Display an uploaded activity image at full size in a centered lightbox modal
 function showImageLightbox(src, name) {
@@ -1656,6 +1657,50 @@ export function renderJobDetail(container, { id, tab, form }) {
       const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
       const estHoursDisplay = estHours > 0 ? `${estHours}h` : '—';
 
+      // The Asset tab links equipment to the job while it is being created. That
+      // link used to be invisible once the job was saved, so show it here. Older
+      // jobs can carry assetId without a resolvable record (asset deleted) or an
+      // assetName without the id, so fall back rather than rendering nothing.
+      const linkedAsset = job.assetId ? store.getById('assets', job.assetId) : null;
+      const linkedAssetName = linkedAsset?.name || job.assetName || '';
+      const canViewAssets = hasPermission('Assets', 'view');
+      const linkedAssetCard = !linkedAssetName ? '' : (() => {
+        const assetMeta = [
+          { label: 'Serial Number', value: linkedAsset?.serial || linkedAsset?.identifier || '—' },
+          { label: 'Owner / Customer', value: linkedAsset?.customerName || linkedAsset?.customer_name || job.customerName || '—' },
+          { label: 'Current Meter', value: linkedAsset?.currentMeter !== undefined && linkedAsset?.currentMeter !== null && linkedAsset?.currentMeter !== '' ? `${linkedAsset.currentMeter} ${linkedAsset.meterUnit || ''}`.trim() : '—' },
+          { label: 'Status', value: linkedAsset?.status || 'Active' },
+        ];
+        return `
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Linked Asset</h4>
+                    ${linkedAsset && canViewAssets ? `<a href="#/assets/${escapeHTML(linkedAsset.id)}" class="btn btn-ghost btn-sm" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px; text-decoration:none">
+                      <span class="material-icons-outlined" style="font-size:14px">open_in_new</span> View asset
+                    </a>` : ''}
+                  </div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                      <div style="width:34px; height:34px; border-radius:8px; background:var(--color-primary-light); color:var(--color-primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                        <span class="material-icons-outlined" style="font-size:18px">inventory_2</span>
+                      </div>
+                      <div style="min-width:0">
+                        <div style="font-weight:700; font-size:14px; color:var(--text-primary); word-break:break-word;">${escapeHTML(linkedAssetName)}</div>
+                        <div style="font-size:12px; color:var(--text-tertiary);">${escapeHTML(linkedAsset?.type || 'Equipment')}</div>
+                      </div>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        ${assetMeta.map((row, i) => `<tr${i > 0 ? ' style="border-top:1px solid var(--border-color)"' : ''}>
+                          <td style="padding:10px 0; color:var(--text-secondary); width:45%;">${row.label}</td>
+                          <td style="padding:10px 0; font-weight:500; color:var(--text-primary); text-align:right; word-break:break-word;">${escapeHTML(String(row.value))}</td>
+                        </tr>`).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>`;
+      })();
+
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
           
@@ -1681,6 +1726,8 @@ export function renderJobDetail(container, { id, tab, form }) {
                     </table>
                   </div>
                 </div>
+
+                ${linkedAssetCard}
 
                 <!-- Progress & Logistics -->
                 <div class="card">
@@ -3141,30 +3188,36 @@ export function renderJobDetail(container, { id, tab, form }) {
         tc.innerHTML = `
           <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
             
-            <!-- KPI Scorecard -->
-            <div class="grid-4" style="gap:12px">
-              <div class="card" style="padding:16px; text-align:center">
-                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Child Jobs</div>
-                <div style="font-size:28px; font-weight:800; color:var(--color-primary)">${childJobs.length}</div>
-                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">
-                  <span style="color:var(--color-success)">${completedCount} done</span> · ${inProgressCount} active · ${pendingCount} pending
-                </div>
-              </div>
-              <div class="card" style="padding:16px; text-align:center">
-                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Hours Logged</div>
-                <div style="font-size:28px; font-weight:800; color:var(--text-primary)">${totalChildHours.toFixed(1)}h</div>
-                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">Avg ${childJobs.length > 0 ? (totalChildHours / childJobs.length).toFixed(1) : '0'}h per visit</div>
-              </div>
-              <div class="card" style="padding:16px; text-align:center">
-                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Combined Cost</div>
-                <div style="font-size:28px; font-weight:800; color:var(--color-danger)">$${totalCombinedCost.toFixed(2)}</div>
-                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">Avg $${avgCostPerJob.toFixed(2)} per visit</div>
-              </div>
-              <div class="card" style="padding:16px; text-align:center">
-                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Invoiced</div>
-                <div style="font-size:28px; font-weight:800; color:var(--color-success)">$${totalChildInvoiced.toFixed(2)}</div>
-                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">$${totalChildPaid.toFixed(2)} collected</div>
-              </div>
+            <!-- KPI scorecard -->
+            <div class="stat-row">
+              ${statCard({
+                label: 'Total child jobs',
+                value: childJobs.length,
+                icon: 'event_repeat',
+                tone: 'primary',
+                sub: `<span style="color:var(--color-success)">${completedCount} done</span> · ${inProgressCount} active · ${pendingCount} pending`,
+              })}
+              ${statCard({
+                label: 'Total hours logged',
+                value: `${totalChildHours.toFixed(1)}h`,
+                icon: 'schedule',
+                tone: 'neutral',
+                sub: `Avg ${childJobs.length > 0 ? (totalChildHours / childJobs.length).toFixed(1) : '0'}h per visit`,
+              })}
+              ${statCard({
+                label: 'Total combined cost',
+                value: `$${totalCombinedCost.toFixed(2)}`,
+                icon: 'payments',
+                tone: 'warning',
+                sub: `Avg $${avgCostPerJob.toFixed(2)} per visit`,
+              })}
+              ${statCard({
+                label: 'Total invoiced',
+                value: `$${totalChildInvoiced.toFixed(2)}`,
+                icon: 'receipt_long',
+                tone: 'success',
+                sub: `$${totalChildPaid.toFixed(2)} collected`,
+              })}
             </div>
 
             <!-- Cost Breakdown -->
@@ -3421,63 +3474,65 @@ export function renderJobDetail(container, { id, tab, form }) {
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
           
-          <!-- Executive KPI Scorecard Grid -->
-          <div class="grid-4" style="gap:16px">
-            <div class="card" style="padding:16px; border-left:4px solid var(--color-primary)">
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Contract / Quoted Price</div>
-              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${contractPrice.toFixed(2)}</div>
-              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">${acceptedQuote ? `From Accepted Quote ${acceptedQuote.number}` : 'Standard Job Pricing'}</div>
-            </div>
-
-            <div class="card" style="padding:16px; border-left:4px solid var(--color-info)">
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Invoiced to Date</div>
-              <div style="font-size:22px; font-weight:700; color:var(--color-info)">$${totalInvoiced.toFixed(2)}</div>
-              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Paid: $${totalPaid.toFixed(2)} | Unbilled: $${Math.max(0, contractPrice - totalInvoiced).toFixed(2)}</div>
-            </div>
-
-            <div class="card" style="padding:16px; border-left:4px solid var(--color-warning)">
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Realized Cost</div>
-              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${actTotal.toFixed(2)}</div>
-              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Labor: $${actLabor.toFixed(2)} | Mat & POs: $${actMaterial.toFixed(2)}</div>
-            </div>
-
-            <div class="card" style="padding:16px; border-left:4px solid ${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Gross Profit & Margin</div>
-              <div style="font-size:22px; font-weight:700; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-                $${profit.toFixed(2)}
-              </div>
-              <div style="margin-top:4px">
-                <span class="badge ${marginBadgeClass}" style="font-weight:700">${margin.toFixed(1)}% Margin</span>
-              </div>
-            </div>
+          <!-- Executive KPI scorecard -->
+          <div class="stat-row">
+            ${statCard({
+              label: 'Contract / quoted price',
+              value: `$${contractPrice.toFixed(2)}`,
+              icon: 'request_quote',
+              tone: 'primary',
+              sub: acceptedQuote ? `From accepted quote ${escapeHTML(acceptedQuote.number)}` : 'Standard job pricing',
+            })}
+            ${statCard({
+              label: 'Invoiced to date',
+              value: `$${totalInvoiced.toFixed(2)}`,
+              icon: 'receipt_long',
+              tone: 'blue',
+              sub: `Paid $${totalPaid.toFixed(2)} · Unbilled $${Math.max(0, contractPrice - totalInvoiced).toFixed(2)}`,
+            })}
+            ${statCard({
+              label: 'Total realized cost',
+              value: `$${actTotal.toFixed(2)}`,
+              icon: 'payments',
+              tone: 'warning',
+              sub: `Labour $${actLabor.toFixed(2)} · Materials $${actMaterial.toFixed(2)}`,
+            })}
+            ${statCard({
+              label: 'Gross profit & margin',
+              value: `$${profit.toFixed(2)}`,
+              icon: profit >= 0 ? 'trending_up' : 'trending_down',
+              tone: profit >= 0 ? 'success' : 'danger',
+              valueTone: profit >= 0 ? '' : 'alert',
+              sub: `<span class="badge ${marginBadgeClass}">${margin.toFixed(1)}% margin</span>`,
+            })}
           </div>
 
-          <!-- Budget Deviation Tracker Card -->
-          <div class="card" style="border: 1.5px solid ${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success)'}">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; background:${varianceTotal > 0 ? 'rgba(239,68,68,0.02)' : 'rgba(16,185,129,0.02)'}; padding: 12px 16px">
-              <h4 style="margin:0; color:${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success-dark)'}; display:flex; align-items:center; gap:8px">
-                <span class="material-icons-outlined" style="font-size:20px">analytics</span>
-                Budget Deviation & Costs Tracker
+          <!-- Budget deviation -->
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0; display:flex; align-items:center; gap:8px">
+                <span class="material-icons-outlined" style="font-size:18px; color:var(--text-tertiary)">analytics</span>
+                Budget Deviation &amp; Costs
               </h4>
-              <span class="badge ${varianceTotal > 0 ? 'badge-danger' : 'badge-success'}" style="font-weight:700">
-                ${varianceTotal > 0 ? 'Over Budget' : 'Under Budget'}
+              <span class="badge ${varianceTotal > 0 ? 'badge-danger' : 'badge-success'}">
+                ${varianceTotal > 0 ? 'Over budget' : 'Under budget'}
               </span>
             </div>
             <div class="card-body" style="padding: 16px">
               ${varianceTotal > 0 ? `
-                <div style="display:flex; align-items:center; gap:12px; background:rgba(239,68,68,0.08); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; margin-bottom:16px; color:#c53030">
+                <div style="display:flex; align-items:center; gap:12px; background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:12px; border-radius:var(--border-radius); margin-bottom:16px; color:var(--color-danger)">
                   <span class="material-icons-outlined" style="font-size:20px">warning</span>
                   <div style="font-size:13px">
-                    <strong>Budget Overrun Detected</strong>
-                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Actual expenses have exceeded the quoted estimation by <strong>$${varianceTotal.toFixed(2)}</strong>. Customer approval may be required for additional variations.</div>
+                    <strong>Budget overrun detected</strong>
+                    <div style="font-size:12px; margin-top:2px">Actual expenses have exceeded the quoted estimation by <strong>$${varianceTotal.toFixed(2)}</strong>. Customer approval may be required for additional variations.</div>
                   </div>
                 </div>
               ` : `
-                <div style="display:flex; align-items:center; gap:12px; background:rgba(16,185,129,0.08); border-left:4px solid var(--color-success); padding:12px; border-radius:4px; margin-bottom:16px; color:#2f855a">
+                <div style="display:flex; align-items:center; gap:12px; background:var(--color-success-bg); border-left:3px solid var(--color-success); padding:12px; border-radius:var(--border-radius); margin-bottom:16px; color:var(--color-success)">
                   <span class="material-icons-outlined" style="font-size:20px">check_circle</span>
                   <div style="font-size:13px">
-                    <strong>Expenses Within Quoted Budget</strong>
-                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Current expenses are within the original quoted estimation. Remaining budget margin: <strong>$${Math.abs(varianceTotal).toFixed(2)}</strong>.</div>
+                    <strong>Expenses within quoted budget</strong>
+                    <div style="font-size:12px; margin-top:2px">Current expenses are within the original quoted estimation. Remaining budget margin: <strong>$${Math.abs(varianceTotal).toFixed(2)}</strong>.</div>
                   </div>
                 </div>
               `}
@@ -3495,7 +3550,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                     const barColor = isOver ? 'var(--color-danger)' : 'var(--color-success)';
                     return `
                       <div style="width:${percent}%; background:${barColor}; height:100%; transition:width 0.4s ease; border-radius:6px"></div>
-                      ${isOver ? `<div style="flex:1; background:rgba(239,68,68,0.25); height:100%"></div>` : ''}
+                      ${isOver ? `<div style="flex:1; background:var(--color-danger-bg); height:100%"></div>` : ''}
                     `;
                   })()}
                 </div>
@@ -3521,7 +3576,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                     <td style="font-weight:600">Labor Pay</td>
                     <td style="text-align:right; color:var(--text-secondary)">$${estLabor.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600">$${actLabor.toFixed(2)}</td>
-                    <td style="text-align:right; font-weight:600; color:${varianceLabor > 0 ? 'var(--color-danger)' : varianceLabor < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                    <td style="text-align:right; font-weight:600; color:${varianceLabor > 0 ? 'var(--color-danger)' : varianceLabor < 0 ? 'var(--color-success)' : 'var(--text-tertiary)'}">
                       ${varianceLabor > 0 ? `+$${varianceLabor.toFixed(2)}` : varianceLabor < 0 ? `-$${Math.abs(varianceLabor).toFixed(2)}` : '$0.00'}
                     </td>
                   </tr>
@@ -3529,7 +3584,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                     <td style="font-weight:600">Material & PO Costs</td>
                     <td style="text-align:right; color:var(--text-secondary)">$${estMaterial.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600">$${actMaterial.toFixed(2)}</td>
-                    <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                    <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success)' : 'var(--text-tertiary)'}">
                       ${varianceMaterial > 0 ? `+$${varianceMaterial.toFixed(2)}` : varianceMaterial < 0 ? `-$${Math.abs(varianceMaterial).toFixed(2)}` : '$0.00'}
                     </td>
                   </tr>
@@ -3539,7 +3594,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                     <td>Total Job Expenses</td>
                     <td style="text-align:right">$${estTotal.toFixed(2)}</td>
                     <td style="text-align:right; color:var(--color-primary)">$${actTotal.toFixed(2)}</td>
-                    <td style="text-align:right; color:${varianceTotal > 0 ? 'var(--color-danger)' : varianceTotal < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                    <td style="text-align:right; color:${varianceTotal > 0 ? 'var(--color-danger)' : varianceTotal < 0 ? 'var(--color-success)' : 'var(--text-tertiary)'}">
                       ${varianceTotal > 0 ? `+$${varianceTotal.toFixed(2)}` : varianceTotal < 0 ? `-$${Math.abs(varianceTotal).toFixed(2)}` : '$0.00'}
                     </td>
                   </tr>
@@ -4084,19 +4139,28 @@ export function renderJobDetail(container, { id, tab, form }) {
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
           
-          <div class="card" style="padding:16px; background:var(--bg-color); display:flex; gap:32px; border-left:4px solid var(--color-primary)">
-            <div>
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Materials Cost</div>
-              <div style="font-size:24px; font-weight:700; color:var(--text-primary)">$${grandTotal.toFixed(2)}</div>
-            </div>
-            <div>
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From Stock</div>
-              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalMaterialCost.toFixed(2)}</div>
-            </div>
-            <div>
-              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From POs</div>
-              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalPoCost.toFixed(2)}</div>
-            </div>
+          <div class="stat-row">
+            ${statCard({
+              label: 'Total materials cost',
+              value: `$${grandTotal.toFixed(2)}`,
+              icon: 'inventory_2',
+              tone: 'primary',
+              sub: 'Stock allocations plus purchase orders',
+            })}
+            ${statCard({
+              label: 'From stock',
+              value: `$${totalMaterialCost.toFixed(2)}`,
+              icon: 'warehouse',
+              tone: 'blue',
+              sub: `${allocatedMaterials.length} item${allocatedMaterials.length === 1 ? '' : 's'} allocated`,
+            })}
+            ${statCard({
+              label: 'From purchase orders',
+              value: `$${totalPoCost.toFixed(2)}`,
+              icon: 'receipt_long',
+              tone: 'neutral',
+              sub: `${pos.length} order${pos.length === 1 ? '' : 's'} raised`,
+            })}
           </div>
 
           <div class="card" style="margin-bottom:var(--space-md)">

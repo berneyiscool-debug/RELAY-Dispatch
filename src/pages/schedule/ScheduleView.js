@@ -17,6 +17,7 @@ import { isCallbackJob } from '../../utils/kpis.js';
 import { customerForDocument, savedCustomerPortalUrl } from '../../utils/portalLinks.js';
 import { getActiveClock, getClockStatusForToday, getBreakState, endShiftFromBreak, formatDuration, clockIn, clockOut } from '../../utils/timeClock.js';
 import { initTimeOnlyClockPicker } from '../../utils/clockPicker.js';
+import { showDragTimeBadge, hideDragTimeBadge } from '../../components/DragTimeBadge.js';
 import { getNotArrived, getRosterForDay } from '../../utils/payrollExceptions.js';
 import { getWorkRules } from '../../utils/workRules.js';
 import {
@@ -3869,6 +3870,12 @@ export function renderScheduleView(container) {
           scrollContainer.scrollTop += e.deltaY;
         }
       }, { passive: true });
+
+      // Leaving the board entirely (heading for the job search rail, say) drops the
+      // preview; the badge should not keep advertising a column it is no longer over.
+      scrollContainer.addEventListener('dragleave', (e) => {
+        if (!scrollContainer.contains(e.relatedTarget)) hideDragTimeBadge();
+      });
     }
 
     // Draggable: unscheduled jobs
@@ -4027,6 +4034,21 @@ export function renderScheduleView(container) {
 
         preview.style.top = top + 'px';
         preview.style.height = height + 'px';
+
+        // The gutter is a screen away and the ghost hides the gridlines under the
+        // pointer, so repeat the snapped window on the block itself.
+        const dropEnd = dropHour + duration;
+        const dayKey = col.dataset.date || '';
+        const dayLabel = dayKey
+          ? new Date(dayKey + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+          : '';
+        showDragTimeBadge({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          offsetY,
+          range: `${formatHour(dropHour)} – ${formatHour(dropEnd)}`,
+          meta: [dayLabel, `${Number(duration.toFixed(2))}h`].filter(Boolean).join(' · '),
+        });
       });
       col.addEventListener('dragleave', (e) => {
         if (!col.contains(e.relatedTarget)) {
