@@ -5,7 +5,7 @@ import { resolveSettingsTab, SETTINGS_DEFAULT_TAB, TAB_ALIASES } from './setting
 // The canonical settings tabs both the settings page and the sidebar agree on.
 const CANONICAL_SETTINGS_TABS = [
   'company', 'billing', 'portal', 'portal_contractor', 'local_storage', 'system',
-  'templates_forms', 'invoices_quotes', 'payments', 'email',
+  'templates_forms', 'invoices_quotes', 'payments', 'accounting', 'email',
   'users', 'suppliers', 'materials', 'storage_options', 'cost_centers', 'tax'
 ];
 

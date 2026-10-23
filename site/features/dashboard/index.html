@@ -18,7 +18,7 @@
 <header class="site-header">
   <div class="site-header__inner">
     <a class="site-header__brand" href="/" aria-label="RELAY Dispatch home">
-      <img src="assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
+      <img src="/assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
     </a>
     <nav class="nav-links" aria-label="Main">
       <div class="nav-dropdown">
@@ -26,11 +26,11 @@
         <div class="nav-dropdown__panel" role="list">
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/dashboard/" class="nav-dropdown__section">Dashboard</a>
-            <a href="/features/dashboard/#dashboard" class="nav-dropdown__link">Dashboard</a>
+
           </div>
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/schedule/" class="nav-dropdown__section">Schedule</a>
-            <a href="/features/schedule/#schedule" class="nav-dropdown__link">Schedule</a>
+
           </div>
           <div class="nav-dropdown__group" role="listitem">
             <a href="/features/workflow/" class="nav-dropdown__section">Workflow</a>
@@ -74,30 +74,71 @@
         Start free
       </a>
     </div>
+    <details class="nav-mobile">
+      <summary class="nav-mobile__summary">
+        <span class="nav-mobile__icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Menu</span>
+      </summary>
+      <div class="nav-mobile__panel">
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#compare">Compare</a>
+        <a href="/#download">Download</a>
+        <p class="nav-mobile__label">Feature guides</p>
+        <a href="/features/dashboard/">Dashboard</a>
+        <a href="/features/schedule/">Schedule</a>
+        <a href="/features/workflow/">Workflow</a>
+        <a href="/features/people/">People</a>
+        <a href="/features/resources/">Resources</a>
+        <a href="/features/admin/">Admin</a>
+      </div>
+    </details>
   </div>
 </header>
 
 <main id="main" class="feature-page">
-  <div class="feature-page__inner">
-    <p class="eyebrow"><a href="/#features">All features</a></p>
-    <h1 class="feature-page__title">Dashboard</h1>
-    <p class="feature-page__intro">The first screen after you sign in. Money, work and people at a glance, with widgets you can rearrange.</p>
+  <div class="feature-page__head">
+    <div class="feature-page__inner">
+      <p class="eyebrow"><a href="/#features">All features</a></p>
+      <h1 class="feature-page__title">Dashboard</h1>
+      <p class="feature-page__intro">The first screen after you sign in. Money, work and people at a glance, with widgets you can rearrange.</p>
+    </div>
+  </div>
+
+  <div class="feature-page__inner feature-page__body">
 
       <section class="feature-tab" id="dashboard" aria-labelledby="dashboard-heading">
-        <h2 class="feature-tab__title" id="dashboard-heading">Dashboard</h2>
-        <ul class="feature-tab__list">
-          <li>KPI cards for revenue invoiced, overdue money, active jobs, utilisation and quote win rate</li>
-          <li>Widgets you can add, move and resize, including Job Status, Invoice Aging and Cash Flow</li>
-          <li>Action lists: Chase List, Quotes to Follow Up, Unassigned Jobs Queue and Pending Approvals</li>
-          <li>Revenue vs last month, a 30-day cash forecast and a GST / BAS estimate</li>
-          <li>Staff availability, Crew Week Ahead and today's schedule</li>
-          <li>Low stock, expiring documents and upcoming maintenance, so nothing sneaks up</li>
-          <li>A reset button that puts the default layout back</li>
-        </ul>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="dashboard-heading"><span class="feature-tab__num" aria-hidden="true">01</span>Dashboard</h2>
+          <p class="feature-tab__summary">Your first screen after sign-in. It shows the money and work that need attention, with widgets you can add, move and resize.</p>
+          <ul class="feature-tab__list">
+            <li>KPI cards for revenue invoiced, overdue money, active jobs, utilisation and quote win rate</li>
+            <li>Widgets you can add, move and resize, including Job Status, Invoice Aging and Cash Flow</li>
+            <li>Action lists: Chase List, Quotes to Follow Up, Unassigned Jobs Queue and Pending Approvals</li>
+            <li>Revenue vs last month, a 30-day cash forecast and a GST / BAS estimate</li>
+            <li>Staff availability, Crew Week Ahead and today's schedule</li>
+            <li>Low stock, expiring documents and upcoming maintenance, so nothing sneaks up</li>
+            <li>A reset button that puts the default layout back</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <img src="/assets/screens/tabs/dashboard-1080.webp" srcset="/assets/screens/tabs/dashboard-1080.webp 1080w, /assets/screens/tabs/dashboard.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Dashboard screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+        </figure>
       </section>
 
+      <nav class="feature-more" aria-label="Other feature sections">
+        <p class="feature-more__label">More features</p>
+        <div class="feature-more__links">
+          <a href="/features/schedule/">Schedule</a>
+          <a href="/features/workflow/">Workflow</a>
+          <a href="/features/people/">People</a>
+          <a href="/features/resources/">Resources</a>
+          <a href="/features/admin/">Admin</a>
+        </div>
+      </nav>
+
     <div class="feature-cta">
-      <p>Free for one user, forever. Add the crew from $18 + GST per user a month.</p>
+      <p>Free for one user, forever. Add the crew from $18 + GST per user a month while the beta runs.</p>
       <div class="feature-cta__actions">
         <a class="btn btn--md btn--primary" href="/#download">Download free for Windows</a>
         <a class="btn btn--md btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
@@ -108,12 +149,12 @@
 
 <footer class="site-footer">
   <div class="site-footer__inner">
-    <img src="assets/img/logo-relay-mark.svg" alt="RELAY" width="150" height="104">
+    <img src="/assets/img/logo-relay-mark.svg" alt="RELAY" width="150" height="104">
     <nav aria-label="Footer">
       <a href="/terms/">Terms of Service</a>
-      <a href="privacy/">Privacy Policy</a>
-      <a href="refunds/">Refund &amp; Cancellation</a>
-      <a href="acceptable-use/">Acceptable Use</a>
+      <a href="/privacy/">Privacy Policy</a>
+      <a href="/refunds/">Refund &amp; Cancellation</a>
+      <a href="/acceptable-use/">Acceptable Use</a>
       <a href="/app/#/login">Sign in</a>
       <a href="mailto:support@relaydispatch.com.au">Contact</a>
     </nav>
@@ -121,5 +162,6 @@
   </div>
 </footer>
 
+<script src="/assets/js/home.js" defer></script>
 </body>
 </html>

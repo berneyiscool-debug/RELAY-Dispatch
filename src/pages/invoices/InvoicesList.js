@@ -11,6 +11,9 @@ import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { roundCurrency } from '../../utils/pricing.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
+import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, cachedXeroStatus, cachedInvoiceSyncJobs, xeroSyncBadgeHtml, pushToXero } from '../../utils/xero.js';
+import { xeroImportCsv, plainCsv, downloadCsv } from '../../utils/accountingExport.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -24,7 +27,7 @@ export function renderInvoicesList(container) {
           <option value="all">All Statuses (${invoices.length})</option>
           ${['Draft','Sent','Paid','Overdue','Void'].map(s => `<option value="${s}">${s} (${invoices.filter(i => i.status === s).length})</option>`).join('')}
         </select>
-        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none; height:25px; font-size:11px; padding:0 10px; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">download</span> Export</button>
+        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download the invoices shown, as a Xero import file or a spreadsheet" data-tooltip-pos="left" style="display:none; height:25px; font-size:11px; padding:0 10px; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">download</span> Export</button>
         <button class="btn btn-primary btn-sm" id="btn-new-invoice" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Invoice</span></button>
       </div>
     </div>
@@ -34,14 +37,28 @@ export function renderInvoicesList(container) {
   let filteredData = [...invoices];
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
+  // The Xero column shows once the company is known to be connected. The status
+  // and the queued-jobs lookup are cached, so the re-render below happens once.
+  const showXero = xeroEnabled() && !!cachedXeroStatus()?.connected;
+  const xeroJobs = cachedInvoiceSyncJobs();
+  const xeroSignature = () => `${!!cachedXeroStatus()?.connected}|${[...cachedInvoiceSyncJobs().entries()].map(([k, v]) => `${k}:${v.pending}:${v.failed.length}`).join(',')}`;
+  const renderedSignature = xeroSignature();
+
   const columns = [
     { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '14%' },
-    { key: 'customerName', label: 'Customer', width: '30%' },
+    { key: 'customerName', label: 'Customer', width: showXero ? '20%' : '30%' },
     { key: 'jobNumber', label: 'Job Ref', render: (r) => { const refs = store.invoiceJobNumbers(r); return refs.length ? `<span class="text-secondary">${escapeHTML(refs.join(', '))}</span>` : '—'; }, width: '14%' },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '12%' },
     { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '14%' },
     { key: 'issueDate', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate.includes('T') ? r.issueDate : r.issueDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '16%' },
   ];
+  if (showXero) {
+    columns.push({
+      key: 'xero', label: 'Xero', width: '10%',
+      render: (r) => xeroSyncBadgeHtml(r, xeroJobs.get(String(r.id)), escapeHTML),
+      getValue: (r) => r.xeroSyncError ? 0 : r.xeroInvoiceId ? 2 : 1,
+    });
+  }
 
   const table = createDataTable({ 
     columns, 
@@ -76,51 +93,44 @@ export function renderInvoicesList(container) {
               });
             }
           },
-          {
-            label: 'Accounting Sync (CSV)',
+          ...(showXero ? [{
+            label: 'Send to Xero',
             icon: 'sync',
-            onClick: (ids) => {
+            onClick: async (ids) => {
+              const [{ showConfirm }, { showToast }] = await Promise.all([
+                import('../../utils/confirmDialog.js'),
+                import('../../components/Notifications.js'),
+              ]);
+              const confirmed = await showConfirm(
+                `Send ${ids.length} invoice${ids.length === 1 ? '' : 's'} to Xero? Drafts and voids are skipped. Invoices already in Xero are updated, unless Xero holds a payment on them.`,
+                { title: 'Send to Xero', confirmLabel: 'Send to Xero' });
+              if (!confirmed) return;
               try {
-                const headers = ['Invoice Number', 'Customer', 'Job Ref', 'Subtotal', 'Tax', 'Total', 'Issue Date', 'Due Date', 'Status'];
-                const rows = ids.map(id => {
-                  const inv = store.getById('invoices', id);
-                  if (!inv) return null;
-                  return [
-                    inv.number || '',
-                    inv.customerName || '',
-                    store.invoiceJobNumbers(inv).join(', '),
-                    (inv.subtotal || 0).toFixed(2),
-                    (inv.tax || 0).toFixed(2),
-                    (inv.total || 0).toFixed(2),
-                    inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : '',
-                    inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '',
-                    inv.status || ''
-                  ];
-                }).filter(Boolean);
-
-                const csvContent = [headers, ...rows].map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.setAttribute("href", url);
-                link.setAttribute("download", `relay_invoices_sync_${Date.now()}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
+                const n = await pushToXero(ids);
                 table.clearSelection();
-                import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully exported and synced ${ids.length} invoices`, 'success'));
+                showToast(`${n} invoice${n === 1 ? '' : 's'} queued for Xero`, 'success');
               } catch (err) {
-                console.error(err);
-                import('../../components/Notifications.js').then(({ showToast }) => showToast('Failed to sync invoices', 'error'));
+                showToast(err.message || 'Could not send to Xero', 'error');
               }
+            }
+          }] : []),
+          {
+            label: 'Export CSV',
+            icon: 'download',
+            onClick: (ids) => {
+              const picked = ids.map(id => store.getById('invoices', id)).filter(Boolean);
+              downloadCsv(`invoices_${todayLocalISO()}.csv`, plainCsv(picked, { jobRefs: (inv) => store.invoiceJobNumbers(inv) }));
+              table.clearSelection();
+              import('../../components/Notifications.js').then(({ showToast }) => showToast(`Exported ${picked.length} invoice${picked.length === 1 ? '' : 's'}`, 'success'));
             }
           },
           {
             label: 'Mark Paid',
             icon: 'check_circle',
             onClick: (ids) => {
-              ids.forEach(id => store.update('invoices', id, { status: 'Paid', datePaid: new Date().toISOString() }));
+              // paidDate (not the old datePaid, which had no column) is what the
+              // Paid date shows and what a Xero payment is dated by.
+              ids.forEach(id => store.update('invoices', id, { status: 'Paid', paidDate: todayLocalISO() }));
               table.clearSelection();
               renderInvoicesList(container);
               import('../../components/Notifications.js').then(({ showToast }) => showToast(`Marked ${ids.length} invoices as Paid`, 'success'));
@@ -316,12 +326,7 @@ export function renderInvoicesList(container) {
   const btnExport = container.querySelector('#btn-export-accounting');
 
   function updateExportButtonVisibility(data) {
-    // Show export button if there's at least one paid invoice in the current view
-    if (data.some(i => i.status === 'Paid')) {
-      btnExport.style.display = 'inline-flex';
-    } else {
-      btnExport.style.display = 'none';
-    }
+    btnExport.style.display = data.some(i => i.status !== 'Draft' && i.status !== 'Void') ? 'inline-flex' : 'none';
   }
 
   updateExportButtonVisibility(filteredData);
@@ -388,38 +393,89 @@ export function renderInvoicesList(container) {
     applyFilters();
   }
 
-  btnExport.addEventListener('click', () => {
-    const paidInvoices = filteredData.filter(i => i.status === 'Paid');
-    if (paidInvoices.length === 0) return;
+  // Learn whether Xero is connected and what is still queued, then redraw once
+  // if that changes the table. Skipped if the user has started filtering, so a
+  // late answer never wipes what they typed.
+  if (xeroEnabled()) {
+    getXeroStatusCached().then((st) => (st?.connected ? fetchInvoiceSyncJobs() : null)).then(() => {
+      const untouched = !searchQuery && activeStatusFilter === 'all' && !filterStartDate && !filterEndDate;
+      if (untouched && container.isConnected && container.contains(table) && xeroSignature() !== renderedSignature) {
+        renderInvoicesList(container);
+      }
+    }).catch(() => { /* the list works without the Xero column */ });
+  }
 
-    // Generate mock CSV
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "InvoiceNumber,ContactName,EmailAddress,InvoiceDate,DueDate,TotalAmount,TaxAmount,AccountCode\n";
+  btnExport.addEventListener('click', () => openAccountingExport(filteredData));
+}
 
-    paidInvoices.forEach(inv => {
-      const row = [
-        inv.number,
-        `"${inv.customerName.replace(/"/g, '""')}"`,
-        inv.email || '',
-        inv.issueDate ? inv.issueDate.split('T')[0] : '',
-        inv.dueDate ? inv.dueDate.split('T')[0] : '',
-        (inv.total || 0).toFixed(2),
-        (inv.tax || 0).toFixed(2),
-        "200" // Mock account code
-      ].join(",");
-      csvContent += row + "\n";
-    });
+// "Export for accounting": a Xero import file coded like the live sync, or a
+// plain spreadsheet. Drafts and voids are left out of both.
+function openAccountingExport(list) {
+  const exportable = list.filter(i => i.status !== 'Draft' && i.status !== 'Void');
+  const settings = store.getSettings() || {};
+  const xero = settings.xero && typeof settings.xero === 'object' ? settings.xero : {};
+  const savedDefault = (settings.accountingExport || {}).defaultSalesAccountCode || xero.defaultSalesAccountCode || '';
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <p style="margin:0 0 14px;color:var(--text-secondary);">${exportable.length} invoice${exportable.length === 1 ? '' : 's'} in the current view. Drafts and voids are left out.</p>
+    <fieldset style="border:0;padding:0;margin:0 0 14px;display:flex;flex-direction:column;gap:10px;">
+      <legend class="form-label">Format</legend>
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="export-format" value="xero" checked style="margin-top:3px;" />
+        <span><strong>Xero import file</strong><br><span style="color:var(--text-secondary);font-size:13px;">One row per line, coded with your accounts and tagged with each job's cost center as a Xero tracking option. Xero imports them as awaiting payment, so payments aren't included. The tracking options must already exist in Xero; when Xero is connected, RELAY adds them for you.</span></span>
+      </label>
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="export-format" value="plain" style="margin-top:3px;" />
+        <span><strong>Spreadsheet (CSV)</strong><br><span style="color:var(--text-secondary);font-size:13px;">One row per invoice, for your accountant or Excel.</span></span>
+      </label>
+    </fieldset>
+    <div class="form-group" id="export-account-wrap" style="margin:0;">
+      <label class="form-label" for="export-default-account">Default sales account code</label>
+      <input class="form-input" id="export-default-account" value="${escapeHTML(savedDefault)}" placeholder="200" style="max-width:160px;" />
+      <div style="color:var(--text-tertiary);margin-top:4px;font-size:12px;">For lines no cost center or labour/materials account covers. Use the code from your chart of accounts.</div>
+    </div>`;
+  const accountWrap = content.querySelector('#export-account-wrap');
+  content.querySelectorAll('input[name="export-format"]').forEach(r => r.addEventListener('change', () => {
+    accountWrap.style.display = content.querySelector('input[name="export-format"]:checked').value === 'xero' ? '' : 'none';
+  }));
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `accounting_export_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    import('../../components/Notifications.js').then(({ showToast }) => {
-      showToast(`Exported ${paidInvoices.length} paid invoices`, 'success');
+  Promise.all([import('../../components/Modal.js'), import('../../components/Notifications.js')]).then(([{ showModal }, { showToast }]) => {
+    showModal({
+      title: 'Export for accounting',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        { label: 'Download', className: 'btn-primary', onClick: async (c) => {
+          if (!exportable.length) { showToast('There are no sent invoices in this view to export.', 'info'); return; }
+          const today = todayLocalISO();
+          if (content.querySelector('input[name="export-format"]:checked').value === 'plain') {
+            downloadCsv(`invoices_${today}.csv`, plainCsv(exportable, { jobRefs: (inv) => store.invoiceJobNumbers(inv) }));
+            showToast(`Exported ${exportable.length} invoice${exportable.length === 1 ? '' : 's'}`, 'success');
+            c();
+            return;
+          }
+          const fallback = content.querySelector('#export-default-account').value.trim();
+          const result = xeroImportCsv(exportable, {
+            customers: store.getAll('customers') || [],
+            jobs: store.getAll('jobs') || [],
+            costCenters: store.getAll('costCenters') || [],
+            settings: { ...xero, ...(fallback ? { defaultSalesAccountCode: fallback } : {}) },
+          });
+          if (!result.exported) {
+            showToast(result.skipped[0]?.reason || 'Nothing could be exported.', 'error');
+            return;
+          }
+          if (fallback && fallback !== savedDefault) {
+            const s = store.getSettings() || {};
+            s.accountingExport = { ...(s.accountingExport || {}), defaultSalesAccountCode: fallback };
+            try { await store.saveSettings(s); } catch (_) { /* only a remembered default */ }
+          }
+          downloadCsv(`xero_invoices_${today}.csv`, result.csv);
+          const skippedNote = result.skipped.length ? `. Skipped ${result.skipped.length}: ${result.skipped[0].number} (${result.skipped[0].reason})${result.skipped.length > 1 ? ' and others' : ''}` : '';
+          showToast(`Exported ${result.exported} invoice${result.exported === 1 ? '' : 's'}${skippedNote}`, result.skipped.length ? 'info' : 'success');
+          c();
+        }}
+      ]
     });
   });
 }

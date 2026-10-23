@@ -7,6 +7,10 @@
 // deploy, DEV === false), so a release never ships half-built work. When a feature is
 // release-ready, promote it to `true` (like maps).
 
+// Vite inlines import.meta.env; under node --test there is no env, so dev-only
+// flags read as off there.
+const DEV = import.meta.env?.DEV === true;
+
 export const FLAGS = {
   maps:     true,                 // shipped — on for everyone, all builds
   weather:  true,                 // shipped — Open-Meteo forecasts, no setup needed
@@ -15,4 +19,7 @@ export const FLAGS = {
                                   //   "Payments configured & live" there, so turning this
                                   //   on can't surface a broken Pay Now (see payments.js).
   email:    true,                 // shipped — sends via RELAY's shared domain, zero setup
+  xero:     DEV,                  // in development — Settings → Accounting & Xero and the
+                                  //   connect flow. Dark in release builds until the sync
+                                  //   worker ships (docs/XERO_PHASE1_PLAN.md).
 };
