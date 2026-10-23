@@ -61,8 +61,8 @@ const ZOOM_MAX = 2;
 const ZOOM_STEP = 0.05;     // zoom changes in clean 5% increments
 // Saved views anchor by top-left. Inset that anchor from the raw viewport corner so a
 // recalled view clears the floating .dash-topbar (top) and the viewport edge (left),
-// instead of landing at (0,0) where the topbar gradient clips its top-left. Applied to
-// BOTH capture and recall so newly-saved views stay idempotent.
+// instead of landing at (0,0) where the topbar controls sit over its top-left. Applied
+// to BOTH capture and recall so newly-saved views stay idempotent.
 const VIEW_INSET_X = 0;
 const VIEW_INSET_Y = 0;
 
@@ -556,7 +556,12 @@ export async function renderDashboard(container) {
   container.innerHTML = `
     <div class="page-content-wrapper dash-page">
       <h1 class="sr-only">Dashboard</h1>
-      <div class="page-header dash-quick-header"><div class="page-header-actions">${getQuickActionsHtml()}</div></div>
+      <div class="page-header dash-quick-header"><div class="page-header-actions">
+        <!-- One period for every KPI card. The app shell relocates this cluster into
+             the breadcrumb action bar, so the picker sits beside the page actions. -->
+        <div id="dash-period" class="dash-period"></div>
+        ${getQuickActionsHtml()}
+      </div></div>
       <div id="dash-viewport" class="dash-viewport">
         <div id="dash-world" class="dash-world"></div>
         <div id="dash-guides" class="dash-guides"></div>
@@ -564,8 +569,6 @@ export async function renderDashboard(container) {
         <div class="dash-topbar">
           <div class="dash-topbar-left"></div>
           <div class="dash-topbar-right">
-            <!-- One period for every KPI card. Shown while any card is on the canvas. -->
-            <div id="dash-period" class="dash-period"></div>
             <!-- Holds the edit-mode controls. Empty outside edit mode. -->
             <div id="dashboard-header-actions" class="dash-topbar-actions"></div>
           </div>
@@ -766,7 +769,7 @@ function renderPins(world) {
   const viewport = document.querySelector('#dash-viewport');
   const vw = viewport ? viewport.clientWidth : 1200;
   const vh = viewport ? viewport.clientHeight : 700;
-  // Band at the top of each frame = the area the gradient top bar (contextual actions) covers
+  // Band at the top of each frame = the area the floating top bar (contextual actions) covers
   const topbarEl = viewport ? viewport.querySelector('.dash-topbar') : null;
   const topbarH = topbarEl ? topbarEl.offsetHeight : 72;
   const bandPct = vh > 0 ? Math.min(45, (topbarH / vh) * 100) : 10;
@@ -2271,7 +2274,8 @@ async function fetchRemoteKpis(ids, period, key, refresh) {
 // "as of 9:41 am" beside the period picker while offline shows an earlier answer.
 // (The quick refresh after reopening isn't flagged; it lands in a moment.)
 function renderAsOf() {
-  const el = document.querySelector('#dash-asof');
+  const slot = periodSlot();
+  const el = slot ? slot.querySelector('#dash-asof') : null;
   if (!el) return;
   const show = isCloudAccount() && _remote && _remote.asOf && _remote.offline;
   el.textContent = show
@@ -2356,9 +2360,17 @@ function repaintKpiWidgets() {
   renderAsOf();
 }
 
+// The slot is rendered into the dashboard's page header and relocated into the
+// breadcrumb action bar by the app shell. A dashboard re-render replaces the page
+// header while the previous copy is still in the breadcrumb bar, so prefer the one
+// inside the live page.
+function periodSlot() {
+  return document.querySelector('.dash-page #dash-period') || document.querySelector('#dash-period');
+}
+
 // The one period selector for every card. Hidden when no card is on the canvas.
 function renderPeriodPicker() {
-  const slot = document.querySelector('#dash-period');
+  const slot = periodSlot();
   if (!slot || !live) return;
   if (!live.widgets.some(w => kpiIdOf(w.id))) { slot.innerHTML = ''; return; }
   const current = live.period || DEFAULT_PERIOD;

@@ -97,39 +97,42 @@ const SESSION_SETUP = `
 
 // The demo banner is a reminder for people inside the demo, not part of the
 // product, so it stays out of the marketing shots.
+// The customer portal card shows a link to this machine's dev server, which
+// has no place in a marketing image, so it is hidden along with the banner.
 const TIDY = `
   document.getElementById('relay-demo-banner')?.remove();
   document.activeElement?.blur();
+  [...document.querySelectorAll('.card')]
+    .filter((card) => card.textContent.includes('Customer Portal Access'))
+    .forEach((card) => { card.style.display = 'none'; });
 `;
 
 // Each sidebar tab, named after its feature-page id (scripts/build-feature-pages.mjs).
+// A tab with a third entry opens a record's detail page rather than its list:
+// the record is the first one the filter matches, and '{id}' in the route is
+// replaced with its id. Recurring templates have no detail page in the app, so
+// they stay on their list.
 const TABS = [
   ['dashboard', '#/'],
   ['schedule', '#/schedule'],
   ['notifications', '#/notifications'],
   ['leads', '#/leads'],
-  ['quotes', '#/quotes'],
-  ['jobs', '#/jobs'],
+  ['quotes', pick('quotes', "(q) => q.status === 'Sent'", '(a, b) => b.total - a.total'), '#/quotes/{id}'],
+  ['jobs', pick('jobs', "(j) => j.status === 'In Progress' && j.quoteId", '(a, b) => (b.estimatedHours || 0) - (a.estimatedHours || 0)'), '#/jobs/{id}'],
   ['invoices', '#/invoices'],
   ['recurring-templates', '#/recurring-templates'],
-  ['projects', '#/projects'],
-  ['customers', '#/people'],
-  ['contractors', '#/contractors'],
-  ['suppliers', '#/suppliers'],
-  ['assets', '#/assets'],
-  ['stock', '#/stock'],
+  ['projects', pick('projects', '() => true', '() => 0'), '#/projects/{id}'],
+  ['customers', pick('customers', '(c) => (c.status || "Active") === "Active"', '() => 0'), '#/people/{id}'],
+  ['contractors', pick('contractors', '() => true', '() => 0'), '#/contractors/{id}'],
+  ['suppliers', pick('suppliers', '() => true', '() => 0'), '#/suppliers/{id}'],
+  ['assets', pick('assets', '() => true', '() => 0'), '#/assets/{id}'],
+  ['stock', pick('stock', '() => true', '() => 0'), '#/stock/{id}'],
   ['purchase-orders', '#/purchase-orders'],
   ['time-tracking', '#/timesheets'],
   ['documents', '#/documents'],
   ['reports', '#/reports'],
   ['settings', '#/settings'],
 ];
-
-// Where the main content starts, in CSS pixels, so the crop drops the sidebar.
-const CROP_LEFT = `(() => {
-  const main = document.getElementById('main-content');
-  return main ? Math.round(main.getBoundingClientRect().left) : 0;
-})()`;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -199,23 +202,29 @@ app.whenReady().then(async () => {
   // the left edge of the main content, so the sidebar and any submenu are out.
   const TAB_DIR = path.join(OUT_DIR, 'tabs');
   mkdirSync(TAB_DIR, { recursive: true });
-  for (const [name, hash] of TABS) {
+  // Every tab is the whole window, sidebar and submenu included, so each shot
+  // shows where the screen sits in the app.
+  for (const [name, route, pattern] of TABS) {
+    let hash = route;
+    if (pattern) {
+      const id = await win.webContents.executeJavaScript(route);
+      if (!id) throw new Error(`No demo record matched for the ${name} screen`);
+      hash = pattern.replace('{id}', id);
+    }
     await win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`);
     await wait(2500);
     await win.webContents.executeJavaScript(`document.fonts.ready.then(() => { ${TIDY} })`);
     await wait(800);
 
-    const left = await win.webContents.executeJavaScript(CROP_LEFT);
-    const cropWidth = WIDTH - left;
     for (const [width, suffix] of SIZES) {
       const { data } = await cdp.sendCommand('Page.captureScreenshot', {
         format: 'webp',
         quality: QUALITY,
-        clip: { x: left, y: 0, width: cropWidth, height: HEIGHT, scale: width / (cropWidth * SCALE) },
+        clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT, scale: width / (WIDTH * SCALE) },
       });
       const file = path.join(TAB_DIR, `${name}${suffix}.webp`);
       writeFileSync(file, Buffer.from(data, 'base64'));
-      console.log(`${path.relative(process.cwd(), file)}  (${width}w, crop from x=${left})`);
+      console.log(`${path.relative(process.cwd(), file)}  (${width}w)`);
     }
   }
 

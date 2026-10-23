@@ -28,6 +28,7 @@ import {
   savePendingSignup,
 } from '../utils/cloudOnboarding.js';
 import { startSubscribeCheckout } from '../utils/subscription.js';
+import { FLAGS } from '../utils/flags.js';
 
 // Shown on greyed-out, cloud-only nav entries.
 export const CLOUD_REQUIRED_TOOLTIP = 'Click to create a Cloud account';
@@ -43,7 +44,9 @@ export const CLOUD_ONLY_SETTINGS_TABS = {
   email: 'Email & domain',
   users: 'Users',
   user_types: 'User Types & Permissions',
-  password_recovery: 'Password Recovery'
+  password_recovery: 'Password Recovery',
+  // Xero needs the cloud: the connection and every sync run server-side.
+  ...(FLAGS.xero ? { accounting: 'Accounting & Xero' } : {})
 };
 
 // Settings tabs that are greyed out for EVERY account type because the feature
@@ -52,8 +55,10 @@ export const CLOUD_ONLY_SETTINGS_TABS = {
 // "coming soon" explanation. Keyed by Settings tab id; the value is the label.
 export const COMING_SOON_TOOLTIP = 'Coming soon';
 
+// Accounting & Xero opens (as a cloud-only tab, above) once FLAGS.xero is on.
+// Cost centers don't depend on Xero and are open to every account.
 export const COMING_SOON_SETTINGS_TABS = {
-  cost_centers: 'Cost Centers & Xero'
+  ...(FLAGS.xero ? {} : { accounting: 'Accounting & Xero' })
 };
 
 const SUBMIT_LABEL = 'Continue to payment';

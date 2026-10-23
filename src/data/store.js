@@ -2211,6 +2211,23 @@ class DataStore {
       record.stripeSessionId = record.stripe_session_id;
       delete record.stripe_session_id;
     }
+    // Xero links are server-managed (relay-xero-sync writes them; a trigger
+    // freezes them against client writes). They map in for display only and are
+    // deliberately absent from TABLE_COLUMNS, so they are never sent back.
+    [
+      ['xero_invoice_id', 'xeroInvoiceId'],
+      ['xero_status', 'xeroStatus'],
+      ['xero_amount_due', 'xeroAmountDue'],
+      ['xero_synced_at', 'xeroSyncedAt'],
+      ['xero_sync_error', 'xeroSyncError'],
+      ['xero_payment_ids', 'xeroPaymentIds'],
+      ['xero_contact_id', 'xeroContactId'],
+    ].forEach(([column, key]) => {
+      if (record[column] !== undefined) {
+        record[key] = column === 'xero_amount_due' && record[column] !== null ? Number(record[column]) : record[column];
+        delete record[column];
+      }
+    });
     if (record.cost_price !== undefined) {
       record.costPrice = parseFloat(record.cost_price);
       delete record.cost_price;
@@ -3712,6 +3729,12 @@ class DataStore {
         if (error) {
           rollback(error);
           return { ok: false, error };
+        }
+        // The database queued any Xero work for this change; ask the worker to
+        // run now rather than on its next minute tick. Lazy import: xero.js
+        // imports the store.
+        if (collection === 'invoices' || collection === 'customers') {
+          import('../utils/xero.js').then((m) => m.nudgeXeroSync()).catch(() => {});
         }
         return { ok: true, record: updated };
       })
