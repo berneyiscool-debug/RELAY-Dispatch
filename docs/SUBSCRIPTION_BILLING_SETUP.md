@@ -10,12 +10,20 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 | Cloud       | $18                 | Cloud sync, online payments, portals, email domain|
 | Cloud+      | $21                 | Everything in Cloud **+ brny Max** (expandable brny)|
 
+> **These are the beta prices.** The regular price is $24 / $27 per user per
+> month + GST. Stripe, `PLAN_CATALOG` (`src/utils/subscription.js`) and the
+> marketing site all charge and advertise the beta rate ($18 / $21) today, with
+> the regular price struck through on the site. When the beta ends, re-create the
+> Stripe Prices, then update this table, `PLAN_CATALOG` and the pricing block on
+> `site/index.html` together.
+
 - **Free is offline-only** — it never creates a `companies` row, so it never
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
 - **Every cloud account starts on a 14-day free trial with no card on file.**
   The trial only sets `companies.subscription_status = 'trialing'`; when it runs
-  out with no subscription the account goes read-only rather than locked, and the
-  app prompts for Checkout. See Section 6.
+  out with no subscription the account goes read-only rather than locked — the
+  create/edit controls grey out with a subscribe prompt instead of letting work be
+  typed into a form that cannot save — and the app prompts for Checkout. See Section 6.
 - **Seats are per active (non-deactivated) user.** Adding/deactivating a user
   reconciles the Stripe subscription quantity, prorated.
 - **Managed (keyless) AI comes with the paid plans.** brny runs against the
@@ -250,6 +258,17 @@ export function subscriptionRequired() {
 Two deliberate holes in that gate. **`comp_tier`** (`027_comp_access.sql`) is grandfathered access — a comp-titled account is never asked to pay, which is also the escape hatch if a real customer is wrongly locked out. **An unloaded subscription fails open**: `status === undefined` means the company row never arrived, and refusing to render the app on a transient read failure is worse than letting someone in for one paint. A fetched-but-unpaid cloud row has `status: null`, which is *not* `undefined`, so it is correctly blocked.
 
 **Running out of trial is read-only, not a paywall.** The no-card trial has no Stripe subscription and no customer record, so Stripe reports nothing and expiry cannot come from a webhook: `trialState()` in `src/utils/subscription.js` decides it from `trial_ends_at` and returns `'none' | 'running' | 'expired'`, and every trial question — `trialActive()`, `trialDaysLeft()`, `trialExpired()`, `isReadOnly()` — reads that one predicate so the banner, the helpers and the gate can never disagree. `isReadOnly()` is true only for an *expired* trial, and `src/data/store.js` calls `_readOnlyBlocked()` before each write, so `create`, `update`, `delete`, `saveSettings` and `save` return early with a `console.warn` and a throttled toast instead of mutating anything. Reads, exports (`downloadDataSnapshot`) and the subscribe flow all keep working, so no data is stranded and the user can subscribe whenever they like. Nothing is ever charged automatically, because Stripe has no card to charge until the user enters one.
+
+**The read-only state is shown before it is hit, not after.** A store-level write block alone let a user open a create screen, fill it in and only discover at Save that nothing would be kept, which reads as a tease. `src/utils/writeLock.js` therefore mirrors `isReadOnly()` in the UI:
+
+- **Controls are greyed out.** Anything matching `WRITE_CONTROL_SELECTOR` — `#btn-new-*`, `#btn-edit*`, `#btn-add-*`, `#btn-save*`, `#btn-create*`, `data-nav`/`data-path` links to a `/new` route, the Documents upload button, plus an explicit `EXTRA_WRITE_CONTROL_IDS` list for entry points whose ids don't follow those conventions — gets `data-write-locked`, `aria-disabled="true"` and a *Subscribe to make changes* tooltip (a native `title`, where that is what the control uses, is swapped and restored too). `data-write-action` opts any other control in; the brny trigger and the dashboard's "Approve" ask button use it. Navigation, search/filters, previews/print/PDF/export, delete and the send/email actions are deliberately exempt.
+- **Clicks are refused, not merely styled.** One capture-phase `click` listener (`blockedWriteControl`) stops the page's own handler and opens `#subscribe-required-prompt`, a bottom-right card stacked above the trial banner with **Subscribe** and **Not now**. A capture `submit` listener (`blockedWriteSubmit`) refuses form submits that contain a locked control, so Enter can't save either.
+- **Deep links are redirected.** `router.onNavigate` returns `writeRouteFallback(path)` for a `*/new` or `*/edit` route, so `/jobs/new` becomes `/jobs`, `/people/abc/edit` becomes `/people/abc`, and the template editors return to their Settings tab.
+- **Editor pages are read-only, not just greyed.** On `/quotes/:id`, `/invoices/:id`, `/purchase-orders/:id`, `/settings/documents` and `/settings/email-templates` every field is locked too — `readonly` for text-like inputs so the value stays copyable, `disabled` for selects/checkboxes/dates, `contenteditable="false"` for rich text.
+
+The lock is re-applied after every route render, on every `settings` event (so a trial lapsing in an open tab flips without a reload) and by a throttled `MutationObserver` for dynamically rendered lists and modals. It fails open exactly like `isReadOnly()` does, exempts `store.demoMode` and the login/portal layouts, and restores the original tooltip and field state once a subscription is live. `store._readOnlyBlocked()` remains the final safety net for what the UI cannot see — drag-and-drop, background autosave, assistant writes.
+
+**brny is paused too, not just its writes.** brny is a paid Cloud feature and every turn spends AI allowance, so letting an expired trial chat and then fail to act is worse than not opening it. `brnyPaused()` in `RelayAssistant.js` reads the same `isWriteLocked()`, and every entry point goes through it: the top-bar trigger (also greyed out by the same selector), Shift+B, the help centre's `openDeputyWithPrompt()`, and the Document Center's "Copy to brny" (`attachFilesToRelay()` throws a readable message rather than failing on a missing panel). `openDeputyWithPrompt()` now returns when no panel opened, which also fixes the pre-existing crash for a user without AI permission. An open panel closes on the store's `settings` event the moment the trial lapses, and subscribing brings brny back with no reload.
 
 Abandoning onboarding is always possible: **Use a different account** on `#/subscribe` (and the equivalent controls in the upgrade modal) clears the pending markers and signs the Supabase user out. The Supabase user and the provisioned company row survive — only the local session ends — so a signup abandoned before payment can be resumed by signing in again, which lands back on `#/setup` if the company was never provisioned and on `#/subscribe` if it was.
 

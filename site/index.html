@@ -13,7 +13,7 @@ if (location.hash.startsWith('#/')) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RELAY Dispatch — job software for Australian trades</title>
-<meta name="description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $24 + GST per user a month.">
+<meta name="description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
 <link rel="canonical" href="https://relaydispatch.com.au/">
 <meta name="theme-color" content="#ffffff">
 
@@ -21,7 +21,7 @@ if (location.hash.startsWith('#/')) {
 <meta property="og:site_name" content="RELAY Dispatch">
 <meta property="og:locale" content="en_AU">
 <meta property="og:title" content="RELAY Dispatch — job software for Australian trades">
-<meta property="og:description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $24 + GST per user a month.">
+<meta property="og:description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
 <meta property="og:url" content="https://relaydispatch.com.au/">
 <meta property="og:image" content="https://relaydispatch.com.au/assets/img/og.png">
 <meta property="og:image:width" content="1200">
@@ -42,7 +42,7 @@ if (location.hash.startsWith('#/')) {
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Windows, Web",
   "url": "https://relaydispatch.com.au/",
-  "description": "Scheduling, quotes, invoices, job costing and a customer portal for Australian trades. Free for one user on your own computer; cloud plans from $24 per user a month plus GST.",
+  "description": "Scheduling, quotes, invoices, job costing and a customer portal for Australian trades. Free for one user on your own computer; cloud plans from $18 per user a month plus GST.",
   "offers": [
     {
       "@type": "Offer",
@@ -54,14 +54,14 @@ if (location.hash.startsWith('#/')) {
     {
       "@type": "Offer",
       "name": "Cloud",
-      "price": "24",
+      "price": "18",
       "priceCurrency": "AUD",
       "description": "Per user per month, plus GST. Includes a 14-day free trial."
     },
     {
       "@type": "Offer",
       "name": "Cloud+",
-      "price": "27",
+      "price": "21",
       "priceCurrency": "AUD",
       "description": "Per user per month, plus GST. Includes a 14-day free trial."
     }
@@ -86,7 +86,48 @@ if (location.hash.startsWith('#/')) {
       <img src="assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
     </a>
     <nav class="nav-links" aria-label="Main">
-      <a href="#features">Features</a>
+      <div class="nav-dropdown">
+        <a href="#features" class="nav-dropdown__trigger" aria-haspopup="true" aria-expanded="false">Features</a>
+        <div class="nav-dropdown__panel" role="list">
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/dashboard/" class="nav-dropdown__section">Dashboard</a>
+
+          </div>
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/schedule/" class="nav-dropdown__section">Schedule</a>
+
+          </div>
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/workflow/" class="nav-dropdown__section">Workflow</a>
+            <a href="/features/workflow/#notifications" class="nav-dropdown__link">Notifications</a>
+            <a href="/features/workflow/#leads" class="nav-dropdown__link">Leads</a>
+            <a href="/features/workflow/#quotes" class="nav-dropdown__link">Quotes</a>
+            <a href="/features/workflow/#jobs" class="nav-dropdown__link">Jobs</a>
+            <a href="/features/workflow/#invoices" class="nav-dropdown__link">Invoices</a>
+            <a href="/features/workflow/#recurring-templates" class="nav-dropdown__link">Recurring Templates</a>
+            <a href="/features/workflow/#projects" class="nav-dropdown__link">Projects</a>
+          </div>
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/people/" class="nav-dropdown__section">People</a>
+            <a href="/features/people/#customers" class="nav-dropdown__link">Customers</a>
+            <a href="/features/people/#contractors" class="nav-dropdown__link">Contractors</a>
+            <a href="/features/people/#suppliers" class="nav-dropdown__link">Suppliers</a>
+          </div>
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/resources/" class="nav-dropdown__section">Resources</a>
+            <a href="/features/resources/#assets" class="nav-dropdown__link">Assets</a>
+            <a href="/features/resources/#stock" class="nav-dropdown__link">Stock</a>
+            <a href="/features/resources/#purchase-orders" class="nav-dropdown__link">Purchase Orders</a>
+          </div>
+          <div class="nav-dropdown__group" role="listitem">
+            <a href="/features/admin/" class="nav-dropdown__section">Admin</a>
+            <a href="/features/admin/#time-tracking" class="nav-dropdown__link">Time Tracking</a>
+            <a href="/features/admin/#documents" class="nav-dropdown__link">Documents</a>
+            <a href="/features/admin/#reports" class="nav-dropdown__link">Reports</a>
+            <a href="/features/admin/#settings" class="nav-dropdown__link">Settings</a>
+          </div>
+        </div>
+      </div>
       <a href="#pricing">Pricing</a>
       <a href="#compare">Compare</a>
       <a href="#download">Download</a>
@@ -98,6 +139,25 @@ if (location.hash.startsWith('#/')) {
         Start free
       </a>
     </div>
+    <details class="nav-mobile">
+      <summary class="nav-mobile__summary">
+        <span class="nav-mobile__icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Menu</span>
+      </summary>
+      <div class="nav-mobile__panel">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#compare">Compare</a>
+        <a href="#download">Download</a>
+        <p class="nav-mobile__label">Feature guides</p>
+        <a href="/features/dashboard/">Dashboard</a>
+        <a href="/features/schedule/">Schedule</a>
+        <a href="/features/workflow/">Workflow</a>
+        <a href="/features/people/">People</a>
+        <a href="/features/resources/">Resources</a>
+        <a href="/features/admin/">Admin</a>
+      </div>
+    </details>
   </div>
 </header>
 
@@ -105,9 +165,8 @@ if (location.hash.startsWith('#/')) {
 
   <section id="top" class="hero">
     <div class="hero__inner">
-      <span class="hero__pill">Built in Australia for Australian trades</span>
       <h1>Job software for tradies, without the sting.</h1>
-      <p class="hero__sub">Quotes, scheduling, invoices, job costing and a customer portal in one app. Free forever for one user on your own computer. Bring the crew online from $24 + GST per user a month.</p>
+      <p class="hero__sub">Quotes, scheduling, invoices, job costing and a customer portal in one app. Free forever for one user on your own computer. Bring the crew online from $18 + GST per user a month.</p>
       <div class="hero__actions" data-platform-pair>
         <a class="btn btn--lg btn--primary" href="#download" data-download>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
@@ -202,9 +261,18 @@ if (location.hash.startsWith('#/')) {
   <section class="tour" aria-labelledby="tour-heading">
     <div class="tour__inner">
       <p class="eyebrow">Inside RELAY</p>
-      <h2 class="h2" id="tour-heading">See it before you install it</h2>
+      <h2 class="h2" id="tour-heading">See it before you sign up</h2>
       <p class="tour__sub">Screens from the current version, running the demo business.</p>
 
+      <div class="tour__row">
+        <div class="tour__copy">
+          <h3>Everything that needs you, on one screen</h3>
+          <p>Revenue, overdue invoices and today's jobs, with the next thing to do up front.</p>
+        </div>
+        <figure class="shot">
+          <img src="assets/screens/dashboard-1080.webp" srcset="assets/screens/dashboard-1080.webp 1080w, assets/screens/dashboard.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="The RELAY dashboard showing revenue, overdue invoices and active jobs along the top, with today's schedule and recent leads below" width="2160" height="1350" loading="lazy">
+        </figure>
+      </div>
       <div class="tour__row">
         <div class="tour__copy">
           <h3>The whole crew's day on one screen</h3>
@@ -214,7 +282,6 @@ if (location.hash.startsWith('#/')) {
           <img src="assets/screens/schedule-1080.webp" srcset="assets/screens/schedule-1080.webp 1080w, assets/screens/schedule.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="The schedule in day view, with a column for each crew member and today's jobs blocked out by time" width="2160" height="1350" loading="lazy">
         </figure>
       </div>
-
       <div class="tour__row">
         <div class="tour__copy">
           <h3>Quotes in minutes, not evenings</h3>
@@ -224,24 +291,13 @@ if (location.hash.startsWith('#/')) {
           <img src="assets/screens/quote-1080.webp" srcset="assets/screens/quote-1080.webp 1080w, assets/screens/quote.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="A sent quote for ducted air conditioning, split into equipment and installation sections with line items and subtotals" width="2160" height="1350" loading="lazy">
         </figure>
       </div>
-
       <div class="tour__row">
         <div class="tour__copy">
-          <h3>Know what every job made</h3>
-          <p>The quoted price against the labour and materials actually spent, with gross profit and margin while the job is still running.</p>
+          <h3>Invoices sent and tracked from the job</h3>
+          <p>Bill from the quote or the job, send it as a PDF, and see at a glance what's overdue. Mark it paid when the money lands.</p>
         </div>
         <figure class="shot">
-          <img src="assets/screens/job-1080.webp" srcset="assets/screens/job-1080.webp 1080w, assets/screens/job.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="A job's financials tab showing the quoted price, costs so far, gross profit and margin, and a budget tracker" width="2160" height="1350" loading="lazy">
-        </figure>
-      </div>
-
-      <div class="tour__row">
-        <div class="tour__copy">
-          <h3>Reports that say what changed</h3>
-          <p>Revenue, money owed, quote win rate and lead conversion, with RELAY Insights pointing out what's going well and what needs a look.</p>
-        </div>
-        <figure class="shot">
-          <img src="assets/screens/reports-1080.webp" srcset="assets/screens/reports-1080.webp 1080w, assets/screens/reports.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="The business overview report with RELAY Insights, total revenue, outstanding invoices, quote win rate and charts of jobs and invoices by status" width="2160" height="1350" loading="lazy">
+          <img src="assets/screens/invoice-1080.webp" srcset="assets/screens/invoice-1080.webp 1080w, assets/screens/invoice.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="An overdue invoice linked to its quote, with the due date, the line items and the PDF, reminder and Mark Paid buttons at the top" width="2160" height="1350" loading="lazy">
         </figure>
       </div>
     </div>
@@ -303,7 +359,8 @@ if (location.hash.startsWith('#/')) {
   <section id="pricing" class="pricing">
     <div class="pricing__inner">
       <p class="eyebrow">Pricing</p>
-      <h2 class="h2">Free for one. From $24 a user for the crew.</h2>
+      <h2 class="h2">Free for one. From $18 a user for the crew.</h2>
+      <p class="promo"><strong>Beta pricing.</strong> Cloud and Cloud+ are reduced to $18 and $21 per user a month while the beta is active — down from $24 and $27. The beta is running now, and we will give at least 30 days' notice by email before the price returns to $24 and $27.</p>
       <p class="pricing__sub">Prices are per user, per month, plus GST. No seat minimums, no lock-in contracts and no setup fee. Cloud plans start with a 14-day free trial.</p>
 
       <div class="plans">
@@ -333,8 +390,9 @@ if (location.hash.startsWith('#/')) {
           </p>
           <div class="plan__body">
             <p class="plan__price">
-              <span class="plan__amount">$24</span>
+              <span class="plan__amount">$18</span>
               <span class="plan__unit">+ GST per user / month</span>
+              <span class="plan__was" aria-label="Regular price $24">$24</span>
             </p>
             <p class="plan__for">For crews. Everyone in sync, in the office and on site.</p>
             <ul class="plan__list">
@@ -353,8 +411,9 @@ if (location.hash.startsWith('#/')) {
           <p class="plan__head">Cloud+</p>
           <div class="plan__body">
             <p class="plan__price">
-              <span class="plan__amount">$27</span>
+              <span class="plan__amount">$21</span>
               <span class="plan__unit">+ GST per user / month</span>
+              <span class="plan__was" aria-label="Regular price $27">$27</span>
             </p>
             <p class="plan__for">For busy offices that want brny doing more of the admin.</p>
             <ul class="plan__list">
@@ -368,7 +427,7 @@ if (location.hash.startsWith('#/')) {
         </article>
       </div>
 
-      <p class="pricing__note">Prices are in AUD and exclude GST. Including GST, Cloud is $26.40 and Cloud+ is $29.70 per user a month.</p>
+      <p class="pricing__note">Prices are in AUD and exclude GST. Including GST, the beta price is $19.80 for Cloud and $23.10 for Cloud+ per user a month (regular $26.40 and $29.70).</p>
     </div>
   </section>
 
@@ -392,7 +451,7 @@ if (location.hash.startsWith('#/')) {
           <tbody>
             <tr>
               <th scope="row">Price per user / month</th>
-              <td class="is-relay">$24–$27 + GST</td>
+              <td class="is-relay">$18–$21 + GST</td>
               <td>$48–$62 + GST</td>
               <td>Quote only</td>
             </tr>
@@ -425,6 +484,83 @@ if (location.hash.startsWith('#/')) {
       </div>
 
       <p class="compare__note">Competitor details from their own pricing and help pages, October 2026. Prices change, so check theirs before you decide.</p>
+    </div>
+  </section>
+
+  <section class="shipped" aria-labelledby="shipped-heading">
+    <div class="shipped__inner">
+      <div class="shipped__head">
+        <div>
+          <p class="eyebrow">What's new</p>
+          <h2 class="h2" id="shipped-heading">Shipped recently</h2>
+          <p class="shipped__sub">The last five minor releases, newest first. Smaller fixes and patches are folded into the release they shipped with.</p>
+        </div>
+        <div class="shipped__nav">
+          <button type="button" class="shipped__btn" data-shipped-prev aria-label="Show the previous release" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+          <button type="button" class="shipped__btn" data-shipped-next aria-label="Show the next release"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+        </div>
+      </div>
+
+      <div class="shipped__track" id="shipped-track" role="region" aria-labelledby="shipped-heading" tabindex="0">
+  <article class="card">
+            <div class="card__head">
+              <h3>1.6</h3>
+              <span class="chip">17 Oct 2026</span>
+            </div>
+            <ul class="card__body shipped__list">
+              <li>Dashboard with eleven action widgets, so the next job to do is on screen</li>
+              <li>Invoices can bill labour from booked hours or task estimates</li>
+              <li>Time & Pay rebuilt around attendance, hours and pay runs</li>
+              <li>Clock in and out, with attendance records</li>
+            </ul>
+          </article>
+          <article class="card">
+            <div class="card__head">
+              <h3>1.5</h3>
+              <span class="chip">7 Oct 2026</span>
+            </div>
+            <ul class="card__body shipped__list">
+              <li>Verified cloud sign-up with a 14-day trial</li>
+              <li>Download for Windows from the web app</li>
+              <li>Demo mode: explore a sample business without touching your own data</li>
+              <li>Leads table, detail and activity views rebuilt</li>
+            </ul>
+          </article>
+          <article class="card">
+            <div class="card__head">
+              <h3>1.4</h3>
+              <span class="chip">6 Oct 2026</span>
+            </div>
+            <ul class="card__body shipped__list">
+              <li>brny's greeting card shows your real numbers</li>
+              <li>Daily AI allowance shown in the chat, pooled across the company</li>
+              <li>The desktop app asks you to restart once an update has downloaded</li>
+            </ul>
+          </article>
+          <article class="card">
+            <div class="card__head">
+              <h3>1.3</h3>
+              <span class="chip">20 Aug 2026</span>
+            </div>
+            <ul class="card__body shipped__list">
+              <li>Book time from a job's task hours</li>
+              <li>Change a job’s status from the schedule with right-click and drag</li>
+              <li>Notifications can be assigned to a tech and rescheduled</li>
+              <li>One consistent table layout across every list page</li>
+            </ul>
+          </article>
+          <article class="card">
+            <div class="card__head">
+              <h3>1.2</h3>
+              <span class="chip">18 Jul 2026</span>
+            </div>
+            <ul class="card__body shipped__list">
+              <li>brny greets you with a live briefing when you open the app</li>
+              <li>Multiple-choice questions in the assistant, answered with a tap or two</li>
+              <li>brny can set up recurring jobs for you</li>
+            </ul>
+          </article>
+      </div>
     </div>
   </section>
 

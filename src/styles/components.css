@@ -1358,6 +1358,41 @@ select.badge {
 .trial-banner-icon--warning { background: var(--color-warning-bg); color: var(--color-warning); }
 .trial-banner-icon--info    { background: var(--color-info-bg);    color: var(--color-info); }
 
+/* ---- Expired-trial write lock ---- */
+/* Create/edit/add/save controls carry `data-write-locked` (see
+   utils/writeLock.js). Keep pointer events on so hovering still shows the
+   "Subscribe to make changes" tooltip and a click can open the prompt. */
+[data-write-locked] {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+[data-write-locked]:hover {
+  filter: grayscale(0.2);
+}
+/* Editor pages lock their fields rather than the whole surface: text stays
+   readable and selectable, but nothing can be changed. */
+[data-write-field-locked] {
+  cursor: default !important;
+}
+input[data-write-field-locked][readonly],
+textarea[data-write-field-locked][readonly] {
+  background: var(--bg-color);
+  color: var(--text-secondary);
+}
+select[data-write-field-locked]:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.subscribe-prompt-icon {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.subscribe-prompt {
+  /* `bottom` is set inline so the card sits above the trial banner. */
+  z-index: calc(var(--z-toast) + 1);
+}
+
 /* ---- Print Preview ---- */
 .print-document {
   padding: 40px 48px;
