@@ -375,6 +375,7 @@ export function getContextualMenu(hash, panelEl) {
           { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
           { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
           { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', ...gate('payments') },
+          { id: 'accounting', icon: 'account_balance_wallet', label: 'Accounting & Xero', path: '/settings?tab=accounting', ...gate('accounting'), ...soon('accounting') },
           { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', ...gate('email') }
         ]
       },
@@ -392,7 +393,7 @@ export function getContextualMenu(hash, panelEl) {
         items: [
           { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
           { id: 'storage_options', icon: 'warehouse', label: 'Storage Locations', path: '/settings?tab=storage_options' },
-          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers', ...soon('cost_centers') },
+          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers', path: '/settings?tab=cost_centers' },
           { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' }
         ]
       }

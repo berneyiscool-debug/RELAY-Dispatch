@@ -8,7 +8,8 @@
 // success/cancel URLs, and the Origin-derived fallback, are only honoured when
 // they point back at RELAY itself.
 //
-// Plain ESM with no Deno APIs, so supabase/tests can exercise it directly.
+// Shared by relay-create-payment and relay-xero-connect/callback. Plain ESM with
+// no Deno APIs, so supabase/tests can exercise it directly.
 
 export const PUBLIC_APP_BASE = 'https://relaydispatch.com.au/app'
 

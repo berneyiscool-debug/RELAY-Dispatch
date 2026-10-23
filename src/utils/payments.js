@@ -46,7 +46,8 @@ export function paymentsEnabledFor(docType = 'invoice') {
   return !per || per[docType] !== false;
 }
 
-async function invoke(fn, body) {
+// Shared with utils/xero.js — the same edge-function error unwrapping.
+export async function invoke(fn, body) {
   const { data, error } = await supabase.functions.invoke(fn, { body: body || {} });
   if (error) {
     let detail = error.message || String(error);

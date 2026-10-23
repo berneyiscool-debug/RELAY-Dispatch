@@ -74,14 +74,38 @@
         Start free
       </a>
     </div>
+    <details class="nav-mobile">
+      <summary class="nav-mobile__summary">
+        <span class="nav-mobile__icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Menu</span>
+      </summary>
+      <div class="nav-mobile__panel">
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#compare">Compare</a>
+        <a href="/#download">Download</a>
+        <p class="nav-mobile__label">Feature guides</p>
+        <a href="/features/dashboard/">Dashboard</a>
+        <a href="/features/schedule/">Schedule</a>
+        <a href="/features/workflow/">Workflow</a>
+        <a href="/features/people/">People</a>
+        <a href="/features/resources/">Resources</a>
+        <a href="/features/admin/">Admin</a>
+      </div>
+    </details>
   </div>
 </header>
 
 <main id="main" class="feature-page">
-  <div class="feature-page__inner">
-    <p class="eyebrow"><a href="/#features">All features</a></p>
-    <h1 class="feature-page__title">Workflow</h1>
-    <p class="feature-page__intro">Everything from the first enquiry to the final payment, in the order the work happens.</p>
+  <div class="feature-page__head">
+    <div class="feature-page__inner">
+      <p class="eyebrow"><a href="/#features">All features</a></p>
+      <h1 class="feature-page__title">Workflow</h1>
+      <p class="feature-page__intro">Everything from the first enquiry to the final payment, in the order the work happens.</p>
+    </div>
+  </div>
+
+  <div class="feature-page__inner feature-page__body">
       <nav class="feature-jump" aria-label="On this page">
         <a href="#notifications">Notifications</a>
         <a href="#leads">Leads</a>
@@ -93,105 +117,130 @@
       </nav>
 
       <section class="feature-tab" id="notifications" aria-labelledby="notifications-heading">
-        <h2 class="feature-tab__title" id="notifications-heading">Notifications</h2>
-        <p class="feature-tab__summary">Requests and alerts from clients, the field and your maintenance plans, ready to turn into a quote, a job or a dispatch.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="notifications-heading"><span class="feature-tab__num" aria-hidden="true">01</span>Notifications</h2>
+          <p class="feature-tab__summary">Requests and alerts from clients, the field and your maintenance plans, ready to turn into a quote, a job or a dispatch.</p>
+          <ul class="feature-tab__list">
+            <li>Client requests, field faults and maintenance alerts in one list</li>
+            <li>Turn a request into a quote, a job or a dispatch</li>
+            <li>Assign a technician, reschedule a maintenance visit or send a job out from the notification</li>
+            <li>Track which notifications have been converted, and what they became</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/notifications-1080.webp" srcset="/assets/screens/tabs/notifications-1080.webp 1080w, /assets/screens/tabs/notifications.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Notifications screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/notifications-1080.webp" srcset="/assets/screens/tabs/notifications-1080.webp 1080w, /assets/screens/tabs/notifications.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Notifications screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Client requests, field faults and maintenance alerts in one list</li>
-          <li>Turn a request into a quote, a job or a dispatch</li>
-          <li>Assign a technician, reschedule a maintenance visit or send a job out from the notification</li>
-          <li>Track which notifications have been converted, and what they became</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="leads" aria-labelledby="leads-heading">
-        <h2 class="feature-tab__title" id="leads-heading">Leads</h2>
-        <p class="feature-tab__summary">Tracks each enquiry through its stages until it becomes a quote.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="leads-heading"><span class="feature-tab__num" aria-hidden="true">02</span>Leads</h2>
+          <p class="feature-tab__summary">Tracks each enquiry through its stages until it becomes a quote.</p>
+          <ul class="feature-tab__list">
+            <li>Leads grouped by stage, so you can see the whole pipeline at once</li>
+            <li>Assign a sales representative and a priority to each lead</li>
+            <li>Weighted forecast, budget variance and days idle on every lead</li>
+            <li>Convert a lead into a quote when it's ready</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/leads-1080.webp" srcset="/assets/screens/tabs/leads-1080.webp 1080w, /assets/screens/tabs/leads.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Leads screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/leads-1080.webp" srcset="/assets/screens/tabs/leads-1080.webp 1080w, /assets/screens/tabs/leads.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Leads screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Leads grouped by stage, so you can see the whole pipeline at once</li>
-          <li>Assign a sales representative and a priority to each lead</li>
-          <li>Weighted forecast, budget variance and days idle on every lead</li>
-          <li>Convert a lead into a quote when it's ready</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="quotes" aria-labelledby="quotes-heading">
-        <h2 class="feature-tab__title" id="quotes-heading">Quotes</h2>
-        <p class="feature-tab__summary">Builds quotes in sections, has the customer sign them, and turns accepted quotes into jobs.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="quotes-heading"><span class="feature-tab__num" aria-hidden="true">03</span>Quotes</h2>
+          <p class="feature-tab__summary">Builds quotes in sections, has the customer sign them, and turns accepted quotes into jobs.</p>
+          <ul class="feature-tab__list">
+            <li>Quotes built in sections for equipment, installation and labour, with subtotals</li>
+            <li>Labour rates and materials per line, with your own markup</li>
+            <li>Customers accept and sign online, with a handwritten signature on the quote</li>
+            <li>Save a quote as a template, then import it into the next one</li>
+            <li>Convert accepted quotes into jobs, and send quotes in batches</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/quotes-1080.webp" srcset="/assets/screens/tabs/quotes-1080.webp 1080w, /assets/screens/tabs/quotes.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Quotes screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/quotes-1080.webp" srcset="/assets/screens/tabs/quotes-1080.webp 1080w, /assets/screens/tabs/quotes.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Quotes screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Quotes built in sections for equipment, installation and labour, with subtotals</li>
-          <li>Labour rates and materials per line, with your own markup</li>
-          <li>Customers accept and sign online, with a handwritten signature on the quote</li>
-          <li>Save a quote as a template, then import it into the next one</li>
-          <li>Convert accepted quotes into jobs, and send quotes in batches</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="jobs" aria-labelledby="jobs-heading">
-        <h2 class="feature-tab__title" id="jobs-heading">Jobs</h2>
-        <p class="feature-tab__summary">Follows each job from scheduling through to invoicing, with the people, hours and materials on it.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="jobs-heading"><span class="feature-tab__num" aria-hidden="true">04</span>Jobs</h2>
+          <p class="feature-tab__summary">Follows each job from scheduling through to invoicing, with the people, hours and materials on it.</p>
+          <ul class="feature-tab__list">
+            <li>Assign technicians, change status and reschedule from the list</li>
+            <li>Book time against each job's tasks, so labour is recorded as the work happens</li>
+            <li>Bulk reschedule and batch invoicing across many jobs</li>
+            <li>Combine several jobs into one invoice</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/jobs-1080.webp" srcset="/assets/screens/tabs/jobs-1080.webp 1080w, /assets/screens/tabs/jobs.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Jobs screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/jobs-1080.webp" srcset="/assets/screens/tabs/jobs-1080.webp 1080w, /assets/screens/tabs/jobs.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Jobs screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Assign technicians, change status and reschedule from the list</li>
-          <li>Book time against each job's tasks, so labour is recorded as the work happens</li>
-          <li>Bulk reschedule and batch invoicing across many jobs</li>
-          <li>Combine several jobs into one invoice</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="invoices" aria-labelledby="invoices-heading">
-        <h2 class="feature-tab__title" id="invoices-heading">Invoices</h2>
-        <p class="feature-tab__summary">Bills completed work from a quote or a job, and tracks it through to paid.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="invoices-heading"><span class="feature-tab__num" aria-hidden="true">05</span>Invoices</h2>
+          <p class="feature-tab__summary">Bills completed work from a quote or a job, and tracks it through to paid.</p>
+          <ul class="feature-tab__list">
+            <li>Invoices from a quote or a job, with the original quoted amount kept alongside</li>
+            <li>Margin analysis on each invoice, so you know what it earned</li>
+            <li>Record payments by bank transfer, cheque, card or other, then mark the invoice paid</li>
+            <li>Send payment reminders in bulk, or one at a time</li>
+            <li>Combine invoices, and export paid invoices as a CSV that Xero or MYOB can import</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/invoices-1080.webp" srcset="/assets/screens/tabs/invoices-1080.webp 1080w, /assets/screens/tabs/invoices.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Invoices screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/invoices-1080.webp" srcset="/assets/screens/tabs/invoices-1080.webp 1080w, /assets/screens/tabs/invoices.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Invoices screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Invoices from a quote or a job, with the original quoted amount kept alongside</li>
-          <li>Margin analysis on each invoice, so you know what it earned</li>
-          <li>Record payments by bank transfer, cheque, card or other, then mark the invoice paid</li>
-          <li>Send payment reminders in bulk, or one at a time</li>
-          <li>Combine invoices, and export paid invoices as a CSV that Xero or MYOB can import</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="recurring-templates" aria-labelledby="recurring-templates-heading">
-        <h2 class="feature-tab__title" id="recurring-templates-heading">Recurring Templates</h2>
-        <p class="feature-tab__summary">Sets up work that repeats on a schedule, and creates the jobs for you.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="recurring-templates-heading"><span class="feature-tab__num" aria-hidden="true">06</span>Recurring Templates</h2>
+          <p class="feature-tab__summary">Sets up work that repeats on a schedule, and creates the jobs for you.</p>
+          <ul class="feature-tab__list">
+            <li>Set up work that repeats, with a frequency and the days it runs</li>
+            <li>See every job a template has created</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/recurring-templates-1080.webp" srcset="/assets/screens/tabs/recurring-templates-1080.webp 1080w, /assets/screens/tabs/recurring-templates.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Recurring Templates screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/recurring-templates-1080.webp" srcset="/assets/screens/tabs/recurring-templates-1080.webp 1080w, /assets/screens/tabs/recurring-templates.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Recurring Templates screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Set up work that repeats, with a frequency and the days it runs</li>
-          <li>See every job a template has created</li>
-        </ul>
       </section>
 
       <section class="feature-tab" id="projects" aria-labelledby="projects-heading">
-        <h2 class="feature-tab__title" id="projects-heading">Projects</h2>
-        <p class="feature-tab__summary">Groups jobs under one site or build, with a financial summary for the whole project.</p>
+        <div class="feature-tab__copy">
+          <h2 class="feature-tab__title" id="projects-heading"><span class="feature-tab__num" aria-hidden="true">07</span>Projects</h2>
+          <p class="feature-tab__summary">Groups jobs under one site or build, with a financial summary for the whole project.</p>
+          <ul class="feature-tab__list">
+            <li>Projects with a site address, a description and a scope</li>
+            <li>Parent and child projects for larger builds</li>
+            <li>Financial summary per project: invoiced to date, amount paid and gross profit</li>
+            <li>Split costs across cost centres</li>
+          </ul>
+        </div>
         <figure class="shot">
-          <img src="/assets/screens/tabs/projects-1080.webp" srcset="/assets/screens/tabs/projects-1080.webp 1080w, /assets/screens/tabs/projects.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 760px" alt="The Projects screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
+          <img src="/assets/screens/tabs/projects-1080.webp" srcset="/assets/screens/tabs/projects-1080.webp 1080w, /assets/screens/tabs/projects.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 620px" alt="The Projects screen in RELAY Dispatch" width="2160" height="1350" loading="lazy">
         </figure>
-        <ul class="feature-tab__list">
-          <li>Projects with a site address, a description and a scope</li>
-          <li>Parent and child projects for larger builds</li>
-          <li>Financial summary per project: invoiced to date, amount paid and gross profit</li>
-          <li>Split costs across cost centres</li>
-        </ul>
       </section>
 
+      <nav class="feature-more" aria-label="Other feature sections">
+        <p class="feature-more__label">More features</p>
+        <div class="feature-more__links">
+          <a href="/features/dashboard/">Dashboard</a>
+          <a href="/features/schedule/">Schedule</a>
+          <a href="/features/people/">People</a>
+          <a href="/features/resources/">Resources</a>
+          <a href="/features/admin/">Admin</a>
+        </div>
+      </nav>
+
     <div class="feature-cta">
-      <p>Free for one user, forever. Add the crew from $18 + GST per user a month.</p>
+      <p>Free for one user, forever. Add the crew from $18 + GST per user a month while the beta runs.</p>
       <div class="feature-cta__actions">
         <a class="btn btn--md btn--primary" href="/#download">Download free for Windows</a>
         <a class="btn btn--md btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
@@ -215,5 +264,6 @@
   </div>
 </footer>
 
+<script src="/assets/js/home.js" defer></script>
 </body>
 </html>

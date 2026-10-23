@@ -20,6 +20,7 @@ import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemp
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { HOURS_SOURCE, hoursSourceLabel } from '../../utils/invoiceLabour.js';
+import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState, xeroHoldsPayment, xeroInvoiceUrl, retryInvoiceSync } from '../../utils/xero.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 
 export function renderInvoiceDetail(container, params) {
@@ -281,6 +282,8 @@ export function renderInvoiceDetail(container, params) {
         `
       })}
 
+      ${!isNew && xeroEnabled() ? '<div id="xero-invoice-row"></div>' : ''}
+
       ${activeTab === 'history' ? (() => {
         const timeline = getInvoiceFullTimeline(invoice);
         return `
@@ -515,6 +518,56 @@ export function renderInvoiceDetail(container, params) {
     `;
 
     bindEvents();
+    renderXeroRow();
+  }
+
+  // Where this invoice stands with Xero: only shown once the company is known to
+  // be connected. Filled after the page draws so a slow lookup never blocks it.
+  async function renderXeroRow() {
+    const el = container.querySelector('#xero-invoice-row');
+    if (!el) return;
+    let jobs;
+    try {
+      const st = await getXeroStatusCached();
+      if (!st?.connected) return;
+      jobs = (await fetchInvoiceSyncJobs()).get(String(invoice.id));
+    } catch (_) {
+      return; // the invoice works without it
+    }
+    if (!el.isConnected) return;
+    const s = xeroInvoiceSyncState(invoice, jobs);
+    if (s.state === 'none') return;
+    const held = xeroHoldsPayment(invoice);
+    const synced = invoice.xeroSyncedAt ? new Date(invoice.xeroSyncedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const bits = [
+      s.detail,
+      s.state === 'synced' || s.state === 'warning' ? (synced ? `Last synced ${synced}.` : '') : '',
+      held ? 'Xero has a payment on this invoice, so changes made here stay in RELAY.' : '',
+    ].filter(Boolean);
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:var(--space-lg);">
+        <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;">
+          <span class="material-icons-outlined" style="color:${s.tone === 'neutral' ? 'var(--text-secondary)' : `var(--color-${s.tone})`};" aria-hidden="true">${s.icon}</span>
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:600;">Xero: ${escapeHTML(s.label)}</div>
+            ${bits.length ? `<div style="color:var(--text-tertiary);font-size:12px;">${escapeHTML(bits.join(' '))}</div>` : ''}
+          </div>
+          ${s.state === 'error' && jobs?.failed?.length ? `<button class="btn btn-secondary btn-sm" id="btn-xero-retry"><span class="material-icons-outlined" aria-hidden="true">replay</span> Retry</button>` : ''}
+          ${invoice.xeroInvoiceId ? `<a class="btn btn-secondary btn-sm" href="${escapeHTML(xeroInvoiceUrl(invoice.xeroInvoiceId))}" target="_blank" rel="noopener noreferrer"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span> Open in Xero</a>` : ''}
+        </div>
+      </div>`;
+    el.querySelector('#btn-xero-retry')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const n = await retryInvoiceSync(invoice.id);
+        showToast(n ? 'Queued to sync to Xero again.' : 'Nothing to retry.', 'info');
+        renderXeroRow();
+      } catch (err) {
+        showToast(err.message || 'Could not retry', 'error');
+        btn.disabled = false;
+      }
+    });
   }
 
   function renderSection(section, sIdx) {
@@ -945,6 +998,24 @@ export function renderInvoiceDetail(container, params) {
         return;
       }
       invoice._statusGuardPassed = false;
+
+      // Once Xero holds a payment, Xero owns the invoice: RELAY won't push edits
+      // (they'd be refused), so say so before the two drift apart.
+      if (!invoice._xeroGuardPassed && xeroEnabled() && xeroHoldsPayment(invoice)) {
+        const body = document.createElement('div');
+        body.style.cssText = 'font-size:13px;color:var(--text-secondary);line-height:1.5;';
+        body.textContent = 'Xero already has a payment on this invoice, so these changes are saved in RELAY only and won\'t reach Xero. To change it in both, edit or credit it in Xero.';
+        showModal({
+          title: 'Save in RELAY only?',
+          content: body,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Save in RELAY', className: 'btn-primary', onClick: c => { c(); invoice._xeroGuardPassed = true; invoice._statusGuardPassed = true; container.querySelector('#btn-save-inv').click(); } }
+          ]
+        });
+        return;
+      }
+      invoice._xeroGuardPassed = false;
 
       const custId = container.querySelector('#inv-customer').value;
       if (!custId) {

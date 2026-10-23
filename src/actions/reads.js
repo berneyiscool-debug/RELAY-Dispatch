@@ -14,6 +14,7 @@ import { localDateLabel } from '../utils/dateUtils.js';
 import { toDateKey, todayLocalISO, parseDate, dateLabel } from './dates.js';
 import { LEAD_STAGES, LEAD_STAGE_ORDER, weightedLeadValue, isOpenLead, isLeadStale } from '../pages/leads/leadStages.js';
 import { invalidInput } from './errors.js';
+import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState } from '../utils/xero.js';
 
 /** Per-collection search fields, compact output shape and label. */
 const RECORD_TYPES = {
@@ -39,7 +40,7 @@ const RECORD_TYPES = {
     collection: 'invoices',
     label: (r) => `${r.number || ''} ${r.title || ''}`.trim() || r.customerName || r.id,
     search: ['number', 'title', 'customerName', 'jobNumber', 'contactName'],
-    fields: ['id', 'number', 'title', 'customerName', 'jobId', 'jobNumber', 'status', 'total', 'subtotal', 'issueDate', 'dueDate', 'paidDate', 'paymentMethod'],
+    fields: ['id', 'number', 'title', 'customerName', 'jobId', 'jobNumber', 'status', 'total', 'subtotal', 'issueDate', 'dueDate', 'paidDate', 'paymentMethod', 'xeroStatus', 'xeroSyncError'],
   },
   customers: {
     collection: 'customers',
@@ -513,6 +514,68 @@ defineAction({
       openTodos: openTodos.slice(0, 25).map((todo) => compact('todos', todo)),
       overdueTodos: overdueTodos.map((todo) => compact('todos', todo)),
       staleLeads: staleLeads.map((lead) => compact('leads', lead)),
+    };
+  },
+});
+
+defineAction({
+  name: 'get_xero_sync',
+  title: 'Check Xero sync',
+  description:
+    'Whether invoices have reached Xero. With an invoice (number or id): that invoice\'s Xero state and any error. Without: the connection, and every invoice that failed to sync or is still waiting, with the reason. Use for questions like "did INV-1042 go to Xero?" or "what is stuck in Xero?".',
+  readOnly: true,
+  inputSchema: objectSchema(
+    {
+      invoice: str('Optional invoice number or id to check.'),
+    },
+    []
+  ),
+  run: async ({ invoice }) => {
+    if (!xeroEnabled()) {
+      return { summary: 'Xero is not available on this account.', connected: false };
+    }
+    const status = await getXeroStatusCached();
+    if (!status?.connected) {
+      return {
+        summary: status?.status === 'needs_reauth'
+          ? 'Xero needs reconnecting in Settings → Accounting & Xero; changes are queued until then.'
+          : 'Xero is not connected. An admin can connect it in Settings → Accounting & Xero.',
+        connected: false,
+        status: status?.status || 'disconnected',
+      };
+    }
+    const jobs = await fetchInvoiceSyncJobs({ force: true });
+    const describe = (record) => {
+      const state = xeroInvoiceSyncState(record, jobs.get(String(record.id)));
+      return { ...compact('invoices', record), xero: state.label, xeroState: state.state, detail: state.detail || undefined };
+    };
+
+    if (invoice) {
+      const { record } = resolveOne('invoices', invoice, {
+        label: RECORD_TYPES.invoices.label,
+        searchFields: RECORD_TYPES.invoices.search,
+        what: 'invoice',
+      });
+      const out = describe(record);
+      return {
+        summary: `${record.number}: ${out.xero}${out.detail ? ` (${out.detail})` : ''}.`,
+        connected: true,
+        tenantName: status.tenantName,
+        invoice: out,
+      };
+    }
+
+    const all = (store.getAll('invoices') || []).map(describe);
+    const failed = all.filter((i) => i.xeroState === 'error');
+    const waiting = all.filter((i) => i.xeroState === 'pending');
+    const missing = all.filter((i) => i.xeroState === 'missing');
+    return {
+      summary: `Connected to ${status.tenantName || 'Xero'}: ${failed.length} failed, ${waiting.length} waiting, ${missing.length} sent before Xero was connected.`,
+      connected: true,
+      tenantName: status.tenantName,
+      failed: failed.slice(0, 25),
+      waiting: waiting.slice(0, 25),
+      notInXero: missing.length,
     };
   },
 });

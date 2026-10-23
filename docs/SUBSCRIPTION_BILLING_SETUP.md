@@ -10,6 +10,13 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 | Cloud       | $18                 | Cloud sync, online payments, portals, email domain|
 | Cloud+      | $21                 | Everything in Cloud **+ brny Max** (expandable brny)|
 
+> **These are the beta prices.** The regular price is $24 / $27 per user per
+> month + GST. Stripe, `PLAN_CATALOG` (`src/utils/subscription.js`) and the
+> marketing site all charge and advertise the beta rate ($18 / $21) today, with
+> the regular price struck through on the site. When the beta ends, re-create the
+> Stripe Prices, then update this table, `PLAN_CATALOG` and the pricing block on
+> `site/index.html` together.
+
 - **Free is offline-only** — it never creates a `companies` row, so it never
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
 - **Every cloud account starts on a 14-day free trial with no card on file.**
