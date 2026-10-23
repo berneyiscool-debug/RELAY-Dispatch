@@ -11,6 +11,7 @@ import DOMPurify from 'dompurify';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
+import { mergeDraftValues, sectionSaveMissingFields, emergencyLabourCost } from './jobFormDraft.js';
 
 const AVAILABLE_TAGS = [
   'Urgent', 'Follow-up', 'Warranty', 'Inspection', 'After-Hours',
@@ -19,12 +20,17 @@ const AVAILABLE_TAGS = [
 
 let jobFormDraft = null;
 let currentDraftKey = null;
+// The draft covers editors declared further down this function (tasklist,
+// compliance forms). Capture stays inert until those exist, so an early DOM
+// event during wiring cannot trip over them.
+let draftCaptureReady = false;
 
 export function renderJobForm(container, params) {
   const id = params.id;
   const isEdit = id && id !== 'new';
   const activeTab = params.tab || 'details';
   const draftKey = isEdit ? String(id) : 'new';
+  draftCaptureReady = false;
 
   if (currentDraftKey !== draftKey || !jobFormDraft) {
     currentDraftKey = draftKey;
@@ -272,12 +278,18 @@ export function renderJobForm(container, params) {
         margin-top: 8px;
         flex-wrap: wrap;
       }
+      .jf-section-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 4px;
+      }
     </style>
     <div class="page-header">
       <h1>${isEdit ? 'Edit Job' : 'New Job'}</h1>
       <div class="page-header-actions">
         <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
-        <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> ${isEdit ? 'Update' : 'Create'} Job</button>
+        <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">${isEdit ? 'save' : 'check'}</span> ${isEdit ? 'Update Job' : 'Done'}</button>
       </div>
     </div>
     <form id="job-form">
@@ -399,6 +411,9 @@ export function renderJobForm(container, params) {
 
           </div>
         </div>
+        <div class="jf-section-actions">
+          <button type="button" class="btn btn-primary" id="btn-save-details" data-jf-section="details"><span class="material-icons-outlined">save</span> Save details</button>
+        </div>
       </div>
 
       <!-- TAB 2: ASSET / EQUIPMENT -->
@@ -431,6 +446,9 @@ export function renderJobForm(container, params) {
               ${renderAssetCard(job.assetId ? store.getById('assets', job.assetId) : null)}
             </div>
           </div>
+        </div>
+        <div class="jf-section-actions">
+          <button type="button" class="btn btn-primary" id="btn-save-asset" data-jf-section="asset"><span class="material-icons-outlined">save</span> Save asset</button>
         </div>
       </div>
 
@@ -513,40 +531,113 @@ export function renderJobForm(container, params) {
 
           </div>
         </div>
+        <div class="jf-section-actions">
+          <button type="button" class="btn btn-primary" id="btn-save-scheduling" data-jf-section="scheduling"><span class="material-icons-outlined">save</span> Save scheduling</button>
+        </div>
       </div>
 
       <!-- TAB 4: TASKLISTS -->
       <div id="jf-tab-tasks" style="display:${activeTab === 'tasks' ? 'block' : 'none'};">
         <div id="jf-task-container"></div>
+        <div class="jf-section-actions">
+          <button type="button" class="btn btn-primary" id="btn-save-tasks" data-jf-section="tasks"><span class="material-icons-outlined">save</span> Save tasklist</button>
+        </div>
       </div>
       
       <!-- TAB 5: COMPLIANCE FORMS -->
       <div id="jf-tab-forms" style="display:${activeTab === 'forms' ? 'block' : 'none'};">
         <div id="jf-forms-container"></div>
+        <div class="jf-section-actions">
+          <button type="button" class="btn btn-primary" id="btn-save-forms" data-jf-section="forms"><span class="material-icons-outlined">save</span> Save forms</button>
+        </div>
       </div>
     </form>
   `;
 
-  // ---- Real-time Form Draft Synchronization ----
-  function syncDraftFromDOM() {
-    if (!jobFormDraft) return;
+  // ---- Draft capture ----
+  // Every sidebar tab change re-renders this page from jobFormDraft, so the
+  // draft has to hold the whole form — including controls with no `name`, the
+  // tag pills, the recurring builder and the re-rendered task/form editors.
+  // Anything missed here is silently lost the moment the user moves on.
+  function captureDraft() {
+    if (!jobFormDraft || !draftCaptureReady) return;
+
     const form = container.querySelector('#job-form');
-    if (form) {
-      const formData = Object.fromEntries(new FormData(form));
-      Object.assign(jobFormDraft, formData);
-      const editor = container.querySelector('#job-description-editor');
-      if (editor) jobFormDraft.description = DOMPurify.sanitize(editor.innerHTML);
+    if (form) mergeDraftValues(jobFormDraft, Object.fromEntries(new FormData(form)));
+
+    const editor = container.querySelector('#job-description-editor');
+    if (editor) jobFormDraft.description = editor.innerHTML;
+
+    const emergencyEl = container.querySelector('#is-emergency');
+    if (emergencyEl) jobFormDraft.isEmergency = emergencyEl.checked;
+    const callbackEl = container.querySelector('#is-callback');
+    if (callbackEl) jobFormDraft.isCallback = callbackEl.checked;
+    const recurringEl = container.querySelector('#is-recurring');
+    if (recurringEl) jobFormDraft.isRecurring = recurringEl.checked;
+
+    const statusEl = container.querySelector('select[name="status"]');
+    if (jobFormDraft.isRecurring) jobFormDraft.status = 'Recurring Template';
+    else if (statusEl && !statusEl.disabled && statusEl.value) jobFormDraft.status = statusEl.value;
+
+    if (jobFormDraft.isRecurring) {
+      jobFormDraft.recurringConfig = {
+        ...(jobFormDraft.recurringConfig || {}),
+        freq: container.querySelector('#recurring-freq')?.value || jobFormDraft.recurringConfig?.freq || 'Weekly',
+        start: container.querySelector('#recurring-start')?.value || jobFormDraft.recurringConfig?.start || todayLocalISO(),
+        end: container.querySelector('#recurring-end')?.value || jobFormDraft.recurringConfig?.end || '',
+        defaultTechnicianId: container.querySelector('#recurring-tech')?.value || null,
+        daysOfWeek: [...selectedDaysOfWeek],
+        daysOfMonth: [...selectedDaysOfMonth],
+      };
+    }
+
+    jobFormDraft.tags = [...selectedTags];
+    jobFormDraft.tasks = JSON.parse(JSON.stringify(jobTasks));
+    jobFormDraft.formTemplateIds = [...selectedFormTemplateIds];
+
+    const assetIdEl = container.querySelector('#jf-asset-id');
+    const assetNameEl = container.querySelector('#jf-asset-name');
+    if (assetIdEl) jobFormDraft.assetId = assetIdEl.value || null;
+    if (assetNameEl) jobFormDraft.assetName = assetNameEl.value || '';
+
+    // The jobsite/contact selects persist names or indexes, so remember the
+    // labels they were showing. A re-render can only re-select by label.
+    // Empty selects are left alone: the customer-change handler clears them.
+    const siteOpt = container.querySelector('#jf-site')?.selectedOptions?.[0];
+    if (siteOpt && siteOpt.value !== '') {
+      jobFormDraft.siteId = siteOpt.dataset.name || '';
+      jobFormDraft.siteName = siteOpt.dataset.name || '';
+      jobFormDraft.siteAddress = siteOpt.dataset.address || '';
+    }
+
+    const cust = jobFormDraft.customerId ? store.getById('customers', jobFormDraft.customerId) : null;
+    const contactNameFor = (selectEl) => {
+      const opt = selectEl?.selectedOptions?.[0];
+      if (!opt || opt.value === '') return '';
+      if (opt.value === 'primary') {
+        return (`${cust?.firstName || ''} ${cust?.lastName || ''}`.trim() || cust?.company || '');
+      }
+      const idx = parseInt(opt.value, 10);
+      return (!Number.isNaN(idx) && cust?.contacts?.[idx]?.name) || '';
+    };
+    const primaryEl = container.querySelector('#jf-primary-contact');
+    if (primaryEl && !primaryEl.disabled) {
+      jobFormDraft.primaryContactId = primaryEl.value || '';
+      jobFormDraft.primaryContactName = contactNameFor(primaryEl);
+    }
+    const additionalEl = container.querySelector('#jf-additional-contact');
+    if (additionalEl && !additionalEl.disabled) {
+      jobFormDraft.additionalContactId = additionalEl.value || '';
+      jobFormDraft.additionalContactName = contactNameFor(additionalEl);
     }
   }
 
-  container.querySelectorAll('#job-form input, #job-form select, #job-form textarea').forEach(elem => {
-    elem.addEventListener('input', syncDraftFromDOM);
-    elem.addEventListener('change', syncDraftFromDOM);
-  });
-
-  const descEditor = container.querySelector('#job-description-editor');
-  if (descEditor) {
-    descEditor.addEventListener('input', syncDraftFromDOM);
+  // Delegated so the task/forms editors (re-rendered on every click) are
+  // covered without re-binding listeners each time.
+  const jobFormEl = container.querySelector('#job-form');
+  if (jobFormEl) {
+    jobFormEl.addEventListener('input', captureDraft);
+    jobFormEl.addEventListener('change', captureDraft);
   }
 
   container.querySelector('#btn-cancel')?.addEventListener('click', () => {
@@ -586,6 +677,7 @@ export function renderJobForm(container, params) {
       if (unlinkBtn) {
         unlinkBtn.addEventListener('click', () => {
           updateAssetSelection('');
+          captureDraft();
         });
       }
     }
@@ -593,6 +685,7 @@ export function renderJobForm(container, params) {
 
   assetSelect?.addEventListener('change', (e) => {
     updateAssetSelection(e.target.value);
+    captureDraft();
   });
 
   showAllAssetsCheck?.addEventListener('change', (e) => {
@@ -609,6 +702,16 @@ export function renderJobForm(container, params) {
 
   function refreshCustomerDependents(custId) {
     const disabled = !custId;
+    // The label fields belong to the previous customer's site/contact list;
+    // clearing them here is what keeps the draft from re-selecting them.
+    jobFormDraft.siteId = '';
+    jobFormDraft.siteName = '';
+    jobFormDraft.siteAddress = '';
+    jobFormDraft.primaryContactId = '';
+    jobFormDraft.primaryContactName = '';
+    jobFormDraft.additionalContactId = '';
+    jobFormDraft.additionalContactName = '';
+
     siteSelect.innerHTML = buildSiteOptions(custId, '');
     siteSelect.disabled = disabled;
     primaryContactSel.innerHTML = buildContactOptions(custId, '', 'Select primary contact...');
@@ -640,12 +743,16 @@ export function renderJobForm(container, params) {
   // Forgot to add the customer first? "+ New customer" adds them in a modal and
   // picks them here, so the job carries on where it was.
   wireNewCustomerOption(custSelect, { customers });
-  custSelect.addEventListener('change', e => refreshCustomerDependents(e.target.value));
+  custSelect.addEventListener('change', e => {
+    refreshCustomerDependents(e.target.value);
+    captureDraft();
+  });
 
   // Site hint update on site change
   siteSelect.addEventListener('change', e => {
     const opt = e.target.selectedOptions[0];
     siteHint.textContent = opt?.dataset.address || '';
+    captureDraft();
   });
 
   // ---- Tags ----
@@ -660,6 +767,7 @@ export function renderJobForm(container, params) {
       selectedTags.push(tag);
       pill.classList.add('tag-pill-active');
     }
+    captureDraft();
   });
 
   // ---- Rich Text Editor ----
@@ -674,12 +782,14 @@ export function renderJobForm(container, params) {
     const val = btn.dataset.val || null;
     document.execCommand(cmd, false, val);
     editor.focus();
+    captureDraft();
   });
 
   container.querySelector('#editor-link-btn').addEventListener('click', () => {
     const url = prompt('Enter URL:', 'https://');
     if (url) document.execCommand('createLink', false, url);
     editor.focus();
+    captureDraft();
   });
 
   // Toolbar active state
@@ -717,7 +827,10 @@ export function renderJobForm(container, params) {
     }
   }
 
-  emergencyToggle?.addEventListener('change', e => updateEmergencyUI(e.target.checked));
+  emergencyToggle?.addEventListener('change', e => {
+    updateEmergencyUI(e.target.checked);
+    captureDraft();
+  });
   if (job.isEmergency) updateEmergencyUI(true);
 
   const preferredTimeInput = container.querySelector('input[name="preferredTime"]');
@@ -768,6 +881,7 @@ export function renderJobForm(container, params) {
             selectedDaysOfWeek.push(dayVal);
             btn.classList.add('active');
           }
+          captureDraft();
         });
       });
       
@@ -793,6 +907,7 @@ export function renderJobForm(container, params) {
             selectedDaysOfMonth.push(dateVal);
             btn.classList.add('active');
           }
+          captureDraft();
         });
       });
       
@@ -836,10 +951,12 @@ export function renderJobForm(container, params) {
       if (e.target.checked) {
         updateRecurringDaysSelector();
       }
+      captureDraft();
     });
 
     freqSelect?.addEventListener('change', () => {
       updateRecurringDaysSelector();
+      captureDraft();
     });
   }
 
@@ -853,7 +970,11 @@ export function renderJobForm(container, params) {
   });
 
   // ==== Task List Management ====
-  let jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
+  // Prefer the draft: on a tab change this render must resume from the edits
+  // made in the previous one, not from the record as it was loaded.
+  let jobTasks = jobFormDraft.tasks
+    ? JSON.parse(JSON.stringify(jobFormDraft.tasks))
+    : (job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : []);
   jobTasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
   let taskExpandedPath = [0];
@@ -874,6 +995,10 @@ export function renderJobForm(container, params) {
   function renderFormTasks() {
     const tc = container.querySelector('#jf-task-container');
     if (!tc) return;
+
+    // Every mutation path (add, delete, import, allocation) re-renders through
+    // here, so capture before the old DOM is replaced.
+    captureDraft();
 
     // Cleanup invalid paths
     let isValidPath = true;
@@ -1513,11 +1638,18 @@ export function renderJobForm(container, params) {
   // ==== Compliance Forms Selection ====
   const allTemplates = store.getAll('formTemplates');
   const existingInstances = isEdit ? store.getAll('formInstances').filter(fi => fi.jobId === id) : [];
-  let selectedFormTemplateIds = isEdit ? existingInstances.map(fi => fi.templateId) : [];
+  let selectedFormTemplateIds = jobFormDraft.formTemplateIds
+    ? [...jobFormDraft.formTemplateIds]
+    : (isEdit ? existingInstances.map(fi => fi.templateId) : []);
+  draftCaptureReady = true;
 
   function renderFormSelection() {
     const fc = container.querySelector('#jf-forms-container');
     if (!fc) return;
+
+    // The selection lives outside the DOM controls, so capture it before the
+    // list is re-rendered.
+    captureDraft();
 
     fc.innerHTML = `
       <div style="margin-bottom:var(--space-lg)">
@@ -1573,34 +1705,37 @@ export function renderJobForm(container, params) {
     });
   }
 
-  container.querySelector('#btn-save').addEventListener('click', () => {
-    const form = container.querySelector('#job-form');
-    if (!form.checkValidity()) {
-      const invalidElem = form.querySelector(':invalid');
-      if (invalidElem) {
-        const parentTabDiv = invalidElem.closest('[id^="jf-tab-"]');
-        if (parentTabDiv) {
-          const tabName = parentTabDiv.id.replace('jf-tab-', '');
-          const basePath = isEdit ? `/jobs/${id}/edit` : '/jobs/new';
-          const qParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
-          qParams.set('tab', tabName);
-          router.navigate(`${basePath}?${qParams.toString()}`);
-        }
-      }
-      form.reportValidity();
-      return;
-    }
-    const data = Object.fromEntries(new FormData(form));
-    data.assetId = container.querySelector('#jf-asset-id')?.value || null;
-    data.assetName = container.querySelector('#jf-asset-name')?.value || '';
+  // ==== Save ====
+  // One persistence path for the per-section Save buttons and the header
+  // button. It builds from the captured draft, so a section save writes every
+  // section the user has filled in — not just the tab in front of them.
+  function buildJobPayload() {
+    captureDraft();
+    const data = JSON.parse(JSON.stringify(jobFormDraft || {}));
+
+    const editor = container.querySelector('#job-description-editor');
+    data.description = DOMPurify.sanitize(editor ? editor.innerHTML : (data.description || ''));
+    data.tags = [...selectedTags];
+
+    data.tasks = JSON.parse(JSON.stringify(jobTasks));
+    data.tasks.forEach(t => {
+      if (!t.subTasks) t.subTasks = [];
+      t.subPhases = t.subTasks;
+    });
+    data.phases = data.tasks;
+
+    delete data.notes;
 
     const custId = data.customerId;
-    const cust = customers.find(c => c.id === custId);
+    const cust = custId ? store.getById('customers', custId) : null;
     data.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
 
-    const selSiteOpt = siteSelect.selectedOptions[0];
-    data.siteAddress = selSiteOpt?.dataset.address || '';
-    data.siteName = selSiteOpt?.dataset.name || '';
+    // A section save can happen from any tab; fall back to the draft's labels
+    // when the select is showing its placeholder, so older records keep their
+    // saved address instead of having it blanked by an unmatched option.
+    const selSiteOpt = container.querySelector('#jf-site')?.selectedOptions?.[0];
+    data.siteAddress = selSiteOpt?.dataset?.address || data.siteAddress || '';
+    data.siteName = selSiteOpt?.dataset?.name || data.siteName || '';
 
     const priIdx = parseInt(data.primaryContactId);
     const addIdx = parseInt(data.additionalContactId);
@@ -1621,19 +1756,9 @@ export function renderJobForm(container, params) {
     if (data.projectId === '') data.projectId = null;
     if (data.costCenterId === '') data.costCenterId = null;
 
-    data.tags = selectedTags;
-    data.description = DOMPurify.sanitize(editor.innerHTML);
-    data.tasks = jobTasks;
-    data.phases = jobTasks;
-    data.tasks.forEach(t => { 
-      if (!t.subTasks) t.subTasks = []; 
-      t.subPhases = t.subTasks; 
-    });
-    
-    delete data.notes;
-    const isEmg = container.querySelector('#is-emergency')?.checked;
+    const isEmg = !!data.isEmergency;
     data.isEmergency = isEmg;
-    data.isCallback = !!container.querySelector('#is-callback')?.checked;
+    data.isCallback = !!data.isCallback;
 
     if (!isEdit) {
       data.technicians = [];
@@ -1641,42 +1766,39 @@ export function renderJobForm(container, params) {
       data.materialCost = 0;
       data.estimatedHours = 0;
     } else {
-      if (isEmg && !job.isEmergency) data.laborCost = (job.laborCost || 0) + 150;
-      else if (!isEmg && job.isEmergency) data.laborCost = Math.max(0, (job.laborCost || 0) - 150);
+      // Compare with the stored job, not the draft: captureDraft() has already
+      // copied the new checkbox state onto the draft.
+      const persisted = store.getById('jobs', id) || {};
+      data.laborCost = emergencyLabourCost(persisted.laborCost, !!persisted.isEmergency, isEmg);
     }
 
-    const isRecurringChecked = container.querySelector('#is-recurring')?.checked || (isEdit && job.isRecurring);
-
-    if (isRecurringChecked) {
-      const freq = container.querySelector('#recurring-freq')?.value || job.recurringConfig?.freq || 'Weekly';
-      const startInput = container.querySelector('#recurring-start')?.value || job.recurringConfig?.start || todayLocalISO();
-      const endInput = container.querySelector('#recurring-end')?.value || job.recurringConfig?.end || '';
-      if (!startInput || !endInput) {
-        showToast('Recurring dates required', 'error'); return;
+    if (data.isRecurring) {
+      const config = data.recurringConfig || {};
+      if (!config.start || !config.end) {
+        showToast('Recurring dates required', 'error');
+        return null;
       }
       data.isRecurring = true;
       data.status = 'Recurring Template';
-      data.recurringConfig = { 
-        freq, 
-        start: startInput, 
-        end: endInput,
-        defaultTechnicianId: container.querySelector('#recurring-tech')?.value || job.recurringConfig?.defaultTechnicianId || null,
+      data.recurringConfig = {
+        freq: config.freq || 'Weekly',
+        start: config.start,
+        end: config.end,
+        defaultTechnicianId: config.defaultTechnicianId || null,
         daysOfWeek: [...selectedDaysOfWeek],
         daysOfMonth: [...selectedDaysOfMonth],
         // Skipped occurrences are matched by calendar date, so keep them
         // canonical — a legacy "3/10/2026" entry would otherwise survive the
         // save and never match the engine's YYYY-MM-DD comparison.
-        skippedDates: [...new Set((job.recurringConfig?.skippedDates || []).map(toDateKey).filter(Boolean))]
+        skippedDates: [...new Set((job.recurringConfig?.skippedDates || []).map(toDateKey).filter(Boolean))],
       };
-    } else {
-      if (!isEdit) {
-        data.isRecurring = false;
-        data.recurringConfig = null;
-      } else if (job.isRecurring) {
-        data.isRecurring = true;
-        data.status = 'Recurring Template';
-        data.recurringConfig = job.recurringConfig || null;
-      }
+    } else if (!isEdit) {
+      data.isRecurring = false;
+      data.recurringConfig = null;
+    } else if (job.isRecurring) {
+      data.isRecurring = true;
+      data.status = 'Recurring Template';
+      data.recurringConfig = job.recurringConfig || null;
     }
 
     if (!job.number || (job.number.startsWith('J-') && (data.isRecurring || data.status === 'Recurring Template'))) {
@@ -1693,17 +1815,96 @@ export function renderJobForm(container, params) {
       data.status = job.status;
     }
 
-    // Save Job
+    return data;
+  }
+
+  function syncFormInstances(jobId) {
+    const allInstances = store.getAll('formInstances') || [];
+    // Filter out removed forms IF they are empty
+    const filteredInstances = allInstances.filter(fi => {
+      if (fi.jobId !== jobId) return true;
+      const isStillSelected = selectedFormTemplateIds.includes(fi.templateId);
+      const hasData = fi.responses && Object.keys(fi.responses).length > 0;
+      return isStillSelected || hasData;
+    });
+
+    selectedFormTemplateIds.forEach(tid => {
+      const exists = filteredInstances.find(fi => fi.jobId === jobId && fi.templateId === tid);
+      if (!exists) {
+        filteredInstances.push({
+          id: 'fi_' + Math.random().toString(36).substr(2, 9),
+          jobId,
+          templateId: tid,
+          responses: {},
+          status: 'Pending',
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+    store.save('formInstances', filteredInstances);
+  }
+
+  function jumpToInvalidTab(form) {
+    const invalidElem = form.querySelector(':invalid');
+    if (!invalidElem) return;
+    const parentTabDiv = invalidElem.closest('[id^="jf-tab-"]');
+    if (!parentTabDiv) return;
+    const tabName = parentTabDiv.id.replace('jf-tab-', '');
+    const basePath = isEdit ? `/jobs/${id}/edit` : '/jobs/new';
+    const qParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    qParams.set('tab', tabName);
+    router.navigate(`${basePath}?${qParams.toString()}`);
+  }
+
+  const SECTION_TOAST = {
+    details: 'Job details saved',
+    asset: 'Asset link saved',
+    scheduling: 'Scheduling saved',
+    tasks: 'Tasklist saved',
+    forms: 'Compliance forms saved',
+  };
+
+  function persistJob({ exit = false, section = null } = {}) {
+    captureDraft();
+    const form = container.querySelector('#job-form');
+
+    // Required fields only exist in Details, and the browser cannot focus a
+    // control inside a hidden tab — send the user there and say why.
+    if (form && (exit || section === 'details') && !form.checkValidity()) {
+      jumpToInvalidTab(form);
+      form.reportValidity();
+      return;
+    }
+
+    // A brand-new job is created by its first section save, so every section
+    // needs the two fields that make a job identifiable.
+    if (!isEdit) {
+      const missing = sectionSaveMissingFields(jobFormDraft);
+      if (missing.length) {
+        const labels = missing.map(m => m.label).join(' and ');
+        if (section && section !== 'details') {
+          showToast(`${labels} needed first — that is what creates the job.`, 'info');
+          const qParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+          qParams.set('tab', 'details');
+          router.navigate(`/jobs/new?${qParams.toString()}`);
+        } else if (form) {
+          form.reportValidity();
+        } else {
+          showToast(`${labels} needed to create the job.`, 'info');
+        }
+        return;
+      }
+    }
+
+    const data = buildJobPayload();
+    if (!data) return;
+
     const saved = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
     // store.update updates the cache synchronously and (in cloud mode) resolves to a
     // { ok, record | error } result, so read the record back from the cache rather
     // than relying on the return shape.
     const finalJob = store.getById('jobs', isEdit ? id : saved.id) || saved;
     const jobId = finalJob.id;
-
-    // Reset draft state after save
-    jobFormDraft = null;
-    currentDraftKey = null;
 
     if (finalJob.isRecurring) {
       import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs, propagateParentJobUpdates }) => {
@@ -1714,37 +1915,37 @@ export function renderJobForm(container, params) {
       });
     }
 
-    // Update Form Instances
-    const allInstances = store.getAll('formInstances') || [];
-    // Filter out removed forms IF they are empty
-    let filteredInstances = allInstances.filter(fi => {
-       if (fi.jobId !== jobId) return true;
-       const isStillSelected = selectedFormTemplateIds.includes(fi.templateId);
-       const hasData = fi.responses && Object.keys(fi.responses).length > 0;
-       return isStillSelected || hasData;
-    });
+    syncFormInstances(jobId);
 
-    // Add new instances
-    selectedFormTemplateIds.forEach(tid => {
-       const exists = filteredInstances.find(fi => fi.jobId === jobId && fi.templateId === tid);
-       if (!exists) {
-          filteredInstances.push({
-             id: 'fi_' + Math.random().toString(36).substr(2, 9),
-             jobId,
-             templateId: tid,
-             responses: {},
-             status: 'Pending',
-             createdAt: new Date().toISOString()
-          });
-       }
-    });
-    store.save('formInstances', filteredInstances);
-
-    showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success', { link: `/jobs/${jobId}` });
-    if (params.customerId) {
-      router.navigate(`/people/${params.customerId}?tab=jobs`);
-    } else {
-      router.navigate(`/jobs/${jobId}`);
+    if (exit) {
+      // Done / Update Job: save everything and hand back to the record.
+      jobFormDraft = null;
+      currentDraftKey = null;
+      showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success', { link: `/jobs/${jobId}` });
+      if (params.customerId) {
+        router.navigate(`/people/${params.customerId}?tab=jobs`);
+      } else {
+        router.navigate(`/jobs/${jobId}`);
+      }
+      return;
     }
+
+    if (!isEdit) {
+      // The record exists now: continue in edit mode, otherwise the next
+      // section save would create a second job.
+      jobFormDraft = null;
+      currentDraftKey = null;
+      showToast(`Job created — ${SECTION_TOAST[section] || 'section saved'}`, 'success');
+      router.navigate(`/jobs/${jobId}/edit?tab=${section || 'details'}`);
+      return;
+    }
+
+    showToast(SECTION_TOAST[section] || 'Job saved', 'success');
+  }
+
+  container.querySelector('#btn-save').addEventListener('click', () => persistJob({ exit: true }));
+
+  container.querySelectorAll('[data-jf-section]').forEach(btn => {
+    btn.addEventListener('click', () => persistJob({ section: btn.dataset.jfSection }));
   });
 }

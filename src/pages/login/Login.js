@@ -269,6 +269,16 @@ export async function completeLogin(user) {
   await dataStore.initializeUser(user);
   const landingRoute = getLandingRoute(user, dataStore);
 
+  // A freshly provisioned account has one thing to say before anything else:
+  // the trial exists, how long it runs for, and that no card is needed yet.
+  // Best-effort — a failed dynamic import must never block sign-in.
+  try {
+    const { maybeShowTrialWelcome } = await import('../../components/TrialBanner.js');
+    maybeShowTrialWelcome();
+  } catch (err) {
+    console.error('Could not show the trial welcome:', err);
+  }
+
   // Trigger UI updates for routes (after initializeUser so the sidebar's
   // local-mode gate reflects the now-active cloud account).
   const { updateSidebarAccess } = await import('../../components/Sidebar.js');

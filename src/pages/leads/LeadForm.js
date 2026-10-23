@@ -30,7 +30,7 @@ export function renderLeadForm(container, { id, origin }) {
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Lead' : 'New Lead'}</h1></div>
-    <form id="lead-form" class="lead-form" style="max-width:900px">
+    <form id="lead-form" class="lead-form">
       <section class="card">
         <div class="card-header">
           <h4><span class="material-icons-outlined">badge</span> Lead Details</h4>

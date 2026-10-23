@@ -8,6 +8,7 @@ import { toggleRelay, onRelayToggle } from './RelayAssistant.js';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
 import { openHelpCenter } from './HelpCenter.js';
+import { mountTrialChip, TRIAL_SLOT_ID } from './TrialChip.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -27,6 +28,7 @@ export function createTopBar() {
       ${buildBrandHtml()}
     </div>
     <div class="topbar-actions">
+      <div class="topbar-trial-slot" id="${TRIAL_SLOT_ID}"></div>
       <div class="topbar-search">
         <span class="material-icons-outlined search-icon">search</span>
         <input type="text" id="global-search" placeholder="Search…" autocomplete="off" />
@@ -171,7 +173,12 @@ export function createTopBar() {
     brandEl.addEventListener('click', () => router.navigate('/'));
     const refreshBrand = () => { const el = topbar.querySelector('#topbar-brand'); if (el) el.innerHTML = buildBrandHtml(); };
     window.addEventListener('relay:settings-updated', refreshBrand);
-    store.on('settings', refreshBrand);
+    store.on('settings', () => {
+      refreshBrand();
+      // Subscription state arrives after the shell is built, and the trial clock
+      // can cross a day boundary while the tab sits open.
+      mountTrialChip(topbar);
+    });
   }
 
   // Profile display moved to the sidebar footer (see Sidebar.js). The top bar
@@ -193,6 +200,9 @@ export function updateTopbarAccess(topbarEl) {
   if (!topbar) return;
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+
+  // Trial accounts need to be able to tell they are on a trial from day one.
+  mountTrialChip(topbar);
 
   // Name / role / avatar now render in the sidebar footer
   // (Sidebar.updateSidebarProfile), refreshed via updateSidebarAccess on login

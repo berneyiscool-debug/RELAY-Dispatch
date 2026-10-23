@@ -71,6 +71,7 @@ export const HELP_TOPICS = [
           { label: 'Portals', text: 'Customers accept quotes and view jobs online; contractors see the work shared with them.' },
           { label: 'Payments & email', text: 'Card payment links on invoices, and sending from your own domain.' },
           { label: 'Maps, weather and brny', text: 'Technician maps, routes, forecasts and the AI assistant.' },
+          { label: 'Free trial', text: 'New cloud accounts start with a 14-day no-card trial. The top bar shows the countdown, and Settings → Plan & Billing shows the end date.' },
         ],
       },
     ],
@@ -197,6 +198,7 @@ export const HELP_TOPICS = [
         heading: 'Creating jobs',
         items: [
           { label: 'From a quote or from scratch', text: 'Convert an accepted quote, or use Jobs → New Job for call-outs.' },
+          { label: 'Save each section', text: 'Details, Asset, Scheduling, Tasklists and Compliance Forms each have their own Save button. The first save on a new job creates it; Done closes the job.' },
           { label: 'Recurring jobs', text: 'Turn on Recurring Job to repeat maintenance daily, weekly or monthly. Recurring Templates lists them all.' },
           { label: 'Projects', text: 'Group large jobs into staged projects with their own financials.' },
         ],

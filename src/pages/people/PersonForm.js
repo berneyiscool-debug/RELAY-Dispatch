@@ -17,7 +17,7 @@ export function renderPersonForm(container, { id }) {
     <div class="page-header">
       <h1>${isEdit ? 'Edit Customer' : 'New Customer'}</h1>
     </div>
-    <div class="card" style="max-width:720px">
+    <div class="card">
       <div class="card-body">
         <form id="person-form">
           <div class="form-row">

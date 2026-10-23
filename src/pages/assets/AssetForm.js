@@ -40,7 +40,7 @@ export function renderAssetForm(container, params) {
       </div>
     </div>
 
-    <div class="card" style="max-width: 600px;">
+    <div class="card">
       <div class="card-body">
         <form id="asset-form" style="display: flex; flex-direction: column; gap: 15px;">
           <div class="form-group">

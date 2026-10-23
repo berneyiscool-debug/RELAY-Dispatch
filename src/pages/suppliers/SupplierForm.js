@@ -32,7 +32,7 @@ export function renderSupplierForm(container, params) {
       </div>
     </div>
 
-    <div class="card" style="max-width: 700px; margin-bottom: var(--space-xl);">
+    <div class="card" style="margin-bottom: var(--space-xl);">
       <div class="card-body">
         <form id="supplier-form" style="display: flex; flex-direction: column; gap: 18px;">
           <h4 style="border-bottom: 1px solid var(--border-color); padding-bottom: 6px; margin-bottom: 4px;">Primary Contact Details</h4>
