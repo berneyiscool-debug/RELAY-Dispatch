@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { parseExtraOrigins, resolveReturnUrls } from './returnUrls.js'
+import { parseExtraOrigins, resolveReturnUrls } from '../_shared/returnUrls.js'
 
 // ============================================
 // RELAY — CREATE PAYMENT (Stripe Connect direct charge)
@@ -19,7 +19,7 @@ import { parseExtraOrigins, resolveReturnUrls } from './returnUrls.js'
 //
 // Request body: { "invoiceId": "...", "successUrl"?, "cancelUrl"? }
 //   successUrl / cancelUrl are only honoured when they point back at RELAY
-//   (returnUrls.js); anything else falls back to the hosted app.
+//   (_shared/returnUrls.js); anything else falls back to the hosted app.
 // Response:      { "url": "https://checkout.stripe.com/...", "sessionId": "cs_..." }
 //
 // Secrets: STRIPE_SECRET_KEY (platform), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,

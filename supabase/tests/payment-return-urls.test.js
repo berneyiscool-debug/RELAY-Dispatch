@@ -15,7 +15,7 @@ import {
   isAllowedReturnUrl,
   parseExtraOrigins,
   resolveReturnUrls,
-} from '../functions/relay-create-payment/returnUrls.js'
+} from '../functions/_shared/returnUrls.js'
 
 describe('isAllowedReturnUrl', () => {
   test('accepts the hosted app and local dev servers', () => {
