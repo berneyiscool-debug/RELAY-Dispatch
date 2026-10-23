@@ -2151,7 +2151,7 @@
   box-sizing: border-box;
 }
 .dash-view-frame.dragging { box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
-/* Top band — represents where the gradient top bar (contextual actions) sits */
+/* Top band — marks the area the floating top bar (contextual actions) covers */
 .dash-view-topband {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -2905,7 +2905,8 @@ body.relay-assistant-open .relay-topbar-actions {
 .dash-zoom-pct:hover { color: var(--color-primary); }
 .dash-zoom-divider { width: 18px; height: 1px; background: var(--border-color); margin: 2px 0; }
 
-/* Gradient top bar — floats over the canvas, fading out downward */
+/* Floating top bar — carries the Getting Started pill and the edit-mode actions
+   over the canvas. No backdrop: widgets show through, only the controls take clicks. */
 .dash-topbar {
   position: absolute;
   top: 0;
@@ -2916,12 +2917,8 @@ body.relay-assistant-open .relay-topbar-actions {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 10px 12px 36px;
+  padding: 10px 12px;
   pointer-events: none; /* canvas stays draggable beneath; buttons re-enable below */
-  background: linear-gradient(to bottom,
-    rgba(247, 249, 251, 0.96) 0%,
-    rgba(247, 249, 251, 0.82) 45%,
-    rgba(247, 249, 251, 0) 100%);
 }
 .dash-topbar-left { display: flex; align-items: center; gap: 10px; }
 .dash-topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
@@ -2930,20 +2927,12 @@ body.relay-assistant-open .relay-topbar-actions {
 .dash-topbar button,
 .dash-topbar select { pointer-events: auto; }
 .dash-period-select {
-  height: 30px;
   width: auto;
   margin: 0;
-  padding: 0 28px 0 10px;
-  font-size: 13px;
+  padding: 0 20px 0 8px;
+  background-position: right 6px center;
 }
 .dash-topbar h1 { font-size: var(--font-size-3xl); }
-
-[data-theme-mode="dark"] .dash-topbar {
-  background: linear-gradient(to bottom,
-    rgba(9, 9, 11, 0.96) 0%,
-    rgba(9, 9, 11, 0.82) 45%,
-    rgba(9, 9, 11, 0) 100%);
-}
 
 /* Getting Started hub, rendered into the empty .dash-topbar-left slot.
    .dash-topbar is pointer-events: none so the canvas stays draggable, and only
@@ -5165,8 +5154,11 @@ body.relay-assistant-open .relay-topbar-actions {
   }
 }
 
-.dash-period { display: flex; align-items: center; gap: 8px; }
-.dash-asof { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+/* KPI period selector, relocated into the breadcrumb action bar beside the page
+   actions. Height/font-size come from the shared #breadcrumb-actions .form-select rule. */
+#breadcrumb-actions .dash-period { display: flex; align-items: center; gap: 6px; }
+#breadcrumb-actions .dash-period:empty { display: none !important; }
+#breadcrumb-actions .dash-asof { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
 .kpi-tile .kpi-loading { letter-spacing: 2px; }
 
 /* Dashboard quick actions: rendered as page-header actions so the shell moves
