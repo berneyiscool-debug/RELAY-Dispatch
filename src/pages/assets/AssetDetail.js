@@ -5,6 +5,8 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
+import { JOB_STATUS_BADGES } from '../../utils/statusColors.js';
+import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
 
 export function renderAssetDetail(container, { id, tab }) {
   const asset = store.getById('assets', id);
@@ -145,7 +147,50 @@ export function renderAssetDetail(container, { id, tab }) {
 
   function renderTabContent(currentAsset, logs, plans) {
     if (activeTab === 'history') {
+      // Jobs attach to an asset through jobs.assetId — set on the job form's
+      // Asset tab and by the recurring maintenance engine. Listing them here is
+      // what makes an asset's history answer "what has been done to this?".
+      const linkedJobs = jobsForAsset(store.getAll('jobs'), currentAsset.id);
+      const linkedJobsTotal = linkedJobs.reduce((sum, j) => sum + (parseFloat(j.laborCost) || 0) + (parseFloat(j.materialCost) || 0), 0);
+
       return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px var(--space-lg) 10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h4 style="margin:0; font-size:14px; font-weight:700; color:var(--text-primary)">Linked Jobs</h4>
+            <span class="badge badge-neutral">${linkedJobs.length}</span>
+          </div>
+          ${linkedJobs.length > 0 ? `<span class="text-tertiary" style="font-size:12px;">Job costs ${linkedJobsTotal > 0 ? `$${linkedJobsTotal.toFixed(2)}` : '—'}</span>` : ''}
+        </div>
+        ${linkedJobs.length === 0 ? `
+          <div class="text-center text-tertiary" style="padding:8px var(--space-lg) 24px; font-size:13px;">
+            No jobs have been linked to this asset yet. Link one from the Asset tab of a job.
+          </div>
+        ` : `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:110px">Job #</th>
+                <th style="width:110px">Date</th>
+                <th>Title</th>
+                <th style="width:120px">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${linkedJobs.map(j => `
+                <tr>
+                  <td class="font-medium"><a href="#/jobs/${escapeHTML(j.id)}" class="cell-link">${escapeHTML(j.number || '—')}</a></td>
+                  <td class="text-secondary">${jobActivityDate(j) ? new Date(jobActivityDate(j)).toLocaleDateString() : '—'}</td>
+                  <td><span class="text-secondary" style="font-size:13px">${escapeHTML(j.title || '—')}</span></td>
+                  <td><span class="badge ${JOB_STATUS_BADGES[j.status] || 'badge-neutral'}">${escapeHTML(j.status || 'Pending')}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `}
+
+        <div style="padding:16px var(--space-lg) 10px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+          <h4 style="margin:0; font-size:14px; font-weight:700; color:var(--text-primary)">Service Log</h4>
+        </div>
         <table class="data-table">
           <thead>
             <tr>

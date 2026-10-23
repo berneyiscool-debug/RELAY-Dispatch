@@ -7,6 +7,7 @@ import { dispatchChat } from '../../utils/aiEngine.js';
 import { isCloudUser } from '../../utils/aiTier.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
+import { statCard } from '../../components/StatCard.js';
 
 let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
 
@@ -1152,20 +1153,12 @@ function getLocalInsightsJSON(reportId, d) {
 
 // ── Helper rendering functions ──────────────────────────────────────────────
 
+// Reports' own KPI colours, mapped onto the shared stat card's chip tones so
+// every KPI in the app renders through one component.
+const KPI_TONE = { green: 'success', blue: 'primary', orange: 'warning', red: 'danger' };
+
 function kpi(label, value, icon, color) {
-  const colors = { green: 'var(--color-success)', blue: 'var(--color-primary)', orange: 'var(--color-warning)', red: 'var(--color-danger)' };
-  const bgs = { green: 'var(--color-success-bg)', blue: 'var(--color-primary-light)', orange: 'var(--color-warning-bg)', red: 'var(--color-danger-bg)' };
-  return `
-    <div class="stat-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div class="stat-label">${label}</div>
-        <div style="width:36px;height:36px;border-radius:var(--border-radius);background:${bgs[color]};display:flex;align-items:center;justify-content:center">
-          <span class="material-icons-outlined" style="font-size:18px;color:${colors[color]}">${icon}</span>
-        </div>
-      </div>
-      <div class="stat-value" style="font-size:var(--font-size-2xl)">${value}</div>
-    </div>
-  `;
+  return statCard({ label, value, icon, tone: KPI_TONE[color] || 'neutral' });
 }
 
 function miniStat(label, value, icon) {
