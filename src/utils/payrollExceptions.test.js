@@ -64,11 +64,15 @@ test('rostered staff who clocked out are not classified as not-yet-arrived', () 
     technicianIds: ['tech-clocked-out']
   }];
   store.cache.expectedWorkRosterDismissals = [];
+  // A finished session only counts for today if it started today, so the
+  // clock-in can't be "an hour ago" when the test runs just after midnight.
+  const now = Date.now();
+  const clockIn = Math.max(now - 60 * 60 * 1000, new Date(`${today}T00:00:00`).getTime());
   store.cache.timeClocks = [{
     id: 'session-clocked-out',
     technicianId: 'tech-clocked-out',
-    clockInAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    clockOutAt: new Date(Date.now() - 1000).toISOString(),
+    clockInAt: new Date(clockIn).toISOString(),
+    clockOutAt: new Date(Math.max(clockIn, now - 1000)).toISOString(),
     status: 'out'
   }];
 
