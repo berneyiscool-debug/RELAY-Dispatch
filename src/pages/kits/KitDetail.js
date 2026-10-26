@@ -8,6 +8,7 @@ import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getActiveKitTypes } from '../../utils/kitTypes.js';
 
@@ -581,7 +582,7 @@ export function renderKitDetail(container, { id }) {
             return `
               <tr>
                 <td><span class="badge ${isLabor ? 'badge-success' : 'badge-primary'}">${isLabor ? 'Labour' : 'Material'}</span></td>
-                <td>${escapeHTML(item.name || '—')}</td>
+                <td>${isLabor ? escapeHTML(item.name || '—') : entityLink({ kind: 'stock', id: item.stockId, name: item.name })}</td>
                 <td style="font-family:var(--font-mono)">${escapeHTML(item.sku || '—')}</td>
                 <td style="text-align:right">${item.qty || 0}</td>
                 <td style="text-align:right">$${(item.costPrice || 0).toFixed(2)}</td>

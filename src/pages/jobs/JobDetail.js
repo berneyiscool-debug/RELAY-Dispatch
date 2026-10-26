@@ -32,6 +32,7 @@ import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
 import { statCard } from '../../components/StatCard.js';
+import { entityLink } from '../../components/EntityLink.js';
 
 // Display an uploaded activity image at full size in a centered lightbox modal
 function showImageLightbox(src, name) {
@@ -746,8 +747,8 @@ export function renderJobDetail(container, { id, tab, form }) {
     container.innerHTML = `
       <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
         <div class="detail-header-meta" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; font-size:14px;">
-          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">account_circle</span> ${escapeHTML(job.customerName)}</span>
-          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">person_outline</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">account_circle</span> ${entityLink({ kind: 'customer', id: job.customerId, name: job.customerName })}</span>
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">person_outline</span> ${job.technicianName ? entityLink({ kind: 'technician', name: job.technicianName }) : 'Unassigned'}</span>
           ${job.isRecurring ? `
             <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
           ` : `
@@ -765,9 +766,9 @@ export function renderJobDetail(container, { id, tab, form }) {
             </span>
           ` : ''}
           ${proj ? `
-            <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px; color:var(--color-primary);">
+            <span style="display:inline-flex; align-items:center; gap:4px; color:var(--text-secondary);">
               <span class="material-icons-outlined" style="font-size:16px">folder_copy</span>
-              Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
+              Project: ${entityLink({ kind: 'project', id: proj.id, name: proj.number, label: proj.number })}
             </span>
           ` : ''}
         </div>
@@ -1298,7 +1299,7 @@ export function renderJobDetail(container, { id, tab, form }) {
               <input type="checkbox" class="dt-select-row" data-key="${escapeHTML(row.key)}" ${selectedKeys.includes(row.key) ? 'checked' : ''} />
             </td>
             <td class="text-secondary" title="${escapeHTML(dayLong)}">${escapeHTML(dayShort)}</td>
-            <td>${escapeHTML(row.technicianName || '—')}</td>
+            <td>${entityLink({ kind: 'technician', id: row.technicianId, name: row.technicianName })}</td>
             <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block" title="${escapeHTML(taskLabel)}">${escapeHTML(taskLabel)}</span></td>
             <td class="text-secondary">${escapeHTML(timeWindow(row.startTime, row.finishTime))}</td>
             <td><span class="badge ${isBooked ? 'badge-info' : 'badge-neutral'}">${row.type}</span></td>
@@ -1717,10 +1718,17 @@ export function renderJobDetail(container, { id, tab, form }) {
                   <div class="card-body" style="padding:12px 20px">
                     <table style="width:100%; border-collapse:collapse; font-size:13px;">
                       <tbody>
-                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.customerName)}</td></tr>
+                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${entityLink({ kind: 'customer', id: job.customerId, name: job.customerName })}</td></tr>
                         <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Contact</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.contactName || '—')}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (() => { const quoteLabel = escapeHTML(store.getById('quotes', job.quoteId)?.number || job.quoteNumber || job.quoteId); return hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}" style="text-decoration:none">${quoteLabel}</a>` : quoteLabel; })() : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? entityLink({ kind: 'site', id: job.customerId, name: job.siteAddress }) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (hasPermission('Quotes', 'view') ? entityLink({ kind: 'quote', id: job.quoteId, name: store.getById('quotes', job.quoteId)?.number || job.quoteNumber || job.quoteId }) : escapeHTML(store.getById('quotes', job.quoteId)?.number || job.quoteNumber || job.quoteId)) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Technician${(job.technicians || []).length > 1 ? 's' : ''}</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${(() => {
+                          const allocated = (job.technicians || []).filter(t => t && t.name);
+                          if (allocated.length > 0) {
+                            return allocated.map(t => entityLink({ kind: 'technician', id: t.id, name: t.name })).join(', ');
+                          }
+                          return job.technicianName ? entityLink({ kind: 'technician', name: job.technicianName }) : '—';
+                        })()}</td></tr>
                         <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Created</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${new Date(job.createdAt).toLocaleDateString()}</td></tr>
                       </tbody>
                     </table>
@@ -2101,7 +2109,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                           return `
                             <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-weight:600; display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:4px; font-size:12px">
                               <span class="material-icons-outlined" style="font-size:14px">engineering</span>
-                              ${escapeHTML(name)}
+                              ${entityLink({ kind: 'contractor', id, name })}
                             </span>
                           `;
                         }).join('');
@@ -2866,7 +2874,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                       ${allTimesheets.length ? allTimesheets.map(t => `
                         <tr>
                           <td>${t.startTime ? new Date(t.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(t.date).toLocaleDateString()}</td>
-                          <td>${escapeHTML(t.technicianName)}</td>
+                          <td>${entityLink({ kind: 'technician', id: t.technicianId, name: t.technicianName })}</td>
                           <td>${escapeHTML(getTsTaskName(t))}</td>
                           <td style="font-weight:600">${getTsHours(t).toFixed(2)}</td>
                         </tr>
@@ -3166,7 +3174,7 @@ export function renderJobDetail(container, { id, tab, form }) {
 
           return `
             <tr style="cursor:pointer" data-nav="#/jobs/${cj.id}">
-              <td><span class="cell-link font-medium">${escapeHTML(cjNumJ)}</span></td>
+              <td>${entityLink({ kind: 'job', id: cj.id, name: cjNumJ, label: cjNumJ, className: 'font-medium', stopPropagation: true })}</td>
               <td>${cj.scheduledDate ? new Date(cj.scheduledDate.includes('T') ? cj.scheduledDate : cj.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—'}</td>
               <td><span class="badge ${statusBadge[cj.status] || 'badge-neutral'}">${escapeHTML(cj.status || 'Pending')}</span></td>
               <td style="text-align:right">${cHours.toFixed(1)}h</td>
@@ -3481,7 +3489,7 @@ export function renderJobDetail(container, { id, tab, form }) {
               value: `$${contractPrice.toFixed(2)}`,
               icon: 'request_quote',
               tone: 'primary',
-              sub: acceptedQuote ? `From accepted quote ${escapeHTML(acceptedQuote.number)}` : 'Standard job pricing',
+              sub: acceptedQuote ? `From accepted quote ${entityLink({ kind: 'quote', id: acceptedQuote.id, name: acceptedQuote.number })}` : 'Standard job pricing',
             })}
             ${statCard({
               label: 'Invoiced to date',
@@ -3659,7 +3667,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                     const isShared = sharedCount > 1;
                     return `
                     <tr>
-                      <td style="font-weight:600"><a href="#/invoices/${i.id}" class="text-primary">${escapeHTML(i.number)}</a></td>
+                      <td style="font-weight:600">${entityLink({ kind: 'invoice', id: i.id, name: i.number })}</td>
                       <td>${escapeHTML(i.type || 'Standard')}${isShared ? ` <span class="badge badge-info" style="font-size:10px">Combined (${sharedCount} jobs)</span>` : ''}</td>
                       <td>${i.issueDate ? new Date(i.issueDate).toLocaleDateString() : '-'}</td>
                       <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '-'}</td>
@@ -4177,7 +4185,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                 <tbody>
                   ${allocatedMaterials.length ? allocatedMaterials.map(m => `
                     <tr>
-                      <td style="font-weight:500">${escapeHTML(m.partName)}</td>
+                      <td style="font-weight:500">${entityLink({ kind: 'stock', id: m.stockId, name: m.partName })}</td>
                       <td style="color:var(--text-secondary)">${escapeHTML(m.location || '—')}</td>
                       <td>${m.quantity}</td>
                       <td>$${(m.unitCost || 0).toFixed(2)}</td>
@@ -4201,8 +4209,8 @@ export function renderJobDetail(container, { id, tab, form }) {
                 <tbody>
                   ${pos.length ? pos.map(p => `
                     <tr>
-                      <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
-                      <td>${escapeHTML(p.supplierName || '—')}</td>
+                      <td>${entityLink({ kind: 'purchaseOrder', id: p.id, name: p.number })}</td>
+                      <td>${entityLink({ kind: 'supplier', id: p.supplierId, name: p.supplierName })}</td>
                       <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
                       <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
                       <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
@@ -4674,7 +4682,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                   const isShared = sharedCount > 1;
                   return `
                   <tr>
-                    <td><a href="#/invoices/${escapeHTML(i.id)}">${escapeHTML(i.number)}</a></td>
+                    <td>${entityLink({ kind: 'invoice', id: i.id, name: i.number })}</td>
                     <td><span class="badge badge-neutral">${escapeHTML(i.invoiceType || 'Standard')}</span>${isShared ? ` <span class="badge badge-info" style="font-size:10px">Combined (${sharedCount} jobs)</span>` : ''}</td>
                     <td>${i.issueDate ? i.issueDate.split('T')[0] : '—'}</td>
                     <td>${i.dueDate ? i.dueDate.split('T')[0] : '—'}</td>

@@ -19,6 +19,7 @@ import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
+import { entityLink } from '../../components/EntityLink.js';
 
 export function renderQuoteDetail(container, params) {
   const { id, customerId, type, tab } = params;
@@ -103,6 +104,10 @@ export function renderQuoteDetail(container, params) {
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
   const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
+  // A converted quote has no jobId of its own — the job records the quote it came
+  // from — so look it up the other way round.
+  const quoteJob = isTemplate ? null : (store.getAll('jobs') || []).find(j => j.quoteId === id) || null;
+  const quoteInvoices = isTemplate ? [] : (store.getAll('invoices') || []).filter(i => i.originalQuoteId === id);
 
   function render() {
     container.innerHTML = `
@@ -114,7 +119,9 @@ export function renderQuoteDetail(container, params) {
         backPath: isTemplate ? '/settings?tab=quotes' : '',
         backLabel: 'Back to Settings',
         metaHtml: isTemplate ? '' : `
-          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(quote.customerName)}</span>` : ''}
+          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${entityLink({ kind: 'customer', id: quote.customerId, name: quote.customerName })}</span>` : ''}
+          ${quoteJob ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${entityLink({ kind: 'job', id: quoteJob.id, name: quoteJob.number })}</span>` : ''}
+          ${quoteInvoices.length ? `<span><span class="material-icons-outlined" style="font-size:14px">receipt_long</span> ${quoteInvoices.map(i => entityLink({ kind: 'invoice', id: i.id, name: i.number })).join(', ')}</span>` : ''}
           <span class="badge ${sb[quote.status] || 'badge-neutral'}">${escapeHTML(quote.status || 'Draft')}</span>
         `,
         actionsHtml: isTemplate ? `

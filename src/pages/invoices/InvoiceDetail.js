@@ -22,6 +22,7 @@ import { documentAttachment } from '../../utils/documentPdf.js';
 import { HOURS_SOURCE, hoursSourceLabel } from '../../utils/invoiceLabour.js';
 import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState, xeroHoldsPayment, xeroInvoiceUrl, retryInvoiceSync } from '../../utils/xero.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
+import { entityLink } from '../../components/EntityLink.js';
 
 export function renderInvoiceDetail(container, params) {
   const { id, tab } = params;
@@ -249,6 +250,12 @@ export function renderInvoiceDetail(container, params) {
     const paidAmount = (invoice.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
     const balanceDue = Math.max(0, (invoice.total || 0) - paidAmount);
     const headerJobRefs = store.invoiceJobNumbers(invoice);
+    // Link through to the jobs when the records are still around; a combined
+    // invoice created before job ids were stored keeps the numbers as text.
+    const headerJobRecords = store.getJobsForInvoice(invoice);
+    const headerJobRefsHtml = headerJobRecords.length
+      ? headerJobRecords.map(j => entityLink({ kind: 'job', id: j.id, name: j.number })).join(', ')
+      : headerJobRefs.map(n => entityLink({ kind: 'job', name: n })).join(', ');
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -260,8 +267,8 @@ export function renderInvoiceDetail(container, params) {
         iconBgColor: 'var(--color-success-bg)',
         iconTextColor: 'var(--color-success)',
         metaHtml: `
-          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(invoice.customerName)}</span>` : ''}
-          ${headerJobRefs.length ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${escapeHTML(headerJobRefs.join(', '))}</span>` : ''}
+          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${entityLink({ kind: 'customer', id: invoice.customerId, name: invoice.customerName })}</span>` : ''}
+          ${headerJobRefs.length ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${headerJobRefsHtml}</span>` : ''}
           <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${escapeHTML(invoice.status || 'Draft')}</span>
         `,
         actionsHtml: `
@@ -362,7 +369,7 @@ export function renderInvoiceDetail(container, params) {
           <div style="display:flex; align-items:center; gap:10px">
             <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">request_quote</span>
             <div>
-              <div style="font-weight:normal; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:normal; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
+              <div style="font-weight:normal; color:var(--color-primary-dark); font-size:14px">Linked Quote: ${entityLink({ kind: 'quote', id: invoice.originalQuoteId, name: invoice.originalQuoteNumber })}</div>
               <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
             </div>
           </div>

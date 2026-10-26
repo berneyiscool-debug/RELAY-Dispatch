@@ -9,6 +9,7 @@ import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 
 export function renderProjectDetail(container, params) {
   const { id, tab } = params;
@@ -139,7 +140,7 @@ export function renderProjectDetail(container, params) {
         iconTextColor: 'var(--color-primary)',
         metaHtml: `
           <span style="font-family:var(--font-mono)">${escapeHTML(project.number)}</span>
-          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(project.customerName || 'N/A')}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${project.customerName ? entityLink({ kind: 'customer', id: project.customerId, name: project.customerName }) : 'N/A'}</span>
           <span class="badge ${statusClass}">${escapeHTML(project.status || 'In Progress')}</span>
         `,
         actionsHtml: `
@@ -270,10 +271,10 @@ export function renderProjectDetail(container, params) {
                           <input type="checkbox" class="select-stage-checkbox" data-id="${job.id}" ${isSelected ? 'checked' : ''} />
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--color-primary); text-decoration:none">${escapeHTML(job.number)}</a>
+                          ${entityLink({ kind: 'job', id: job.id, name: job.number })}
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(job.title)}</a>
+                          ${entityLink({ kind: 'job', id: job.id, name: job.title })}
                         </td>
                         <td>
                           <span style="font-size:12px; font-weight:400; color:var(--text-secondary)">

@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { xeroEnabled, getXeroStatusCached, fetchStockSyncJobs, xeroStockSyncState, retryStockSync, pushStockToXero } from '../../utils/xero.js';
+import { entityLink } from '../../components/EntityLink.js';
 
 export function renderStockDetail(container, { id }) {
   const item = store.getById('stock', id);
@@ -73,7 +74,7 @@ export function renderStockDetail(container, { id }) {
               ${r('SKU', escapeHTML(item.sku))}
               ${r('Category', escapeHTML(item.category))}
               ${r('Unit', escapeHTML(item.unit))}
-              ${r('Supplier', escapeHTML(item.supplier))}
+              ${r('Supplier', item.supplier ? entityLink({ kind: 'supplier', id: item.supplierId, name: item.supplier }) : '')}
             </div>
           </div>
         </div>

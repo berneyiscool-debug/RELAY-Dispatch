@@ -842,6 +842,29 @@ select.badge option {
 .data-table td .cell-link:hover {
   text-decoration: underline;
 }
+/* A reference to another record, anywhere on a page (components/EntityLink.js).
+   Deliberately not scoped to a table: detail pages put these in definition rows,
+   cards and headers too. The ink stays the surrounding text so a page naming six
+   customers does not read as six alerts — the underline on hover, plus the pointer,
+   is what says "this goes somewhere". Also restores the pointer the global
+   `* { cursor: default }` reset removes from every anchor in the app. */
+.entity-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.entity-link:hover,
+.entity-link:focus-visible {
+  color: inherit;
+  text-decoration: underline;
+}
+.entity-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 /* Numeric columns: right-aligned with tabular figures (set col.align:'right'). */
 .data-table td.num,
 .data-table th.num {
