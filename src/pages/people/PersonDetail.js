@@ -12,6 +12,7 @@ import { portalInviteEmail } from '../../utils/emailTemplates.js';
 import { customerPortalUrl, savedCustomerPortalUrl } from '../../utils/portalLinks.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
@@ -653,7 +654,7 @@ export function renderPersonDetail(container, { id, tab }) {
               <tbody>
                 ${assets.map((a, i) => `
                   <tr>
-                    <td class="font-medium"><a href="#/assets/${escapeHTML(a.id)}" class="cell-link">${escapeHTML(a.name)}</a></td>
+                    <td class="font-medium">${entityLink({ kind: 'asset', id: a.id, name: a.name })}</td>
                     <td style="font-family:var(--font-mono)" class="text-secondary">${escapeHTML(a.serial || '—')}</td>
                     <td>${escapeHTML(a.site || '—')}</td>
                     <td>${a.installDate ? new Date(a.installDate).toLocaleDateString() : '—'}</td>
@@ -845,6 +846,11 @@ function renderRelatedTable(items, cols, module, emptyMsg) {
     return `<div class="card"><div class="empty-state" style="padding:32px"><span class="material-icons-outlined">inbox</span><h3>${emptyMsg}</h3></div></div>`;
   }
 
+  // The row is already a click target; the id column is also a real link, so it
+  // can be opened in another tab and reads as something you can click.
+  const RELATION_KIND = { jobs: 'job', quotes: 'quote', invoices: 'invoice' };
+  const kind = RELATION_KIND[module];
+
   const statusBadge = (status) => {
     const cls = { 'Active': 'success', 'Completed': 'success', 'Paid': 'success', 'Accepted': 'success',
       'In Progress': 'primary', 'Sent': 'info', 'Scheduled': 'info',
@@ -863,9 +869,11 @@ function renderRelatedTable(items, cols, module, emptyMsg) {
           <tbody>
             ${items.map(item => `
               <tr style="cursor:pointer" data-nav="#/${module}/${escapeHTML(item.id)}">
-                ${cols.map(c => {
+                ${cols.map((c, colIdx) => {
                   let val = item[c.key];
-                  if (c.badge) val = statusBadge(val);
+                  if (colIdx === 0 && kind) {
+                    val = entityLink({ kind, id: item.id, name: val, stopPropagation: true, className: 'font-medium' });
+                  } else if (c.badge) val = statusBadge(val);
                   else if (c.format === 'currency') val = `$${(val || 0).toLocaleString('en-AU', { minimumFractionDigits: 2 })}`;
                   else if (c.format === 'date') val = val ? new Date(val).toLocaleDateString() : '—';
                   else val = escapeHTML(val);
