@@ -17,7 +17,7 @@ import { router } from '../router.js';
 import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription, trialActive, trialDaysLeft, trialEndTime } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
-import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan } from '../utils/xero.js';
+import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan, fetchStockSyncJobs, xeroStockAttention, pushStockToXero, importXeroItems, retryStockSync } from '../utils/xero.js';
 import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
@@ -4440,6 +4440,7 @@ export function renderSettings(container) {
           <div id="xero-card"></div>
           <div id="xero-attention"></div>
           <div id="xero-defaults"></div>
+          <div id="xero-items"></div>
           <div id="xero-cc-map"></div>
         </div>`;
       renderXeroCard(tc);
@@ -4471,7 +4472,7 @@ export function renderSettings(container) {
     function renderXeroCard(page) {
       const el = page.querySelector('#xero-card');
       if (!el) return;
-      const slots = ['#xero-attention', '#xero-defaults', '#xero-cc-map'].map(s => page.querySelector(s));
+      const slots = ['#xero-attention', '#xero-defaults', '#xero-items', '#xero-cc-map'].map(s => page.querySelector(s));
       const clearSlots = () => slots.forEach(s => { if (s) s.innerHTML = ''; });
       // Read like renderSettings does: this page is also redrawn from its own
       // buttons, which have no renderSettings locals to pass in.
@@ -4609,6 +4610,7 @@ export function renderSettings(container) {
         if (!isAdmin) { clearSlots(); return; }
         renderXeroAttention(page, att, () => renderXeroCard(page));
         renderXeroSetup(page, st);
+        renderXeroItems(page);
       };
 
       getXeroStatus().then(render).catch((err) => {
@@ -4690,6 +4692,83 @@ export function renderSettings(container) {
       });
     }
 
+    // Stock as Xero items: how many are across, what failed, the backfill for
+    // stock added before connecting, and the one-off import from Xero.
+    async function renderXeroItems(page) {
+      const el = page.querySelector('#xero-items');
+      if (!el) return;
+      let jobs;
+      try { jobs = await fetchStockSyncJobs({ force: true }); } catch (_) { jobs = new Map(); }
+      if (!el.isConnected) return;
+      const stock = store.getAll('stock') || [];
+      const att = xeroStockAttention(stock, jobs);
+      const shown = att.failed.slice(0, 5);
+      const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+      el.innerHTML = `
+        <div class="card" style="max-width:100%">
+          <div class="card-header"><h4 style="margin:0">Stock as Xero items</h4></div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);margin:0 0 12px;">Each stock item is an item in Xero with the same code (its SKU, when it has one), so material lines on invoices show which item was sold. RELAY keeps the quantities; Xero doesn't track them.</p>
+            <div style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">${escapeHTML(`${att.inXero} of ${plural(stock.length, 'item')} in Xero.`)}</div>
+            ${shown.map(f => `
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border-color);">
+                <span class="material-icons-outlined" style="color:var(--color-danger);font-size:20px;" aria-hidden="true">sync_problem</span>
+                <div style="flex:1;min-width:0;"><div style="font-weight:600;">${escapeHTML(f.name || 'Stock item')}</div><div style="color:var(--text-secondary);font-size:13px;">${escapeHTML(f.reason)}</div></div>
+                <button class="btn btn-secondary btn-sm" data-item-retry="${escapeHTML(f.id)}">Retry</button>
+                <a class="btn btn-outline btn-sm" href="#/stock/${encodeURIComponent(f.id)}">Open</a>
+              </div>`).join('')}
+            ${att.failed.length > shown.length ? `<div style="color:var(--text-tertiary);font-size:13px;padding:6px 0;">and ${att.failed.length - shown.length} more</div>` : ''}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+              ${att.missing ? `<button class="btn btn-primary btn-sm" id="xero-items-backfill"><span class="material-icons-outlined" aria-hidden="true">sync</span> Send ${escapeHTML(plural(att.missing, 'item'))} to Xero</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="xero-items-import"><span class="material-icons-outlined" aria-hidden="true">download</span> Import items from Xero</button>
+            </div>
+          </div>
+        </div>`;
+
+      el.querySelectorAll('[data-item-retry]').forEach(btn => btn.addEventListener('click', (e) => {
+        const b = e.currentTarget;
+        xeroBusy(b, async () => {
+          const n = await retryStockSync(b.dataset.itemRetry);
+          showToast(n ? 'Queued to sync to Xero again.' : 'Nothing to retry.', 'info');
+          renderXeroItems(page);
+        }, 'Could not retry');
+      }));
+      el.querySelector('#xero-items-backfill')?.addEventListener('click', (e) => {
+        const b = e.currentTarget;
+        xeroBusy(b, async () => {
+          const confirmed = await showConfirm(
+            `${plural(att.missing, 'stock item')} will be added to Xero, or linked to a Xero item with the same code or name.`,
+            { title: 'Send stock to Xero', confirmLabel: 'Send to Xero' });
+          if (!confirmed) { b.disabled = false; return; }
+          const n = await pushStockToXero('missing');
+          showToast(`${plural(n, 'item')} queued for Xero`, 'success');
+          renderXeroItems(page);
+        }, 'Could not send stock to Xero');
+      });
+      el.querySelector('#xero-items-import')?.addEventListener('click', (e) => {
+        const b = e.currentTarget;
+        xeroBusy(b, async () => {
+          const preview = await importXeroItems('preview');
+          if (!preview.linked && !preview.created) {
+            showToast(preview.already_linked ? 'Every Xero item is already linked to stock.' : 'Xero has no items to import.', 'info');
+            b.disabled = false;
+            return;
+          }
+          const parts = [
+            preview.linked ? `${plural(preview.linked, 'Xero item')} will be linked to stock with the same SKU or name` : '',
+            preview.created ? `${plural(preview.created, 'new stock item')} will be added with a quantity of 0` : '',
+          ].filter(Boolean);
+          const confirmed = await showConfirm(`${parts.join(', and ')}. Nothing in Xero changes.`,
+            { title: 'Import items from Xero', confirmLabel: 'Import' });
+          if (!confirmed) { b.disabled = false; return; }
+          const result = await importXeroItems('confirm');
+          showToast(`Imported from Xero: ${result.linked} linked, ${result.created} added`, 'success');
+          renderXeroItems(page);
+        }, 'Could not import items from Xero');
+      });
+    }
+
     // How invoices are coded, where payments land, and each cost center's Xero
     // account — all picked from the organisation's own chart of accounts.
     async function renderXeroSetup(page, st = {}) {
@@ -4746,6 +4825,12 @@ export function renderSettings(container) {
                 </div>
               </div>
 
+              <h5 style="margin:22px 0 4px;">Stock items</h5>
+              <p style="color:var(--text-secondary);margin:0 0 14px;">Stock goes to Xero as items selling into the material lines account. Choose a purchases account to add each item's cost price too.</p>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+                ${accountSelect('xero-purchases', 'Purchases account', xa.expenseAccounts || [], d.purchasesAccountCode, 'Usually Purchases or Cost of Goods Sold.', 'Don\'t add purchase details')}
+              </div>
+
               <h5 style="margin:22px 0 4px;">Where payments land</h5>
               <p style="color:var(--text-secondary);margin:0 0 14px;">The Xero account each payment is recorded against, ready to match to your bank feed.</p>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
@@ -4772,6 +4857,7 @@ export function renderSettings(container) {
               defaultSalesAccountCode: defaultsEl.querySelector('#xero-default-sales').value,
               labourAccountCode: defaultsEl.querySelector('#xero-labour').value,
               materialsAccountCode: defaultsEl.querySelector('#xero-materials').value,
+              purchasesAccountCode: defaultsEl.querySelector('#xero-purchases').value,
               taxTypeTaxed: defaultsEl.querySelector('#xero-gst').value,
               paymentAccountCode: defaultsEl.querySelector('#xero-payment-account').value,
               stripeAccountCode: defaultsEl.querySelector('#xero-stripe-account').value,

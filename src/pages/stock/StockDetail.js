@@ -9,6 +9,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { xeroEnabled, getXeroStatusCached, fetchStockSyncJobs, xeroStockSyncState, retryStockSync, pushStockToXero } from '../../utils/xero.js';
 
 export function renderStockDetail(container, { id }) {
   const item = store.getById('stock', id);
@@ -52,6 +53,8 @@ export function renderStockDetail(container, { id }) {
         <button class="btn btn-danger btn-icon" id="btn-delete-stock"><span class="material-icons-outlined">delete</span></button>
       `
     })}
+
+    ${xeroEnabled() ? '<div id="xero-stock-row"></div>' : ''}
 
     <div class="grid-3" style="align-items: start;">
       <div style="grid-column: span 2; display:flex; flex-direction:column; gap:20px">
@@ -116,6 +119,66 @@ export function renderStockDetail(container, { id }) {
       </div>
     </div>
   `;
+
+  renderXeroRow();
+
+  // Where this item stands with Xero: only shown once the company is known to
+  // be connected. Filled after the page draws so a slow lookup never blocks it.
+  async function renderXeroRow() {
+    const el = container.querySelector('#xero-stock-row');
+    if (!el) return;
+    let jobs;
+    try {
+      const st = await getXeroStatusCached();
+      if (!st?.connected) return;
+      jobs = (await fetchStockSyncJobs()).get(String(item.id));
+    } catch (_) {
+      return; // the item works without it
+    }
+    if (!el.isConnected) return;
+    const s = xeroStockSyncState(item, jobs);
+    const synced = item.xeroSyncedAt ? new Date(item.xeroSyncedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const bits = [
+      s.detail,
+      s.state === 'synced' || s.state === 'warning' ? (synced ? `Last synced ${synced}.` : '') : '',
+    ].filter(Boolean);
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:var(--space-lg);">
+        <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;">
+          <span class="material-icons-outlined" style="color:${s.tone === 'neutral' ? 'var(--text-secondary)' : `var(--color-${s.tone})`};" aria-hidden="true">${s.icon}</span>
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:600;">Xero: ${escapeHTML(s.label)}</div>
+            ${bits.length ? `<div style="color:var(--text-tertiary);font-size:12px;">${escapeHTML(bits.join(' '))}</div>` : ''}
+          </div>
+          ${s.state === 'error' && jobs?.failed?.length ? `<button class="btn btn-secondary btn-sm" id="btn-xero-retry"><span class="material-icons-outlined" aria-hidden="true">replay</span> Retry</button>` : ''}
+          ${s.state === 'missing' ? `<button class="btn btn-secondary btn-sm" id="btn-xero-send"><span class="material-icons-outlined" aria-hidden="true">sync</span> Send to Xero</button>` : ''}
+        </div>
+      </div>`;
+    el.querySelector('#btn-xero-retry')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const n = await retryStockSync(item.id);
+        showToast(n ? 'Queued to sync to Xero again.' : 'Nothing to retry.', 'info');
+        renderXeroRow();
+      } catch (err) {
+        showToast(err.message || 'Could not retry', 'error');
+        btn.disabled = false;
+      }
+    });
+    el.querySelector('#btn-xero-send')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await pushStockToXero([item.id]);
+        showToast('Queued for Xero.', 'success');
+        renderXeroRow();
+      } catch (err) {
+        showToast(err.message || 'Could not send to Xero', 'error');
+        btn.disabled = false;
+      }
+    });
+  }
 
   container.querySelector('#btn-edit-stock').addEventListener('click', () => router.navigate(`/stock/${id}/edit`));
   container.querySelector('#btn-delete-stock').addEventListener('click', () => {

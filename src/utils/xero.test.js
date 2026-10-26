@@ -16,6 +16,9 @@ import {
   xeroAttention,
   saveXeroDefaults,
   costCenterTrackingPlan,
+  xeroStockSyncState,
+  xeroStockBadgeHtml,
+  xeroStockAttention,
 } from './xero.js';
 import { escapeHTML } from './security.js';
 
@@ -240,5 +243,40 @@ describe('xeroAttention()', () => {
     assert.deepEqual(att.failed.map((f) => [f.number, f.needsSetting]), [['INV-C', true], ['INV-E', false]]);
     assert.equal(att.failed[1].reason, 'Invoice # must be unique.');
     assert.deepEqual(xeroAttention([], new Map()), { failed: [], missing: 0, inXero: 0, lastSyncedAt: null });
+  });
+});
+
+describe('stock ↔ Xero items', () => {
+  test('purchasesAccountCode is a saved default', () => {
+    assert.deepEqual(normaliseXeroDefaults({ purchasesAccountCode: ' 300 ' }), { purchasesAccountCode: '300' });
+  });
+
+  test('sync state for each stage of a stock item', () => {
+    const none = { pending: false, failed: [] };
+    assert.equal(xeroStockSyncState({ id: 'S1' }, none).state, 'missing');
+    assert.equal(xeroStockSyncState({ id: 'S1' }, { pending: true, failed: [] }).state, 'pending');
+    const failed = xeroStockSyncState({ id: 'S1' }, { pending: false, failed: [{ id: 9, lastError: 'Bad account' }] });
+    assert.equal(failed.state, 'error');
+    assert.equal(failed.detail, 'Bad account');
+    const synced = xeroStockSyncState({ id: 'S1', xeroItemId: 'X1', xeroItemCode: 'TV-15' }, none);
+    assert.equal(synced.state, 'synced');
+    assert.match(synced.detail, /TV-15/);
+    assert.equal(xeroStockSyncState({ id: 'S1', xeroItemId: 'X1', xeroSyncError: 'Renamed in Xero' }, none).state, 'warning');
+  });
+
+  test('the stock badge uses words and an icon', () => {
+    const html = xeroStockBadgeHtml({ id: 'S1', xeroItemId: 'X1' }, undefined, escapeHTML);
+    assert.match(html, /In Xero/);
+    assert.match(html, /cloud_done/);
+  });
+
+  test('attention counts what is in Xero, missing and failed', () => {
+    const jobs = groupInvoiceJobs([{ id: 1, entity_id: 'S3', status: 'failed', last_error: 'Code in use' }]);
+    const summary = xeroStockAttention([
+      { id: 'S1', name: 'A', xeroItemId: 'X1' },
+      { id: 'S2', name: 'B' },
+      { id: 'S3', name: 'C' },
+    ], jobs);
+    assert.deepEqual(summary, { inXero: 1, missing: 1, failed: [{ id: 'S3', name: 'C', reason: 'Code in use' }] });
   });
 });

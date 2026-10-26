@@ -173,14 +173,18 @@ function tasklistSource(job, hoursSource = HOURS_SOURCE.ESTIMATED) {
     for (const material of materials) {
       const qty = Number(material.quantity ?? 1) || 1;
       const rate = calculateBillableMaterialPrice(Number(material.unitCost) || 0, settings);
-      lines.push({
+      const line = {
         id: store.generateId(),
         description: material.name || material.partName || 'Material',
         type: 'material',
         qty,
         rate,
         total: roundCurrency(qty * rate),
-      });
+      };
+      // The stock row, so the Xero sync can put its item code on the line.
+      const stockId = material.stockId || material.partId;
+      if (stockId) line.stockId = String(stockId);
+      lines.push(line);
     }
     if (additionalCost > 0) {
       lines.push({

@@ -10,7 +10,7 @@ import { canEditTracking } from '../_xero/tracking.js'
 // ============================================
 // RELAY — XERO SYNC WORKER
 // ============================================
-// Drains xero_sync_jobs (filled by the invoices/customers triggers) into Xero.
+// Drains xero_sync_jobs (filled by the invoices/customers/stock triggers) into Xero.
 // Two callers:
 //   * the scheduler, every minute, with header x-relay-cron: <XERO_CRON_SECRET>
 //     → every company's due jobs, plus a keep-alive refresh for idle connections
@@ -87,6 +87,13 @@ function supabaseAdapter(admin: any) {
       if (error) throw new Error(error.message)
       return data || []
     },
+    getStock: (id: string) => one(admin.from('stock').select('*').eq('id', id)),
+    getStockItems: async (companyId: string, ids: string[]) => {
+      if (!ids.length) return []
+      const { data, error } = await admin.from('stock').select('*').eq('company_id', companyId).in('id', ids)
+      if (error) throw new Error(error.message)
+      return data || []
+    },
     getCostCenters: async (companyId: string) => {
       const { data, error } = await admin.from('cost_centers').select('*').eq('company_id', companyId)
       if (error) throw new Error(error.message)
@@ -101,6 +108,7 @@ function supabaseAdapter(admin: any) {
     updateInvoice: (id: string, fields: Record<string, unknown>) => write(admin.from('invoices').update(fields).eq('id', id)),
     updateCustomer: (id: string, fields: Record<string, unknown>) => write(admin.from('customers').update(fields).eq('id', id)),
     updateCostCenter: (id: string, fields: Record<string, unknown>) => write(admin.from('cost_centers').update(fields).eq('id', id)),
+    updateStock: (id: string, fields: Record<string, unknown>) => write(admin.from('stock').update(fields).eq('id', id)),
     finishJob: (id: number, fields: Record<string, unknown>) =>
       write(admin.from('xero_sync_jobs').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)),
     markConnection: (companyId: string, fields: Record<string, unknown>) => saveConnection(admin, companyId, fields),
