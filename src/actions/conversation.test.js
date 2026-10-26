@@ -81,3 +81,38 @@ test('a question with no question, or an unknown field, is rejected', async () =
     /Unrecognised input field/
   );
 });
+
+// `update_plan` is the checklist brny shows before a multi-step job. It must be
+// offered to everyone, change nothing, and never stop the turn or ask approval,
+// or laying out a plan would itself stall the work it describes.
+test('update_plan is a read-only, always-offered action that never pauses the turn', () => {
+  const action = getAction('update_plan');
+  assert.ok(action, 'update_plan must be registered');
+  assert.equal(action.readOnly, true);
+  assert.equal(action.risky, false);
+  assert.equal(action.interactive, false);
+  assert.ok(toToolDefinitions(CTX).some((tool) => tool.name === 'update_plan'));
+});
+
+test('update_plan hands the steps straight back and summarises progress', async () => {
+  const steps = [
+    { title: 'Find Harbour Electrical', status: 'done' },
+    { title: 'Book Jake in for Friday', status: 'in_progress' },
+    { title: 'Add a to-do for the quote', status: 'pending' },
+  ];
+  const outcome = await executeAction('update_plan', { steps }, CTX);
+  assert.deepEqual(outcome.result, { planned: true, steps });
+  assert.equal(outcome.summary, '1 of 3 steps done');
+});
+
+test('update_plan rejects a status the panel cannot draw', async () => {
+  await assert.rejects(() => executeAction('update_plan', { steps: [{ title: 'Find them', status: 'started' }] }, CTX));
+  await assert.rejects(() => executeAction('update_plan', {}, CTX), /steps is required/);
+});
+
+test('the update_plan description says to plan first, alongside the first tool', () => {
+  const { description } = getAction('update_plan');
+  assert.match(description, /Call it first with every step/);
+  assert.match(description, /in the same response as the first tool/);
+  assert.match(description, /Skip it for a single lookup/);
+});

@@ -456,6 +456,42 @@ test('an aborted turn stops before the first request', async () => {
   });
 });
 
+// Stop cancels the request in flight, and the Supabase client reports that as a
+// failed send. Read as an error, it dropped the panel into the offline
+// assistant with "Failed to send a request to the Edge Function".
+test('a turn stopped mid-request is aborted, not an error', async () => {
+  await withCloud(async () => {
+    const controller = new AbortController();
+    requests = [];
+    supabase.functions.invoke = async (name, options) => {
+      requests.push(options.body);
+      controller.abort();
+      return { data: null, error: new Error('Failed to send a request to the Edge Function') };
+    };
+
+    const turn = await runTurn({ prompt: 'Anything', briefing: false, tools: [], signal: controller.signal });
+
+    assert.equal(turn.status, 'aborted');
+    assert.equal(turn.error, null);
+    assert.equal(requests.length, 1);
+  });
+});
+
+test('a failed send with no stop is still an error', async () => {
+  await withCloud(async () => {
+    requests = [];
+    supabase.functions.invoke = async (name, options) => {
+      requests.push(options.body);
+      return { data: null, error: new Error('Failed to send a request to the Edge Function') };
+    };
+
+    const turn = await runTurn({ prompt: 'Anything', briefing: false, tools: [] });
+
+    assert.equal(turn.status, 'error');
+    assert.match(turn.error.message, /Failed to send a request/);
+  });
+});
+
 test('a daily allowance surfaces as a limit and keeps the work already done', async () => {
   await withCloud(async () => {
     requests = [];

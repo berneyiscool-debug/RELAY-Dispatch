@@ -205,6 +205,7 @@ const MAP = {
   space_bar: 'Space',
   space_dashboard: 'LayoutDashboard',
   speed: 'Gauge',
+  stop_circle: 'CircleStop',
   storage: 'Database',
   subdirectory_arrow_right: 'CornerDownRight',
   support_agent: 'Headset',

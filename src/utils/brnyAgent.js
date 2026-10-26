@@ -273,6 +273,12 @@ export async function runTurn(options = {}) {
         maxTokens: options.maxTokens,
       });
     } catch (err) {
+      // Stopping cancels the request in flight, and the engine reports that as a
+      // failed send. It is the user's own stop, not a broken turn.
+      if (signal && signal.aborted) {
+        status = 'aborted';
+        break;
+      }
       // A daily allowance is not a broken turn: keep the steps and the usage so
       // the panel can still show what was done, and let the caller render the
       // limit card from `error`.

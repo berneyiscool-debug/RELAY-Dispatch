@@ -5,10 +5,45 @@
  * a tool call, but its "result" is a question rather than a write. The agent loop
  * treats `interactive` outcomes as the end of a turn: brny stops, the card is
  * shown, and the answer starts the next turn.
+ *
+ * `update_plan` changes nothing either. It lays out the steps of a multi-step
+ * job before brny starts, then ticks them off, so the panel can show the whole
+ * plan at once and the user can see brny is partway through, not stuck.
  */
 
 import { defineAction } from './registry.js';
-import { objectSchema, str, list } from './schema.js';
+import { objectSchema, objectOf, str, list, enumOf } from './schema.js';
+
+export const PLAN_STATUSES = ['pending', 'in_progress', 'done'];
+
+defineAction({
+  name: 'update_plan',
+  title: 'Plan',
+  description:
+    'Show the user your plan for a job that takes more than one tool call, and keep it current. Call it first with every step you intend to take — the first one in_progress, the rest pending — in the same response as the first tool that step needs. Each time you move on, call it again in the same response as the next step\'s tool, with the finished step done and the next one in_progress. Send the whole list every time. Steps are short, plain actions a tradie would recognise ("Find Harbour Electrical", "Book Jake in for Friday"), not tool names. Skip it for a single lookup or a one-tool job. It changes no records.',
+  readOnly: true,
+  inputSchema: objectSchema(
+    {
+      steps: list(
+        objectOf(
+          {
+            title: str('The step, a few words long.'),
+            status: enumOf(PLAN_STATUSES, 'pending, in_progress or done.'),
+          },
+          'One step of the plan.',
+          ['title', 'status']
+        ),
+        'Every step of the plan in order, two to eight of them.'
+      ),
+    },
+    ['steps']
+  ),
+  summarize: (input) => {
+    const steps = input.steps || [];
+    return `${steps.filter((s) => s.status === 'done').length} of ${steps.length} steps done`;
+  },
+  run: async ({ steps }) => ({ planned: true, steps }),
+});
 
 defineAction({
   name: 'ask_user',
