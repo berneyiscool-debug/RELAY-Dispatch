@@ -1852,12 +1852,14 @@ export async function openRelay() {
           <div class="relay-thread" id="relay-thread"></div>
           <div class="relay-attach-row" id="relay-attach-row"></div>
           <div class="relay-input-wrap">
-            <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a brny Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
-            <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-            <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask brny">${escapeHtml(draftVal)}</textarea>
-            <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
+            <textarea id="relay-input" class="relay-input" rows="1" placeholder="How can brny help?">${escapeHtml(draftVal)}</textarea>
+            <div class="relay-composer-bar">
+              <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a brny Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">add</span></button>
+              <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
+              <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
+            </div>
           </div>
-          <div class="relay-foot">This is an early version. You may need to be patient</div>
+          <div class="relay-foot">brny can make mistakes. Check anything important.</div>
         </div>
       </div>
       </div>
@@ -1951,6 +1953,7 @@ export async function openRelay() {
       addMessage(thread, 'user', displayText);
       input.value = '';
       autoGrow(input);
+      syncComposer();
 
       // Attachments run through Deputy's vision pipeline, which is Max-only.
       if (!hasDeputyMax()) {
@@ -1986,6 +1989,7 @@ export async function openRelay() {
     addMessage(thread, 'user', text);
     input.value = '';
     autoGrow(input);
+    syncComposer();
 
     // Deputy Max: a routine request triggers a guided interview instead of a
     // single-shot answer, so the routine is fully flushed out before it's saved.
@@ -2002,7 +2006,7 @@ export async function openRelay() {
 
     try {
       if (canUseAI()) {
-        const response = hasDeputyMax() ? await callAIEngineWithTriage() : await callAIEngine();
+        const response = hasDeputyMax() ? await callAIEngineWithTriage(typing) : await callAIEngine(typing);
         typing.remove();
         // The agent path renders its own bubble (and cards) and answers with null.
         if (response) addMessage(thread, 'relay', response);
@@ -2037,8 +2041,15 @@ export async function openRelay() {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
+  // The composer is one card: a click anywhere on it lands in the textarea, and
+  // the send button only lights up once there is something to send.
+  const composer = panel.querySelector('.relay-input-wrap');
+  const syncComposer = () => composer.classList.toggle('has-text', !!input.value.trim() || pendingAttachments.length > 0);
+  composer.addEventListener('click', (e) => { if (!e.target.closest('button')) input.focus(); });
+  syncComposer();
   input.addEventListener('input', () => {
     autoGrow(input);
+    syncComposer();
     localStorage.setItem(draftKey, input.value);
   });
   input.addEventListener('focus', () => {
@@ -2120,9 +2131,7 @@ function autoGrow(el) {
   // Force a reflow so the browser registers the previous height for the transition
   void el.offsetHeight;
 
-  const isFocused = el.classList.contains('focused');
-  const minH = isFocused ? 108 : 38;
-  el.style.height = Math.min(Math.max(contentHeight, minH), 120) + 'px';
+  el.style.height = Math.min(Math.max(contentHeight, 24), 200) + 'px';
 }
 
 // Make markdown links open in a new tab, with noopener/noreferrer for safety.
@@ -2281,13 +2290,93 @@ function renderRoutineTitleCard(thread, msg) {
   return meta;
 }
 
+// The live "working" block: a pulsing mark, a shimmering status line with an
+// elapsed timer, and a step list that grows as brny calls tools. The caller
+// removes the element when the turn ends; the timer stops itself once detached.
 function addTyping(thread) {
   const m = document.createElement('div');
-  m.className = 'relay-msg relay-msg-relay';
-  m.innerHTML = `<div class="relay-bubble relay-typing"><span></span><span></span><span></span></div>`;
+  m.className = 'relay-msg relay-msg-relay relay-live';
+  m.innerHTML = `
+    <div class="relay-live-head">
+      <span class="relay-spark" aria-hidden="true"></span>
+      <span class="relay-live-status" aria-live="polite">Thinking</span>
+      <span class="relay-live-timer"></span>
+    </div>
+    <ol class="relay-live-steps"></ol>`;
   thread.appendChild(m);
   thread.scrollTop = thread.scrollHeight;
+
+  const startedAt = Date.now();
+  const timer = m.querySelector('.relay-live-timer');
+  const tick = setInterval(() => {
+    if (!m.isConnected) { clearInterval(tick); return; }
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    timer.textContent = secs >= 2 ? `${secs}s` : '';
+  }, 500);
   return m;
+}
+
+// brny's own checklist tool. It is drawn as the plan, never as a step of it.
+const PLAN_TOOL = 'update_plan';
+const PLAN_STATE = { pending: 'is-pending', in_progress: 'is-running', done: 'is-ok' };
+
+// Add a running tool row and settle the one before it. Once brny has a plan,
+// the row nests under the plan step in progress; before that it sits on its own.
+function addLiveStep(typingEl, text) {
+  if (!typingEl) return;
+  const list = typingEl.querySelector('.relay-plan-step.is-running .relay-plan-sub')
+    || typingEl.querySelector('.relay-live-steps');
+  if (!list) return;
+  settleLiveStep(typingEl, true);
+  const li = document.createElement('li');
+  li.className = 'relay-live-step relay-tool-step is-running';
+  li.innerHTML = `<span class="relay-live-step-icon"></span><span class="relay-live-step-text"></span>`;
+  li.querySelector('.relay-live-step-text').textContent = text;
+  list.appendChild(li);
+  const thread = typingEl.parentElement;
+  if (thread) thread.scrollTop = thread.scrollHeight;
+}
+
+// Draw brny's plan, or bring it up to date. Steps are matched by position so a
+// step keeps the tool rows already nested under it when brny resends the list.
+function renderLivePlan(typingEl, steps) {
+  if (!typingEl || !Array.isArray(steps) || !steps.length) return;
+  let plan = typingEl.querySelector('.relay-live-plan');
+  if (!plan) {
+    plan = document.createElement('ol');
+    plan.className = 'relay-live-plan';
+    typingEl.querySelector('.relay-live-steps').before(plan);
+  }
+  steps.forEach((step, i) => {
+    let li = plan.children[i];
+    if (!li) {
+      li = document.createElement('li');
+      li.innerHTML = `<span class="relay-live-step-icon"></span>
+        <div class="relay-plan-body"><span class="relay-live-step-text"></span><ol class="relay-plan-sub"></ol></div>`;
+      plan.appendChild(li);
+    }
+    li.className = `relay-live-step relay-plan-step ${PLAN_STATE[step.status] || 'is-pending'}`;
+    li.querySelector('.relay-live-step-text').textContent = step.title;
+  });
+  while (plan.children.length > steps.length) plan.lastElementChild.remove();
+
+  // Tool rows drawn before the plan arrived belong to its first live step.
+  const loose = typingEl.querySelector('.relay-live-steps');
+  const home = plan.querySelector('.relay-plan-step.is-running .relay-plan-sub');
+  if (home && loose && loose.children.length) home.append(...loose.children);
+
+  const done = steps.filter(s => s.status === 'done').length;
+  setTypingStatus(typingEl, `Step ${Math.min(done + 1, steps.length)} of ${steps.length}`);
+  const thread = typingEl.parentElement;
+  if (thread) thread.scrollTop = thread.scrollHeight;
+}
+
+function settleLiveStep(typingEl, ok, summary) {
+  const running = typingEl && typingEl.querySelector('.relay-tool-step.is-running');
+  if (!running) return;
+  running.classList.remove('is-running');
+  running.classList.add(ok ? 'is-ok' : 'is-failed');
+  if (!ok && summary) running.querySelector('.relay-live-step-text').textContent += ` — ${summary}`;
 }
 
 function escapeHtml(s) {
@@ -2571,6 +2660,9 @@ function renderAttachmentChips() {
   if (!panel) return;
   const row = panel.querySelector('#relay-attach-row');
   if (!row) return;
+  // A file alone is enough to send, so light the send button for it too.
+  const input = panel.querySelector('#relay-input');
+  panel.querySelector('.relay-input-wrap')?.classList.toggle('has-text', pendingAttachments.length > 0 || !!(input && input.value.trim()));
   if (!pendingAttachments.length) {
     row.innerHTML = '';
     row.classList.remove('has-items');
@@ -2591,14 +2683,10 @@ function renderAttachmentChips() {
   });
 }
 
-// Replace the animated typing dots with a live status line.
+// Rewrite the shimmering status line on the live block.
 function setTypingStatus(typingEl, text) {
-  const bubble = typingEl && typingEl.querySelector('.relay-bubble');
-  if (bubble) {
-    bubble.classList.remove('relay-typing');
-    bubble.innerHTML = '';
-    bubble.textContent = text;
-  }
+  const status = typingEl && typingEl.querySelector('.relay-live-status');
+  if (status) status.textContent = String(text || '').replace(/…$/, '');
 }
 
 // ── Vision extraction (image / PDF → records) ───────────────────────────────────
@@ -2926,11 +3014,13 @@ async function renderWeeklyReportWidget(container) {
 
 // ── AI Engine completions call ───────────────────────────────────
 
-async function callAIEngine() {
+// `typing` is the live block submit() already drew. The agent must be handed it,
+// or every step happens out of sight and only the finished summary ever shows.
+async function callAIEngine(typing = null) {
   // A chat turn belongs to the agent loop, which calls the same actions the UI
   // calls and reads their real results. The single-shot path below stays as the
   // fallback for callers with no thread to draw in.
-  if (canRunBrnyAgent()) return callBrnyAgent();
+  if (canRunBrnyAgent()) return callBrnyAgent({ typing });
 
   const s = store.getSettings();
   const ai = s.ai || {};
@@ -3000,33 +3090,61 @@ function agentStopButton(hostEl) {
   return btn;
 }
 
-// The rows under "Took N steps". Labels are emitted in the same order as the
-// actions they produced, which is how a step gets its human title back.
-function agentStepRows(result, labels) {
-  return (result.actions || []).map((action, index) => {
+// The actions a person would call steps. The plan tool is the checklist itself,
+// so it is never counted or listed as one of them.
+function workActions(result) {
+  return (result.actions || []).filter(a => a.tool !== PLAN_TOOL);
+}
+
+// One row per tool call. Labels are emitted in the same order as the actions
+// they produced, which is how a step gets its human title back.
+function agentToolRows(result, labels) {
+  return workActions(result).map((action, index) => {
     const label = labels[index] && labels[index].tool === action.tool ? labels[index] : null;
-    const title = label ? label.title : action.tool;
+    const title = (label && label.title) || action.tool;
     const arg = label && label.arg ? ` · ${escapeHtml(label.arg)}` : '';
     const state = action.declined ? 'declined' : (action.ok ? 'ok' : 'failed');
-    const icon = state === 'ok' ? 'check_circle' : (state === 'declined' ? 'block' : 'error_outline');
     const tail = state === 'ok' ? '' : ` — ${escapeHtml(action.summary || '')}`;
-    return `<li class="relay-steps-row is-${state}">
-      <span class="material-icons-outlined">${icon}</span>
-      <span>${escapeHtml(title)}${arg}${tail}</span>
+    return {
+      planIndex: label && label.planIndex >= 0 ? label.planIndex : 0,
+      html: `<li class="relay-steps-row relay-live-step relay-tool-step is-${state}">
+        <span class="relay-live-step-icon"></span>
+        <span>${escapeHtml(title)}${arg}${tail}</span>
+      </li>`,
+    };
+  });
+}
+
+// With a plan, the rows are its steps with each step's tool calls nested
+// underneath. A finished turn closes every step; a stopped one shows how far it got.
+function agentPlanRows(plan, toolRows, finished) {
+  return plan.map((step, i) => {
+    const state = finished || step.status === 'done' ? 'is-ok' : 'is-pending';
+    const sub = toolRows.filter(r => r.planIndex === i).map(r => r.html).join('');
+    return `<li class="relay-steps-row relay-live-step relay-plan-step ${state}">
+      <span class="relay-live-step-icon"></span>
+      <div class="relay-plan-body"><span>${escapeHtml(step.title)}</span>${sub ? `<ol class="relay-plan-sub">${sub}</ol>` : ''}</div>
     </li>`;
   }).join('');
 }
 
-function renderAgentSteps(thread, result, labels, elapsedMs) {
-  const rows = agentStepRows(result, labels);
-  const n = (result.actions || []).length;
+function renderAgentSteps(thread, result, labels, elapsedMs, plan = null) {
+  const toolRows = agentToolRows(result, labels);
+  const finished = result.status === 'done';
+  const rows = plan ? agentPlanRows(plan, toolRows, finished) : toolRows.map(r => r.html).join('');
+  const n = plan ? plan.length : toolRows.length;
   if (!rows && !elapsedMs) return;
+
+  const done = plan ? (finished ? n : plan.filter(s => s.status === 'done').length) : n;
+  const headline = !n
+    ? 'Thought it through'
+    : (plan && done < n ? `Got through ${done} of ${n} steps` : `Took ${n} step${n === 1 ? '' : 's'}`);
 
   const box = document.createElement('div');
   box.className = 'relay-steps';
   box.innerHTML = `<button type="button" class="relay-steps-head">
-      <span class="material-icons-outlined">expand_more</span>
-      <span>${n ? `Took ${n} step${n === 1 ? '' : 's'}` : 'Thought it through'}${elapsedMs ? ` in ${Math.max(1, Math.round(elapsedMs / 1000))}s` : ''}</span>
+      <span>${headline}${elapsedMs ? ` · ${Math.max(1, Math.round(elapsedMs / 1000))}s` : ''}</span>
+      ${rows ? '<span class="material-icons-outlined">chevron_right</span>' : ''}
     </button>
     ${rows ? `<ul class="relay-steps-list">${rows}</ul>` : ''}`;
   const head = box.querySelector('.relay-steps-head');
@@ -3039,8 +3157,8 @@ function renderAgentSteps(thread, result, labels, elapsedMs) {
 
 // The agent answers with null so submit() does not draw a second bubble for a
 // turn that has already drawn its own.
-async function answerAgentTurn(thread, result, ai, labels, elapsedMs) {
-  renderAgentSteps(thread, result, labels, elapsedMs);
+async function answerAgentTurn(thread, result, ai, labels, elapsedMs, plan = null) {
+  renderAgentSteps(thread, result, labels, elapsedMs, plan);
   const answer = plainTurnAnswer(result);
   if (!answer) return;
   // Same final step as the legacy path: maps, weather and the surviving escape
@@ -3056,7 +3174,7 @@ function plainTurnAnswer(result) {
   const text = (result.text || '').trim();
   if (result.status === 'done') {
     if (text) return text;
-    const ran = (result.actions || []).filter(a => a.ok && !a.declined).length;
+    const ran = workActions(result).filter(a => a.ok && !a.declined).length;
     if (ran) return `Done — ${ran} action${ran === 1 ? '' : 's'} run.`;
     if (result.failures && result.failures.length) return `That did not work: ${result.failures[0].message}`;
     return '';
@@ -3156,7 +3274,7 @@ function renderAgentApproval(thread, approval) {
 
 // ── the turn itself ──────────────────────────────────────────────
 
-async function callBrnyAgent({ thread, typing, messages = null, resume = null } = {}) {
+async function callBrnyAgent({ thread, typing, messages = null, resume = null, plan: carriedPlan = null } = {}) {
   const target = thread || relayThreadEl();
   if (!target) return null;
 
@@ -3168,20 +3286,44 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null } 
   const labels = [];
   const startedAt = Date.now();
   let firstStepAt = null;
+  let lastLabel = null;
+  // The latest plan brny sent. A turn resumed after a card picks up where the
+  // paused one left off, so the plan stays on screen across the pause.
+  let plan = carriedPlan;
+  if (plan && typing) renderLivePlan(typing, plan);
+  const runningPlanIndex = () => (plan ? plan.findIndex(s => s.status === 'in_progress') : -1);
 
   const onEvent = (event) => {
     if (!event || !event.type) return;
+    const live = typing && typing.isConnected;
     if (event.type === 'step') {
       if (firstStepAt === null) firstStepAt = Date.now();
-      if (typing && typing.isConnected) setTypingStatus(typing, 'Thinking…');
+      if (live && !plan) setTypingStatus(typing, 'Thinking');
     } else if (event.type === 'label') {
+      if (event.tool === PLAN_TOOL) return;
+      // Only the label event names the step; the tool event that closes it
+      // carries just the tool id, so hold the name until then.
+      lastLabel = { tool: event.tool, title: event.title || event.tool, arg: event.arg, planIndex: runningPlanIndex() };
       const arg = event.arg ? ` · ${event.arg}` : '';
-      if (typing && typing.isConnected) setTypingStatus(typing, `${event.title || event.tool}${arg}…`);
-    } else if (event.type === 'tool') {
-      labels.push({ tool: event.tool, title: event.title, arg: event.arg });
-      if (typing && typing.isConnected) {
-        setTypingStatus(typing, event.ok ? (event.summary || 'Done.') : (event.summary || 'That did not work.'));
+      if (live) {
+        if (!plan) setTypingStatus(typing, 'Working');
+        addLiveStep(typing, `${lastLabel.title}${arg}`);
       }
+    } else if (event.type === 'tool' && event.tool === PLAN_TOOL) {
+      const steps = event.ok && event.input && Array.isArray(event.input.steps) ? event.input.steps : null;
+      if (steps && steps.length) {
+        // Rows logged before the plan existed are drawn under its first step.
+        if (!plan) labels.forEach(l => { if (l.planIndex < 0) l.planIndex = 0; });
+        plan = steps.map(s => ({ title: String(s.title || ''), status: s.status }));
+        if (live) renderLivePlan(typing, plan);
+      }
+    } else if (event.type === 'tool') {
+      const named = lastLabel && lastLabel.tool === event.tool ? lastLabel : null;
+      labels.push(named || { tool: event.tool, title: event.tool, arg: null, planIndex: runningPlanIndex() });
+      lastLabel = null;
+      if (live) settleLiveStep(typing, event.ok, event.summary);
+    } else if (event.type === 'approval' || event.type === 'question') {
+      if (live) settleLiveStep(typing, true);
     }
   };
 
@@ -3204,7 +3346,7 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null } 
     }
 
     if (result.status === 'ask_user' && result.pendingQuestion) {
-      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingQuestion: result.pendingQuestion };
+      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingQuestion: result.pendingQuestion, plan };
       if (typing) typing.remove();
       const text = plainTurnAnswer(result);
       if (text) addMessage(target, 'relay', text);
@@ -3213,7 +3355,7 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null } 
     }
 
     if (result.status === 'approval_required' && result.pendingApproval) {
-      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingApproval: result.pendingApproval };
+      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingApproval: result.pendingApproval, plan };
       if (typing) typing.remove();
       const text = plainTurnAnswer(result);
       if (text) addMessage(target, 'relay', text);
@@ -3223,7 +3365,7 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null } 
 
     if (typing) typing.remove();
     const elapsed = typing ? Date.now() - (firstStepAt || startedAt) : 0;
-    await answerAgentTurn(target, result, ai, labels, elapsed);
+    await answerAgentTurn(target, result, ai, labels, elapsed, plan);
     return null;
   } finally {
     if (stopBtn && stopBtn.isConnected) stopBtn.remove();
@@ -3250,7 +3392,7 @@ async function resumeBrnyTurn(resume, displayText) {
 
   const typing = addTyping(thread);
   try {
-    await callBrnyAgent({ thread, typing, messages: pending.messages, resume });
+    await callBrnyAgent({ thread, typing, messages: pending.messages, resume, plan: pending.plan });
   } catch (err) {
     typing.remove();
     const reply = err instanceof AILimitError ? err.message : `I couldn't finish that: ${err.message || err}`;
@@ -3418,7 +3560,7 @@ async function handleUrgentIntent() {
 }
 
 // Classify the latest user turn, then route to the matching handler.
-async function callAIEngineWithTriage() {
+async function callAIEngineWithTriage(typing = null) {
   const s = store.getSettings();
   const ai = s.ai || {};
   const systemPrompt = buildSystemPrompt(ai);
@@ -3431,7 +3573,7 @@ async function callAIEngineWithTriage() {
   // time or add a task. Requests only the in-app shortcuts can serve (canvas,
   // navigation, memory) and the external/urgent flows keep their own handlers.
   if (shouldUseAgentLoop({ intent: triage.intent, text, agentAvailable: canRunBrnyAgent() })) {
-    return callBrnyAgent();
+    return callBrnyAgent({ typing });
   }
 
   const ctx = {

@@ -131,6 +131,11 @@ test('every personality is reachable and distinct from the default', () => {
   }
 });
 
+test('the playbook tells brny to lay out a plan before a multi-step job', () => {
+  assert.match(BRNY_PLAYBOOK, /Plan out loud with update_plan whenever a job will take more than one tool call/);
+  assert.match(BRNY_PLAYBOOK, /Never spend a response on update_plan alone/);
+});
+
 test('an unknown personality falls back to the shipped playbook', () => {
   assert.strictEqual(buildBrnyPlaybook({ personality: 'not-a-personality' }), buildBrnyPlaybook());
 });

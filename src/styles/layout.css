@@ -2669,29 +2669,36 @@ body.relay-assistant-open .relay-topbar-actions {
 .relay-thread {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px 18px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+  scroll-behavior: smooth;
 }
 /* When the panel opens with no history, centre the lone greeting card.
    `safe` keeps it top-aligned (scrollable) if it ever exceeds the panel. */
 .relay-thread:not(.relay-thread-has-history):not(:has(.relay-msg)) {
   justify-content: safe center;
 }
-.relay-msg { display: flex; }
+/* Messages read like a document, not a chat app: brny's replies are plain prose
+   across the column, and only the user's turns sit in a soft bubble. */
+.relay-msg { display: flex; animation: relayMsgIn 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 .relay-msg-user { justify-content: flex-end; }
+@keyframes relayMsgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .relay-bubble {
   max-width: 84%;
-  padding: 9px 12px;
-  border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.45;
+  padding: 9px 14px;
+  border-radius: 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.relay-msg-relay .relay-bubble { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-primary); border-top-left-radius: 4px; }
-.relay-msg-user .relay-bubble { background: var(--color-primary); color: #fff; border-top-right-radius: 4px; }
+.relay-msg-relay .relay-bubble { max-width: 100%; padding: 0 2px; background: none; color: var(--text-primary); }
+.relay-msg-user .relay-bubble { background: var(--bg-color); color: var(--text-primary); line-height: 1.5; }
 
 /* Routine result title card — the header that makes a routine run read as a
    standalone system, followed by the assistant's output beneath it. */
@@ -2741,6 +2748,7 @@ body.relay-assistant-open .relay-topbar-actions {
 /* Expanded workspace: keep assistant messages on the left, user on the right,
    without letting either balloon out to the full panel width. */
 .relay-panel.expanded .relay-bubble { max-width: min(84%, 720px); }
+.relay-panel.expanded .relay-msg-relay .relay-bubble { max-width: 720px; }
 
 /* Assistant bubbles render Markdown, so normalise whitespace and style the
    generated elements so the AI's headings, lists, tables and code look polished. */
@@ -2782,66 +2790,264 @@ body.relay-assistant-open .relay-topbar-actions {
 .relay-msg-relay .relay-bubble th { background: var(--bg-color); font-weight: 600; }
 .relay-msg-relay .relay-bubble img { max-width: 100%; height: auto; border-radius: 8px; }
 
-.relay-typing { display: flex; gap: 4px; align-items: center; }
-.relay-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); animation: relayBlink 1s infinite ease-in-out; }
-.relay-typing span:nth-child(2) { animation-delay: 0.15s; }
-.relay-typing span:nth-child(3) { animation-delay: 0.3s; }
-@keyframes relayBlink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+/* ── Live working block (while brny thinks and calls tools) ── */
+.relay-live { flex-direction: column; align-items: flex-start; gap: 6px; }
+.relay-live-head { display: flex; align-items: center; gap: 9px; min-height: 22px; }
+/* brny's mark: a four-point star that breathes and turns while it works. */
+.relay-spark {
+  width: 16px; height: 16px; flex-shrink: 0;
+  background: var(--color-primary);
+  clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+  animation: relaySpark 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes relaySpark {
+  0% { transform: rotate(0deg) scale(0.85); opacity: 0.75; }
+  50% { transform: rotate(90deg) scale(1.1); opacity: 1; }
+  100% { transform: rotate(180deg) scale(0.85); opacity: 0.75; }
+}
+/* A light sweep across the status text, the way Claude's "Thinking" glints. */
+.relay-live-status {
+  font-size: 13px;
+  font-weight: 500;
+  background: linear-gradient(90deg, var(--text-tertiary) 0%, var(--text-tertiary) 40%, var(--text-primary) 50%, var(--text-tertiary) 60%, var(--text-tertiary) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: relayShimmer 2s linear infinite;
+}
+@keyframes relayShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.relay-live-timer { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.relay-live-steps:empty { display: none; }
 
+/* Step rows share one look live and in the finished summary: an icon on a
+   thin rail, so the turn reads as a plan being walked through. */
+.relay-live-steps,
+.relay-steps-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 2px 7px;
+}
+.relay-live-step,
+.relay-steps-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0 4px 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  animation: relayMsgIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.relay-live-step::before,
+.relay-steps-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-color);
+}
+.relay-live-step:first-child::before,
+.relay-steps-row:first-child::before { top: 12px; }
+.relay-live-step:last-child::before,
+.relay-steps-row:last-child::before { bottom: calc(100% - 12px); }
+.relay-live-step:only-child::before,
+.relay-steps-row:only-child::before { display: none; }
+.relay-live-step-icon {
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--content-bg);
+  box-sizing: border-box;
+}
+.relay-live-step.is-running > .relay-live-step-icon {
+  border: 2px solid var(--border-color);
+  border-top-color: var(--color-primary);
+  animation: relaySpin 0.8s linear infinite;
+}
+.relay-live-step.is-running { color: var(--text-primary); }
+.relay-live-step.is-ok > .relay-live-step-icon,
+.relay-live-step.is-failed > .relay-live-step-icon { border: 2px solid currentColor; }
+.relay-live-step.is-ok > .relay-live-step-icon { color: var(--color-success); background: var(--color-success); box-shadow: inset 0 0 0 2px var(--content-bg); }
+.relay-live-step.is-failed > .relay-live-step-icon { color: var(--color-danger); background: var(--color-danger); box-shadow: inset 0 0 0 2px var(--content-bg); }
+@keyframes relaySpin { to { transform: rotate(360deg); } }
+
+/* brny's plan: every step is on screen from the start, so a hollow ring means
+   "coming up", the spinner is where it is now, and a filled dot is done. The
+   tool calls a step needed sit underneath it in small type. */
+.relay-live-plan { list-style: none; margin: 0; padding: 2px 0 2px 7px; }
+.relay-plan-step.is-pending { color: var(--text-tertiary); }
+.relay-plan-step.is-pending > .relay-live-step-icon { border: 2px solid var(--border-color-dark); }
+.relay-plan-step.is-running { color: var(--text-primary); font-weight: 500; }
+.relay-plan-step.is-ok { color: var(--text-secondary); }
+.relay-plan-body { display: flex; flex-direction: column; min-width: 0; }
+.relay-plan-sub { list-style: none; margin: 1px 0 0; padding: 0; font-weight: 400; }
+.relay-plan-sub:empty { display: none; }
+.relay-plan-sub .relay-live-step {
+  padding: 2px 0 2px 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.relay-plan-sub .relay-live-step::before { display: none; }
+.relay-plan-sub .relay-live-step > .relay-live-step-icon {
+  left: 1px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-width: 1.5px;
+  box-shadow: none;
+}
+/* A finished tool call gets a small green tick that pops in as it lands. */
+.relay-plan-sub .relay-live-step.is-ok > .relay-live-step-icon {
+  left: 0;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border: none;
+  background: none;
+}
+.relay-plan-sub .relay-live-step.is-ok > .relay-live-step-icon::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 3px;
+  height: 7px;
+  border: solid var(--color-success);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+  animation: relayTick 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes relayTick { from { opacity: 0; transform: rotate(45deg) scale(0.4); } }
+.relay-plan-sub .relay-live-step.is-running > .relay-live-step-icon { width: 9px; height: 9px; top: 6px; left: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-msg, .relay-live-step, .relay-steps-row { animation: none; }
+  .relay-spark, .relay-live-step.is-running > .relay-live-step-icon { animation-duration: 6s; }
+  .relay-live-status { animation: none; color: var(--text-tertiary); }
+}
+
+/* ── Composer: one rounded card, tools along the bottom edge ── */
 .relay-input-wrap {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.relay-input {
-  flex: 1;
-  resize: none;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 14px 8px;
+  padding: 12px 12px 8px 16px;
   border: 1px solid var(--card-border);
-  border-radius: var(--border-radius);
-  padding: 9px 12px;
-  font-family: var(--font-family);
-  font-size: 13px;
-  color: var(--text-primary);
+  border-radius: 20px;
   background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04), 0 4px 16px rgba(15, 15, 15, 0.05);
+  cursor: text;
+  flex-shrink: 0;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.relay-input-wrap:focus-within {
+  border-color: var(--text-muted);
+  box-shadow: 0 1px 2px rgba(15, 15, 15, 0.05), 0 6px 24px rgba(15, 15, 15, 0.08);
+}
+.relay-panel.expanded .relay-input-wrap { width: min(100% - 28px, 760px); align-self: center; margin-left: auto; margin-right: auto; }
+.relay-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  padding: 2px 0;
+  font-family: var(--font-family);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: transparent;
   outline: none;
-  height: 38px;
-  max-height: 120px;
-  transition: height 0.18s ease-in-out, border-color 0.18s ease-in-out;
+  height: 24px;
+  max-height: 200px;
+  transition: height 0.15s ease;
 }
-.relay-input:focus { border-color: var(--color-primary); }
+.relay-input::placeholder { color: var(--text-tertiary); }
+/* Text fields always match :focus-visible, so the global orange ring would
+   show on every click; the card's focus-within shadow marks focus instead. */
+.relay-input:focus-visible { outline: none; }
+.relay-composer-bar { display: flex; align-items: center; justify-content: space-between; }
 .relay-send, .relay-attach {
-  width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer;
+  width: 30px; height: 30px; border-radius: 9px; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background 0.15s ease, opacity 0.15s ease, color 0.15s ease;
 }
-.relay-send { background: var(--color-primary); color: #fff; }
+.relay-send .material-icons-outlined, .relay-attach .material-icons-outlined { font-size: 18px; }
+.relay-send { background: var(--color-primary); color: #fff; opacity: 0.4; }
+.relay-input-wrap.has-text .relay-send { opacity: 1; }
 .relay-send:hover { background: var(--color-primary-hover); }
-.relay-attach { background: transparent; color: var(--text-tertiary); }
+.relay-attach { background: transparent; color: var(--text-secondary); border: 1px solid var(--card-border); }
+.relay-attach:hover:not(:disabled) { background: var(--bg-color); color: var(--text-primary); }
 .relay-attach:disabled { opacity: 0.5; cursor: not-allowed; }
 .relay-foot { font-size: 10.5px; color: var(--text-tertiary); text-align: center; padding: 0 12px 10px; flex-shrink: 0; }
 
-/* Interactive Multiple-Choice Question Cards */
+/* Files waiting to send, shown just above the composer. */
+.relay-attach-row { display: none; flex-wrap: wrap; gap: 6px; padding: 0 14px 4px; flex-shrink: 0; }
+.relay-attach-row.has-items { display: flex; }
+.relay-panel.expanded .relay-attach-row { width: min(100% - 28px, 760px); margin: 0 auto; padding: 0 0 4px; }
+.relay-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 4px 4px 9px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  animation: relayMsgIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.relay-chip .material-icons-outlined { font-size: 15px; color: var(--text-tertiary); flex-shrink: 0; }
+.relay-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relay-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.relay-chip-x:hover { background: var(--bg-color); color: var(--text-primary); }
+
+/* Interactive Multiple-Choice Question Cards — a plain app card that sits in
+   the reply column, sized to its content. */
 .relay-question-card {
-  margin: 6px 45px 12px 12px;
-  padding: 12px 14px;
+  align-self: flex-start;
+  width: min(100%, 440px);
+  box-sizing: border-box;
+  padding: 14px 16px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-left: 3px solid var(--color-primary);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  animation: relaySlideUp 0.2s ease-out;
+  gap: 10px;
+  box-shadow: var(--card-shadow);
+  animation: relayMsgIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes relaySlideUp {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .relay-question-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.4;
@@ -2851,60 +3057,55 @@ body.relay-assistant-open .relay-topbar-actions {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Answer pills follow the app's buttons: an option is a .btn-secondary, the
+   picked one and Submit are .btn-primary. Orange is kept for the choice made,
+   not for hover. */
 .relay-question-opt-btn {
-  background: var(--body-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
+  line-height: 1.4;
   cursor: pointer;
-  transition: all 0.15s ease-in-out;
-  outline: none;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
-.relay-question-opt-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-light, rgba(27, 109, 224, 0.06));
-}
-.relay-question-opt-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.relay-question-opt-btn.selected {
+.relay-question-opt-btn:hover:not(:disabled) { background: var(--bg-color); }
+.relay-question-opt-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.relay-question-opt-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.relay-question-opt-btn.selected,
+.relay-question-opt-btn.selected:disabled {
   background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff !important;
-  font-weight: 600;
+  border-color: transparent;
+  color: #fff;
+  opacity: 1;
 }
 .relay-question-actions {
   display: flex;
+  align-items: flex-end;
   justify-content: flex-end;
-  margin-top: 4px;
+  gap: 6px;
 }
 .relay-question-submit-btn {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
   background: var(--color-primary);
   color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
-  transition: all 0.15s ease-in-out;
-  outline: none;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
 }
-.relay-question-submit-btn:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  transform: translateY(-0.5px);
-}
-.relay-question-submit-btn:disabled {
-  background: var(--border-color);
-  color: var(--text-tertiary) !important;
-  cursor: not-allowed;
-  transform: none;
-}
+.relay-question-submit-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.relay-question-submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Zoom controls */
 .dash-zoom-controls {
@@ -3544,111 +3745,103 @@ body.relay-assistant-open .relay-topbar-actions {
   flex-direction: column;
   gap: 6px;
 }
+/* Suggestion rows are .btn-secondary buttons laid out as a list. */
 .relay-chip-btn {
-  background: var(--body-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-md);
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
   gap: 8px;
-  outline: none;
-}
-.relay-chip-btn.warning-chip {
+  padding: 7px 12px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
   color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
-.relay-chip-btn:hover {
-  background: var(--color-primary-light, rgba(255, 92, 0, 0.06));
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
+.relay-chip-btn:hover { background: var(--bg-color); }
+.relay-chip-btn:active { transform: translateY(0.5px); }
 .relay-chip-btn .chip-ico {
   font-size: 16px;
   color: var(--text-tertiary);
   flex-shrink: 0;
 }
-.relay-chip-btn:hover .chip-ico { color: var(--color-primary); }
+.relay-chip-btn:hover .chip-ico { color: var(--text-secondary); }
 .relay-chip-btn.warning-chip .chip-ico { color: var(--color-warning); }
 .relay-chip-btn.info-chip .chip-ico { color: var(--color-info); }
 
-/* ── Relay step trace (what brny did, and with what arguments) ── */
+/* ── Relay step trace (what brny did, and with what arguments) ──
+   The finished turn folds its step list into one quiet line; the rows reuse
+   the live block's rail and dots (see .relay-live-step). */
 .relay-steps {
-  margin: 4px 0 8px;
+  margin: 0 0 -4px;
   align-self: flex-start;
-  max-width: 86%;
+  max-width: 100%;
+  animation: relayMsgIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .relay-steps-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 4px;
+  padding: 3px 8px 3px 2px;
   border: none;
   border-radius: var(--border-radius-sm);
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 12.5px;
   font-family: inherit;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 .relay-steps-head:disabled { cursor: default; }
-.relay-steps-head:hover:not(:disabled) { background: var(--surface-hover); }
-.relay-steps-head .material-icons-outlined { font-size: 16px; transition: transform 0.15s ease; }
-.relay-steps.is-open .relay-steps-head .material-icons-outlined { transform: rotate(180deg); }
-.relay-steps-list {
-  display: none;
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 8px 10px;
-  border-radius: var(--border-radius-sm);
-  background: var(--surface-secondary);
-}
+.relay-steps-head:hover:not(:disabled) { color: var(--text-primary); }
+.relay-steps-head .material-icons-outlined { font-size: 16px; transition: transform 0.2s ease; }
+.relay-steps.is-open .relay-steps-head .material-icons-outlined { transform: rotate(90deg); }
+.relay-steps-list { display: none; margin-top: 4px; }
 .relay-steps.is-open .relay-steps-list { display: block; }
-.relay-steps-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.relay-steps-row .material-icons-outlined { font-size: 15px; flex-shrink: 0; }
-.relay-steps-row.is-ok .material-icons-outlined { color: var(--color-success); }
-.relay-steps-row.is-failed .material-icons-outlined { color: var(--color-danger); }
-.relay-steps-row.is-declined .material-icons-outlined { color: var(--text-tertiary); }
+.relay-steps-row.is-declined > .relay-live-step-icon { border: 2px solid var(--text-muted); }
 
 /* Free-text answer for an agent question card */
 .relay-question-card .relay-question-detail {
+  margin-top: -6px;
   font-size: 12px;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
+/* It shares .relay-input with the composer, so give it back a field's box. */
 .relay-question-card .relay-question-input {
   flex: 1;
-  min-height: 34px;
+  height: auto;
+  min-height: 30px;
   max-height: 120px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
+  font-size: 12px;
   resize: none;
+  transition: border-color var(--transition-fast);
 }
+.relay-question-card .relay-question-input:focus { border-color: var(--text-muted); }
 .relay-question-card.is-answered { opacity: 0.65; }
 
 /* Stop button lives beside the typing bubble, not inside it (the status line
    rewrites the bubble's contents on every step). */
 .relay-stop-btn {
   align-self: flex-start;
-  margin-top: 6px;
+  margin-top: 2px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 999px;
 }
-.relay-stop-btn .material-icons-outlined { font-size: 16px; }
+.relay-stop-btn .material-icons-outlined { font-size: 15px; width: 15px; height: 15px; }
 
 /* ── Relay in-chat confirmation card (asks before writing to the CRM) ── */
 .relay-msg-relay .relay-bubble.relay-confirm {
@@ -3723,7 +3916,7 @@ body.relay-assistant-open .relay-topbar-actions {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--content-bg);
+  background: var(--body-bg);
   z-index: 1000;
   overflow-y: auto;
   padding: 16px;
@@ -4300,7 +4493,7 @@ body.relay-assistant-open .relay-topbar-actions {
   font-size: 18px;
 }
 .relay-nav-tab:hover {
-  background: var(--content-bg);
+  background: var(--body-bg);
   color: var(--sidebar-text-hover);
 }
 .relay-nav-tab.active {
@@ -4315,7 +4508,7 @@ body.relay-assistant-open .relay-topbar-actions {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  background: var(--content-bg);
+  background: var(--body-bg);
 }
 
 /* Deputy page header — mirrors the app's native .page-header (45px bar,

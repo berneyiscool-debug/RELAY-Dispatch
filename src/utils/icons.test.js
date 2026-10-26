@@ -78,3 +78,15 @@ test('bolt resolves to Lucide Bolt, not Zap', () => {
   assert.match(span.innerHTML, /<circle /, 'Lucide Bolt is the hexagon-with-circle; Zap is a single path');
   assert.equal(span.dataset.licon, 'bolt');
 });
+
+// brny's Stop button names `stop_circle`. Unmapped, it fell back to the Material
+// font, which never drew it, so the button read "stc Stop".
+test('stop_circle resolves to Lucide CircleStop', () => {
+  const span = fakeIconSpan('stop_circle');
+  applyLucideIcons(span);
+
+  assert.match(span.innerHTML, /^<svg /, 'expected the shim to swap in an SVG');
+  assert.match(span.innerHTML, /<circle /);
+  assert.match(span.innerHTML, /<rect /, 'CircleStop is a square inside a circle');
+  assert.equal(span.dataset.licon, 'stop_circle');
+});

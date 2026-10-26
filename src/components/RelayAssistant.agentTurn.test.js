@@ -51,7 +51,7 @@ import { readFileSync } from 'node:fs';
 const SOURCE = readFileSync(new URL('./RelayAssistant.js', import.meta.url), 'utf8');
 
 test('answerAgentTurn is async so it can await the reply pipeline', () => {
-  assert.match(SOURCE, /async function answerAgentTurn\(thread, result, ai, labels, elapsedMs\)/);
+  assert.match(SOURCE, /async function answerAgentTurn\(thread, result, ai, labels, elapsedMs, plan = null\)/);
 });
 
 test('answerAgentTurn awaits finaliseExternalReply before drawing the bubble', () => {
@@ -64,7 +64,7 @@ test('the pending reply is never assigned un-awaited', () => {
 });
 
 test('callBrnyAgent awaits answerAgentTurn', () => {
-  assert.match(SOURCE, /await answerAgentTurn\(target, result, ai, labels, elapsed\);/);
+  assert.match(SOURCE, /await answerAgentTurn\(target, result, ai, labels, elapsed, plan\);/);
 });
 
 test('every caller that returns the reply promise is async', () => {
@@ -157,7 +157,7 @@ test('the agent path survives a missing or detached panel reference', () => {
 test('a write phrased as an action reaches the agent loop', () => {
   assert.match(
     SOURCE,
-    /if \(shouldUseAgentLoop\(\{ intent: triage\.intent, text, agentAvailable: canRunBrnyAgent\(\) \}\)\) \{\s*\n\s*return callBrnyAgent\(\);/,
+    /if \(shouldUseAgentLoop\(\{ intent: triage\.intent, text, agentAvailable: canRunBrnyAgent\(\) \}\)\) \{\s*\n\s*return callBrnyAgent\(\{ typing \}\);/,
     'routing on the bare intent label sends writes to a flow with no tools',
   );
   assert.ok(
@@ -169,7 +169,7 @@ test('a write phrased as an action reaches the agent loop', () => {
 test('an interactive outcome pauses the turn and asks with buttons', () => {
   assert.match(
     SOURCE,
-    /if \(result\.status === 'ask_user' && result\.pendingQuestion\) \{[\s\S]{0,260}?pendingTurn = \{ threadId: currentThreadId, messages: result\.messages, pendingQuestion: result\.pendingQuestion \};[\s\S]{0,200}?renderAgentQuestion\(target, result\.pendingQuestion\);/,
+    /if \(result\.status === 'ask_user' && result\.pendingQuestion\) \{[\s\S]{0,260}?pendingTurn = \{ threadId: currentThreadId, messages: result\.messages, pendingQuestion: result\.pendingQuestion, plan \};[\s\S]{0,200}?renderAgentQuestion\(target, result\.pendingQuestion\);/,
     'the question card needs the paused message history, or the answer cannot resume the turn',
   );
 });
@@ -191,7 +191,7 @@ test('the question card renders one button per option and resumes the paused tur
 test('the resume replays the paused history verbatim', () => {
   assert.match(
     SOURCE,
-    /if \(!thread \|\| !pending \|\| pending\.threadId !== currentThreadId\) return;[\s\S]{0,400}?await callBrnyAgent\(\{ thread, typing, messages: pending\.messages, resume \}\);/,
+    /if \(!thread \|\| !pending \|\| pending\.threadId !== currentThreadId\) return;[\s\S]{0,400}?await callBrnyAgent\(\{ thread, typing, messages: pending\.messages, resume, plan: pending\.plan \}\);/,
     'the provider matches the answer to a tool call in the history it paused with'
   );
 });
@@ -216,4 +216,41 @@ test('the live context states the date the way the agent loop states it', () => 
     /CRITICAL DATE AWARENESS: [^\n]*weekday[^\n]*earlier messages[^\n]*/,
     'the statement that today is not to be inferred, and outranks the thread, is the point of the paragraph'
   );
+});
+
+// The step trace took its titles from the `tool` event, which carries only the
+// tool id, so every row under "Took N steps" read "undefined". The name comes
+// from the `label` event that opens the step and is held until the step closes.
+test('step titles come from the label event, not the tool event', () => {
+  assert.doesNotMatch(SOURCE, /labels\.push\(\{ tool: event\.tool, title: event\.title/);
+  assert.match(SOURCE, /lastLabel = \{ tool: event\.tool, title: event\.title \|\| event\.tool, arg: event\.arg, planIndex: runningPlanIndex\(\) \};/);
+  assert.match(SOURCE, /labels\.push\(named \|\| \{ tool: event\.tool, title: event\.tool, arg: null, planIndex: runningPlanIndex\(\) \}\);/);
+  assert.match(SOURCE, /const title = \(label && label\.title\) \|\| action\.tool;/);
+});
+
+// brny's plan is drawn as the checklist, not as one of its own steps: the plan
+// tool must never add a row, count toward "Took N steps", or stand in for work
+// done in the "Done — N actions run" fallback.
+test('the plan tool is drawn as the plan, never as a step', () => {
+  assert.match(SOURCE, /const PLAN_TOOL = 'update_plan';/);
+  assert.match(SOURCE, /if \(event\.tool === PLAN_TOOL\) return;/, 'its label event adds no row');
+  assert.match(SOURCE, /return \(result\.actions \|\| \[\]\)\.filter\(a => a\.tool !== PLAN_TOOL\);/);
+  assert.match(SOURCE, /const ran = workActions\(result\)\.filter/);
+  assert.doesNotMatch(SOURCE, /const ran = \(result\.actions \|\| \[\]\)/);
+});
+
+// Both chat entry points started the agent with `callBrnyAgent()`, dropping the
+// live block submit() had just drawn. Every event then went nowhere: the panel
+// sat on "Thinking" and the steps only appeared, already ticked, after the turn.
+test('a chat turn hands its live block to the agent so steps show as they happen', () => {
+  assert.match(SOURCE, /await callAIEngineWithTriage\(typing\) : await callAIEngine\(typing\);/);
+  assert.match(SOURCE, /async function callAIEngine\(typing = null\) \{[\s\S]{0,400}?return callBrnyAgent\(\{ typing \}\);/);
+  assert.match(SOURCE, /async function callAIEngineWithTriage\(typing = null\) \{[\s\S]{0,900}?return callBrnyAgent\(\{ typing \}\);/);
+  assert.doesNotMatch(SOURCE, /return callBrnyAgent\(\);/, 'an agent turn with no live block runs out of sight');
+});
+
+test('a plan survives a question or approval pause', () => {
+  assert.match(SOURCE, /pendingQuestion: result\.pendingQuestion, plan \}/);
+  assert.match(SOURCE, /pendingApproval: result\.pendingApproval, plan \}/);
+  assert.match(SOURCE, /resume, plan: pending\.plan \}\)/);
 });
