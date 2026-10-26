@@ -9,6 +9,7 @@ import { showModal } from '../../components/Modal.js';
 import { viewDocumentInNewTab, downloadDocument } from '../../utils/documentActions.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { getStorageLocationOptionsHtml, getPhysicalLocationTypeOptionsHtml, receiveStockIntoLocation } from '../../utils/storageLocations.js';
@@ -58,7 +59,8 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         iconBgColor: 'var(--color-primary-light)',
         iconTextColor: 'var(--color-primary)',
         metaHtml: `
-          <span><span class="material-icons-outlined" style="font-size:14px">store</span> ${escapeHTML(po.supplierName || 'General Supplier')}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">store</span> ${po.supplierName ? entityLink({ kind: 'supplier', id: po.supplierId, name: po.supplierName }) : 'General Supplier'}</span>
+          ${po.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${entityLink({ kind: 'job', id: po.jobId, name: po.jobNumber })}</span>` : ''}
           <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${escapeHTML(po.status || 'Draft')}</span>
         `,
         actionsHtml: `
@@ -136,7 +138,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                         ${stockItems.map(s => `<option value="${s.id}" ${item.stockId === s.id ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
                       </select>
                       <input type="text" class="form-input item-desc" style="width:100%;margin-top:4px;${item.stockId ? 'display:none' : ''}" value="${escapeHTML(item.description || '')}" placeholder="Description" />
-                      ` : `<div>${escapeHTML(item.description)}</div>`}
+                      ` : `<div>${entityLink({ kind: 'stock', id: item.stockId, name: item.description })}</div>`}
                     </td>
                     <td>
                       ${po.status === 'Draft' ? `<input type="text" class="form-input item-sku" style="width:100%" value="${escapeHTML(item.sku || '')}" ${item.stockId ? 'disabled' : ''} />` : escapeHTML(item.sku || '—')}

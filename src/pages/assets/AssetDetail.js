@@ -6,6 +6,7 @@ import { showToast } from '../../components/Notifications.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES } from '../../utils/statusColors.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
 
 export function renderAssetDetail(container, { id, tab }) {
@@ -100,7 +101,7 @@ export function renderAssetDetail(container, { id, tab }) {
             <div class="card-body">
               <div style="display: flex; flex-direction: column;">
                 ${r('Category', escapeHTML(currentAsset.type || '-'))}
-                ${r('Owner', escapeHTML(ownerName))}
+                ${r('Owner', currentAsset.customerId ? entityLink({ kind: 'customer', id: currentAsset.customerId, name: ownerName }) : escapeHTML(ownerName))}
                 ${r('Assigned To', escapeHTML(assigneeName))}
                 ${r('Location', escapeHTML(currentAsset.site || 'Main Office'))}
                 ${r('Interval', `${currentAsset.serviceIntervalMonths || 6} Months`)}
@@ -178,7 +179,7 @@ export function renderAssetDetail(container, { id, tab }) {
             <tbody>
               ${linkedJobs.map(j => `
                 <tr>
-                  <td class="font-medium"><a href="#/jobs/${escapeHTML(j.id)}" class="cell-link">${escapeHTML(j.number || '—')}</a></td>
+                  <td class="font-medium">${entityLink({ kind: 'job', id: j.id, name: j.number })}</td>
                   <td class="text-secondary">${jobActivityDate(j) ? new Date(jobActivityDate(j)).toLocaleDateString() : '—'}</td>
                   <td><span class="text-secondary" style="font-size:13px">${escapeHTML(j.title || '—')}</span></td>
                   <td><span class="badge ${JOB_STATUS_BADGES[j.status] || 'badge-neutral'}">${escapeHTML(j.status || 'Pending')}</span></td>
