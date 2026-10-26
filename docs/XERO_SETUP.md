@@ -152,6 +152,44 @@ Invoice dates are worked out in `Australia/Sydney`. A company in another
 time zone (e.g. Perth) can be a day out for invoices issued around midnight.
 There's no company time-zone setting yet.
 
+## Stock as Xero Items (Phase 2a, built)
+
+Each stock row is an **untracked** Xero Item. RELAY keeps the quantities, so Xero
+never sees stock levels and needs no inventory account. Design:
+`XERO_PHASE2_ITEMS_PLAN.md`.
+
+1. **Apply the migration** `20261027090000_xero_items.sql`. It adds
+   `stock.xero_item_id / xero_item_code / xero_synced_at / xero_sync_error`
+   (frozen against client writes), lets the queue take `item` jobs, and adds
+   the `xero_enqueue_items` (backfill) and `xero_import_items` RPCs.
+2. **Redeploy** `relay-xero-sync` and `relay-xero-status`. No new secrets or
+   scopes: Items use `accounting.settings`, which Phase 1 already asks for.
+
+How it behaves:
+
+- **Push:** new stock, or a change to its name, SKU, prices, unit or category,
+  queues an item upsert. Quantity and location moves queue nothing.
+- **Code:** the SKU when it's 30 characters or fewer, else the code the item
+  already has in Xero, else `RELAY-<id>`. A SKU edit renames the Xero item.
+- **Matching:** before creating, the worker looks for a Xero item with the same
+  code, then the same name, and links it instead.
+- **Accounts:** sales details use the material lines account (else the default
+  sales account). Purchase details are only sent once a **Purchases account** is
+  chosen on the Accounting page. Changing these settings doesn't resend existing
+  items; use **Send to Xero** on the stock list to update them.
+- **Invoices:** material lines now carry the stock id, so pushed invoices put
+  the item's `ItemCode` on the line. RELAY's description, price and account still
+  win. An item that isn't in Xero yet is created first. One Xero refuses goes
+  without a code, and the reason is noted on the job and the stock item.
+- **Import from Xero** (Accounting page, one-off): reads `GET /Items`, links
+  each Xero item to stock with the same SKU, then name, and adds the rest as new
+  stock with quantity 0. It shows the counts and asks first. Nothing in Xero
+  changes, and nothing it writes is pushed back.
+- **Gaps:** Xero has no Items webhook, so edits made in Xero only come back
+  through the import. Deleting stock in RELAY leaves the Xero item alone. Kits
+  aren't items. Invoices raised before this change have no stock ids on their
+  lines and go without item codes.
+
 ## Webhook (built, step 6)
 
 Xero's webhooks only say *which* invoice changed. There's no payment event, so

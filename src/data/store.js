@@ -2222,6 +2222,8 @@ class DataStore {
       ['xero_sync_error', 'xeroSyncError'],
       ['xero_payment_ids', 'xeroPaymentIds'],
       ['xero_contact_id', 'xeroContactId'],
+      ['xero_item_id', 'xeroItemId'],
+      ['xero_item_code', 'xeroItemCode'],
     ].forEach(([column, key]) => {
       if (record[column] !== undefined) {
         record[key] = column === 'xero_amount_due' && record[column] !== null ? Number(record[column]) : record[column];
@@ -3733,7 +3735,7 @@ class DataStore {
         // The database queued any Xero work for this change; ask the worker to
         // run now rather than on its next minute tick. Lazy import: xero.js
         // imports the store.
-        if (collection === 'invoices' || collection === 'customers') {
+        if (collection === 'invoices' || collection === 'customers' || collection === 'stock') {
           import('../utils/xero.js').then((m) => m.nudgeXeroSync()).catch(() => {});
         }
         return { ok: true, record: updated };

@@ -15,6 +15,7 @@ import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
 import { getActiveKitTypes } from '../../utils/kitTypes.js';
+import { xeroEnabled, getXeroStatusCached, cachedXeroStatus, fetchStockSyncJobs, cachedStockSyncJobs, xeroStockBadgeHtml, pushStockToXero } from '../../utils/xero.js';
 
 export function renderStockList(container, params) {
   let activeTab = params?.tab === 'kits' ? 'kits' : 'items';
@@ -24,6 +25,8 @@ export function renderStockList(container, params) {
   let activeKitFilter = 'all';
   let itemTableInstance = null;
   let kitTableInstance = null;
+  let xeroChecked = false;
+  const xeroStockSignature = () => `${!!cachedXeroStatus()?.connected}|${[...cachedStockSyncJobs().entries()].map(([k, v]) => `${k}:${v.pending}:${v.failed.length}`).join(',')}`;
 
   function renderLayout() {
     container.innerHTML = `
@@ -123,10 +126,23 @@ export function renderStockList(container, params) {
   function renderItemsTable(tableContainer) {
     const stock = store.getAll('stock') || [];
 
+    // The Xero column shows once the company is known to be connected; the
+    // first render asks, and redraws once if the answer changes the table.
+    const showXero = xeroEnabled() && !!cachedXeroStatus()?.connected;
+    const xeroJobs = cachedStockSyncJobs();
+    if (xeroEnabled() && !xeroChecked) {
+      xeroChecked = true;
+      const before = xeroStockSignature();
+      getXeroStatusCached().then((st) => (st?.connected ? fetchStockSyncJobs() : null)).then(() => {
+        const target = container.querySelector('#stock-table-container');
+        if (activeTab === 'items' && target && xeroStockSignature() !== before) renderItemsTable(target);
+      }).catch(() => { /* the list works without the Xero column */ });
+    }
+
     const columns = [
       { key: 'name', label: 'Item', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>`, width: '28%' },
       { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || '—')}</span>`, width: '15%' },
-      { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier || '—')}</span>`, width: '21%' },
+      { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier || '—')}</span>`, width: showXero ? '11%' : '21%' },
       { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:var(--font-mono)">${escapeHTML(r.sku || '—')}</span>`, width: '13%' },
       { key: 'quantity', label: 'Qty', render: (r) => {
         const totalQty = (r.locations || []).reduce((sum, l) => sum + l.quantity, 0);
@@ -135,6 +151,13 @@ export function renderStockList(container, params) {
       }, getValue: (r) => (r.locations || []).reduce((sum, l) => sum + l.quantity, 0), width: '9%' },
       { key: 'unitPrice', label: 'Price', render: (r) => `<span class="font-semibold">$${(r.unitPrice || 0).toFixed(2)}</span>`, getValue: (r) => r.unitPrice || 0, width: '14%' },
     ];
+    if (showXero) {
+      columns.push({
+        key: 'xero', label: 'Xero', width: '10%',
+        render: (r) => xeroStockBadgeHtml(r, xeroJobs.get(String(r.id)), escapeHTML),
+        getValue: (r) => r.xeroSyncError ? 0 : r.xeroItemId ? 2 : 1,
+      });
+    }
 
     const table = createDataTable({
       columns,
@@ -279,6 +302,24 @@ export function renderStockList(container, params) {
                 });
               }
             },
+            ...(showXero ? [{
+              label: 'Send to Xero',
+              icon: 'sync',
+              onClick: async (ids) => {
+                const { showConfirm } = await import('../../utils/confirmDialog.js');
+                const confirmed = await showConfirm(
+                  `Send ${ids.length} item${ids.length === 1 ? '' : 's'} to Xero? Items already in Xero are updated with RELAY's name, code and prices.`,
+                  { title: 'Send to Xero', confirmLabel: 'Send to Xero' });
+                if (!confirmed) return;
+                try {
+                  const n = await pushStockToXero(ids);
+                  table.clearSelection();
+                  showToast(`${n} item${n === 1 ? '' : 's'} queued for Xero`, 'success');
+                } catch (err) {
+                  showToast(err.message || 'Could not send to Xero', 'error');
+                }
+              }
+            }] : []),
             {
               label: 'Delete Selected',
               icon: 'delete',
@@ -286,7 +327,7 @@ export function renderStockList(container, params) {
               onClick: (ids) => {
                 showModal({
                   title: 'Confirm Bulk Delete',
-                  content: `<p>Are you sure you want to delete ${ids.length} stock items? This action cannot be undone.</p>`,
+                  content: `<p>Are you sure you want to delete ${ids.length} stock items? This action cannot be undone.${showXero ? ' Their items in Xero are left as they are.' : ''}</p>`,
                   actions: [
                     { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
                     { label: 'Delete', className: 'btn-danger', onClick: c => {

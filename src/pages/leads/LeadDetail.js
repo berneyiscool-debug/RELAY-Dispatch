@@ -10,6 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { updateSidebarActive } from '../../components/Sidebar.js';
 import { roundCurrency } from '../../utils/pricing.js';
 import {
@@ -229,7 +230,7 @@ export function renderLeadDetail(container, { id, tab }) {
         iconBgColor: 'var(--color-info-bg)',
         iconTextColor: 'var(--color-info)',
         metaHtml: `
-          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(lead.customerName || '—')}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${entityLink({ kind: 'customer', id: lead.customerId, name: lead.customerName })}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(lead.contactName || '—')}</span>
           <span>${leadOwnerHtml(lead)}</span>
           <span class="badge ${leadStageBadge(lead.status)}">${escapeHTML(lead.status || 'New')}</span>
@@ -295,7 +296,7 @@ export function renderLeadDetail(container, { id, tab }) {
             <div class="card-body lead-detail-cols">
               <div class="lead-detail-section">
                 ${r('Title', escapeHTML(lead.title))}
-                ${r('Customer', escapeHTML(lead.customerName))}
+                ${r('Customer', entityLink({ kind: 'customer', id: lead.customerId, name: lead.customerName }))}
                 ${r('Contact', escapeHTML(lead.contactName || ''))}
                 ${r('Phone', lead.phone ? `<a class="lead-detail-link" href="tel:${escapeHTML(lead.phone)}">${escapeHTML(lead.phone)}</a>` : '&mdash;')}
                 ${r('Email', lead.email ? `<a class="lead-detail-link" href="mailto:${escapeHTML(lead.email)}">${escapeHTML(lead.email)}</a>` : '&mdash;')}

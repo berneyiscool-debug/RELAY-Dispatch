@@ -9,6 +9,7 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { hasPermission } from '../../utils/permissions.js';
 
 export function renderSupplierDetail(container, { id, tab }) {
@@ -293,7 +294,7 @@ export function renderSupplierDetail(container, { id, tab }) {
                 ${stockItems.map(item => {
                   return `
                     <tr style="cursor:pointer" data-nav="#/stock/${item.id}" title="Click to view Stock Details">
-                      <td class="font-medium cell-link">${escapeHTML(item.name)}</td>
+                      <td class="font-medium">${entityLink({ kind: 'stock', id: item.id, name: item.name, stopPropagation: true })}</td>
                       <td style="font-family:var(--font-mono)">${escapeHTML(item.sku || '—')}</td>
                       <td><span class="badge badge-neutral">${escapeHTML(item.category || 'General')}</span></td>
                       <td class="font-semibold" style="color:var(--color-primary)">$${(item.costPrice !== undefined ? item.costPrice : 0.00).toFixed(2)}</td>
@@ -342,7 +343,7 @@ export function renderSupplierDetail(container, { id, tab }) {
                   };
                   return `
                     <tr style="cursor:pointer" data-nav="#/purchase-orders/${po.id}" title="Click to view Purchase Order">
-                      <td class="font-medium cell-link">${escapeHTML(po.number)}</td>
+                      <td class="font-medium">${entityLink({ kind: 'purchaseOrder', id: po.id, name: po.number, stopPropagation: true })}</td>
                       <td>${po.orderDate ? new Date(po.orderDate).toLocaleDateString('en-AU') : '—'}</td>
                       <td>${escapeHTML(po.creatorName || '—')}</td>
                       <td>${escapeHTML(po.warehouseName || 'Main Warehouse')}</td>

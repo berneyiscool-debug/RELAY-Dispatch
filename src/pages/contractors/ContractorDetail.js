@@ -5,6 +5,7 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { entityLink } from '../../components/EntityLink.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
@@ -745,7 +746,7 @@ export function renderContractorDetail(container, { id, tab }) {
               </td>
               <td>
                 <div style="display:flex; flex-direction:column; gap:2px">
-                  <span class="text-primary font-semibold" style="cursor:pointer; text-decoration:underline" data-nav="#/jobs/${jobId}">${escapeHTML(jobNumber)}</span>
+                  ${entityLink({ kind: 'job', id: jobId, name: jobNumber, className: 'font-semibold', stopPropagation: true })}
                   <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px" title="${escapeHTML(jobTitle)}">${escapeHTML(jobTitle)}</span>
                 </div>
               </td>

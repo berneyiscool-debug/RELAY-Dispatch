@@ -176,6 +176,104 @@ export function pickContactMatch(customer, candidates) {
   return { collision: true };
 }
 
+// ── Items (stock) ────────────────────────────────────────────────────
+// docs/XERO_PHASE2_ITEMS_PLAN.md: every stock row is an untracked Xero Item.
+// RELAY owns quantities, so IsTrackedAsInventory is never set.
+
+export const ITEM_CODE_MAX = 30;
+export const ITEM_NAME_MAX = 50;
+export const ITEM_QUERY = Object.freeze({ unitdp: 4 });
+
+/**
+ * The Code a stock row goes to Xero with: its SKU when that fits, else the code
+ * it already has in Xero (adopted or imported), else one made from its id.
+ */
+export function itemCodeFor(stock) {
+  const sku = clip(stock?.sku, 1000);
+  if (sku && sku.length <= ITEM_CODE_MAX) return sku;
+  const existing = clip(stock?.xero_item_code, ITEM_CODE_MAX);
+  if (existing) return existing;
+  const id = String(stock?.id || '').replace(/[^A-Za-z0-9]/g, '');
+  if (!id) throw new MappingError('no_item_id', 'The stock item has no id.');
+  return `RELAY-${id.slice(0, ITEM_CODE_MAX - 6)}`;
+}
+
+/** Lookups to try, most specific first, before creating a new item. */
+export function itemLookups(stock) {
+  const lookups = [{ by: 'code', where: `Code==${whereString(itemCodeFor(stock))}` }];
+  const name = clip(stock?.name, ITEM_NAME_MAX);
+  if (name) lookups.push({ by: 'name', where: `Name==${whereString(name)}` });
+  return lookups;
+}
+
+/** Which existing Xero item (if any) is this stock row: same code first, then same name. */
+export function pickItemMatch(stock, candidates) {
+  const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  const lower = (v) => String(v || '').trim().toLowerCase();
+  const code = lower(itemCodeFor(stock));
+  const byCode = list.find((i) => lower(i.Code) === code);
+  if (byCode) return byCode;
+  const name = lower(clip(stock?.name, ITEM_NAME_MAX));
+  return (name && list.find((i) => lower(i.Name) === name)) || null;
+}
+
+/**
+ * POST /Items payload. Sales details use the materials account (or the default
+ * sales account); purchase details only go when a purchases account is set.
+ */
+export function buildItem(stock, { settings = {}, code = itemCodeFor(stock), itemId = stock?.xero_item_id } = {}) {
+  const name = clip(stock?.name, 4000);
+  if (!name) throw new MappingError('no_item_name', 'The stock item has no name to use in Xero.');
+  const salesAccount = settings.materialsAccountCode || settings.defaultSalesAccountCode || '';
+  const purchaseAccount = settings.purchasesAccountCode || '';
+  const sales = { UnitPrice: round(Number(stock.unit_price) || 0, 4), TaxType: settings.taxTypeTaxed || 'OUTPUT' };
+  if (salesAccount) sales.AccountCode = salesAccount;
+
+  const item = {
+    Code: clip(code, ITEM_CODE_MAX),
+    Name: clip(name, ITEM_NAME_MAX),
+    Description: name,
+    IsSold: true,
+    IsPurchased: !!purchaseAccount,
+    SalesDetails: sales,
+  };
+  if (purchaseAccount) {
+    item.PurchaseDescription = name;
+    item.PurchaseDetails = {
+      UnitPrice: round(Number(stock.cost_price) || 0, 4),
+      AccountCode: purchaseAccount,
+      TaxType: settings.taxTypePurchases || 'INPUT',
+    };
+  }
+  if (itemId) item.ItemID = itemId;
+  return item;
+}
+
+/** Per version of the stock row, so Xero de-dupes retries of one edit only. */
+export function itemIdempotencyKey(stock) {
+  return `relay-item-${stock.id}-${Date.parse(stock.updated_at || '') || 0}`.slice(0, 128);
+}
+
+/** GET /Items results in the shape xero_import_items() takes. */
+export function importableItems(xeroItems) {
+  const num = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  return (Array.isArray(xeroItems) ? xeroItems : [])
+    .filter((i) => i && i.ItemID && (clip(i.Code, ITEM_CODE_MAX) || clip(i.Name, ITEM_NAME_MAX)))
+    .map((i) => ({
+      id: String(i.ItemID),
+      code: clip(i.Code, ITEM_CODE_MAX) || null,
+      name: clip(i.Name, 255) || null,
+      description: clip(i.Description, 4000) || null,
+      salePrice: num(i.SalesDetails?.UnitPrice),
+      purchasePrice: num(i.PurchaseDetails?.UnitPrice),
+    }));
+}
+
+/** Stock ids referenced by an invoice's material lines. */
+export function invoiceStockIds(invoice, meta = parseInvoiceMeta(invoice.line_items)) {
+  return [...new Set(flattenLines(meta).map((l) => l?.stockId).filter(Boolean).map(String))];
+}
+
 // ── Invoices ─────────────────────────────────────────────────────────
 
 /** Changes whenever the invoice changes, so Xero de-dupes retries of one version only. */
@@ -209,6 +307,7 @@ function trackingFor(costCenter, settings, resolved) {
  * @param {Array}  [ctx.costCenters]         cost_centers rows
  * @param {object} [ctx.settings]            companies.settings.xero
  * @param {Map}    [ctx.tracking]            ensureTracking() results by cost center id
+ * @param {Map}    [ctx.itemCodes]           Xero item Code by stock id, for material lines
  * @param {string} [ctx.timeZone]
  * @returns {{ payload: object, warnings: string[], expectedSubtotal: number }}
  */
@@ -264,6 +363,8 @@ export function buildInvoice(invoice, ctx = {}) {
       AccountCode: accountCode,
       TaxType: taxType,
     };
+    const itemCode = line.stockId && ctx.itemCodes?.get(String(line.stockId));
+    if (itemCode) item.ItemCode = itemCode;
     const tracking = trackingFor(cc, settings, ctx.tracking);
     if (tracking) item.Tracking = tracking;
     return item;
