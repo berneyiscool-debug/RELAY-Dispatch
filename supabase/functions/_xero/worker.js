@@ -1,9 +1,9 @@
 // ============================================
 // RELAY — XERO SYNC WORKER (job logic)
 // ============================================
-// Drains claimed xero_sync_jobs: contact upserts, invoice upserts and voids,
-// payments recorded in RELAY (pay), and Xero's own state pulled back after a
-// webhook (refresh).
+// Drains claimed xero_sync_jobs: contact and item (stock) upserts, invoice
+// upserts and voids, payments recorded in RELAY (pay), and Xero's own state
+// pulled back after a webhook (refresh).
 //
 // The database and Xero are injected: relay-xero-sync passes Supabase- and
 // fetch-backed adapters, the tests pass in-memory fakes. Plain ESM.
@@ -18,18 +18,25 @@
 import { XeroError } from './client.js';
 import {
   INVOICE_QUERY,
+  ITEM_QUERY,
   MappingError,
   buildContact,
   buildInvoice,
+  buildItem,
   buildPayments,
   contactLookups,
   invoiceIdempotencyKey,
   invoiceJobIds,
   invoiceSourceUrl,
+  invoiceStockIds,
   isRelayInvoice,
+  itemCodeFor,
+  itemIdempotencyKey,
+  itemLookups,
   parseInvoiceMeta,
   parseXeroDate,
   pickContactMatch,
+  pickItemMatch,
   reconcileTotals,
   whereString,
 } from './mapping.js';
@@ -99,6 +106,84 @@ async function contactUpsert(job, deps) {
   return { status: 'done' };
 }
 
+/**
+ * Create or update the Xero Item for a stock row, matching an existing item by
+ * code then name before creating one, and save the link. Returns the Code.
+ */
+export async function syncItem(stock, { db, xero, now }, settings) {
+  let itemId = stock.xero_item_id || null;
+  let row = stock;
+  if (!itemId) {
+    const candidates = [];
+    for (const lookup of itemLookups(stock)) {
+      const { data } = await xero.request('GET', '/Items', { query: { where: lookup.where } });
+      candidates.push(...(data?.Items || []));
+      const match = pickItemMatch(stock, candidates);
+      if (match) {
+        itemId = match.ItemID;
+        // Adopted by name with no SKU of our own: keep the code it already has.
+        row = { ...stock, xero_item_code: stock.xero_item_code || match.Code || null };
+        break;
+      }
+    }
+  }
+  const code = itemCodeFor(row);
+  const { data } = await xero.request('POST', '/Items', {
+    body: { Items: [buildItem(row, { settings, code, itemId })] },
+    query: ITEM_QUERY,
+    idempotencyKey: itemIdempotencyKey(stock),
+  });
+  const saved = data?.Items?.[0];
+  if (!saved?.ItemID) throw new Error('Xero did not return an ItemID');
+  const fields = {
+    xero_item_id: saved.ItemID,
+    xero_item_code: saved.Code || code,
+    xero_synced_at: now().toISOString(),
+    xero_sync_error: null,
+  };
+  await db.updateStock(stock.id, fields);
+  Object.assign(stock, fields);
+  return fields.xero_item_code;
+}
+
+async function itemUpsert(job, deps) {
+  const stock = await deps.db.getStock(job.entity_id);
+  if (!stock) return { status: 'skipped', note: 'Stock item no longer exists.' };
+  try {
+    await syncItem(stock, deps, await deps.db.getXeroSettings(stock.company_id));
+    return { status: 'done' };
+  } catch (err) {
+    if (isPermanent(err)) await deps.db.updateStock(stock.id, { xero_sync_error: String(err.message).slice(0, 1000) });
+    throw err;
+  }
+}
+
+/**
+ * Item codes for an invoice's material lines, creating any item not in Xero
+ * yet. An item Xero refuses doesn't hold the invoice back: its line goes
+ * without a code, with a note.
+ */
+async function resolveItemCodes(invoice, meta, settings, deps) {
+  const codes = new Map();
+  const warnings = [];
+  const ids = invoiceStockIds(invoice, meta);
+  if (!ids.length) return { codes, warnings };
+  for (const stock of await deps.db.getStockItems(invoice.company_id, ids)) {
+    if (stock.xero_item_id && stock.xero_item_code) {
+      codes.set(String(stock.id), stock.xero_item_code);
+      continue;
+    }
+    try {
+      codes.set(String(stock.id), await syncItem(stock, deps, settings));
+    } catch (err) {
+      if (!isPermanent(err)) throw err;
+      await deps.db.updateStock(stock.id, { xero_sync_error: String(err.message).slice(0, 1000) });
+      warnings.push(`Sent "${stock.name}" without its item code: ${err.message}`);
+    }
+  }
+  return { codes, warnings };
+}
+
 function xeroHoldsPayment(invoice) {
   return invoice.xero_status === 'PAID'
     || (invoice.xero_payment_ids && Object.keys(invoice.xero_payment_ids).length > 0)
@@ -140,12 +225,13 @@ async function invoiceUpsert(job, deps) {
     }
 
     const tracked = await resolveTracking(jobs, costCenters, settings, deps);
+    const items = await resolveItemCodes(invoice, meta, settings, deps);
 
     const { payload, warnings } = buildInvoice(invoice, {
-      contactId, jobs, costCenters, settings, tracking: tracked.results, timeZone: deps.timeZone,
+      contactId, jobs, costCenters, settings, tracking: tracked.results, itemCodes: items.codes, timeZone: deps.timeZone,
       sourceUrl: invoiceSourceUrl(invoice.id, deps.appBase),
     });
-    warnings.push(...tracked.warnings);
+    warnings.push(...tracked.warnings, ...items.warnings);
     const { data } = await xero.request('POST', '/Invoices', {
       body: { Invoices: [payload] },
       query: INVOICE_QUERY,
@@ -313,14 +399,18 @@ export async function saveTrackingLinks(costCenters, results, db) {
 
 // Only permanent problems are shown on the invoice; a transient blip that the
 // next retry fixes shouldn't flash an error badge.
+function isPermanent(err) {
+  return err instanceof MappingError || (err instanceof XeroError && (err.kind === 'validation' || err.kind === 'not_found'));
+}
+
 async function recordInvoiceError(invoice, err, { db }) {
-  const permanent = err instanceof MappingError || (err instanceof XeroError && (err.kind === 'validation' || err.kind === 'not_found'));
-  if (!permanent) return;
+  if (!isPermanent(err)) return;
   await db.updateInvoice(invoice.id, { xero_sync_error: String(err.message).slice(0, 1000) });
 }
 
 const HANDLERS = {
   'contact:upsert': contactUpsert,
+  'item:upsert': itemUpsert,
   'invoice:upsert': invoiceUpsert,
   'invoice:void': invoiceVoid,
   'invoice:pay': invoicePay,

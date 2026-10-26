@@ -7,6 +7,7 @@ import { XeroError } from '../_xero/client.js'
 import { grantedTenants, statusPayload, summariseSettings } from '../_xero/connect.js'
 import { canEditTracking, ensureTracking } from '../_xero/tracking.js'
 import { saveTrackingLinks } from '../_xero/worker.js'
+import { importableItems } from '../_xero/mapping.js'
 
 // ============================================
 // RELAY — XERO STATUS / MANAGE
@@ -24,9 +25,14 @@ import { saveTrackingLinks } from '../_xero/worker.js'
 //                               Xero, or the named invoices (resend)
 //   { syncTracking: true }   → match every active cost center to its Xero
 //                               tracking option, creating what's missing
+//   { pushItems: "missing"|[ids] } → "Send stock to Xero": every stock item not
+//                               yet in Xero, or the named items (resend)
+//   { importItems: "preview"|"confirm" } → read Xero's Items; link matching
+//                               stock and add the rest (preview only counts)
 // Response: the status payload ({ connected, status, tenantName, ... }), plus
-//   `settings` for { accounts }, `requeued` for { retry }, `queued` for { push },
-//   `tracking` (per cost center) for { syncTracking }.
+//   `settings` for { accounts }, `requeued` for { retry }, `queued` for { push }
+//   and { pushItems }, `tracking` (per cost center) for { syncTracking },
+//   `import` ({ linked, created, already_linked, applied }) for { importItems }.
 //
 // Secrets: see _xero/edge.ts
 
@@ -35,7 +41,8 @@ serve(handle('relay-xero-status', async (req) => {
   const env = xeroEnv()
   const admin = adminClient()
   const body = await req.json().catch(() => ({}))
-  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry || body.push || body.syncTracking)
+  const changes = !!(body.selectTenant || body.accounts || body.disconnect || body.retry || body.push || body.syncTracking
+    || body.pushItems || body.importItems)
   const caller = await requireUser(req, admin, { adminOnly: changes })
   const companyId = caller.companyId
 
@@ -84,6 +91,29 @@ serve(handle('relay-xero-status', async (req) => {
     const { data, error } = await admin.rpc('xero_enqueue_invoices', { p_company_id: companyId, p_invoice_ids: ids })
     if (error) throw new Error(`Could not queue invoices: ${error.message}`)
     return json({ ...(await status(admin, env, row)), queued: data || 0 })
+  }
+
+  if (body.pushItems) {
+    if (row?.status !== 'active') throw new HttpError(409, 'Connect Xero first.')
+    const ids = body.pushItems === 'missing' ? null
+      : Array.isArray(body.pushItems) ? body.pushItems.map(String).filter(Boolean).slice(0, 500) : undefined
+    if (ids === undefined || (Array.isArray(ids) && !ids.length)) throw new HttpError(400, 'pushItems must be "missing" or a list of stock ids')
+    const { data, error } = await admin.rpc('xero_enqueue_items', { p_company_id: companyId, p_stock_ids: ids })
+    if (error) throw new Error(`Could not queue stock: ${error.message}`)
+    return json({ ...(await status(admin, env, row)), queued: data || 0 })
+  }
+
+  if (body.importItems) {
+    if (row?.status !== 'active') throw new HttpError(409, 'Connect Xero first.')
+    if (body.importItems !== 'preview' && body.importItems !== 'confirm') throw new HttpError(400, 'importItems must be "preview" or "confirm"')
+    const client = clientFor(admin, env, companyId, row.tenant_id, await decryptTokens(row, env.tokenKey))
+    // GET /Items isn't paged: one call returns the whole list.
+    const { data: items } = await client.request('GET', '/Items')
+    const { data, error } = await admin.rpc('xero_import_items', {
+      p_company_id: companyId, p_items: importableItems(items?.Items || []), p_dry_run: body.importItems === 'preview',
+    })
+    if (error) throw new Error(`Could not import items: ${error.message}`)
+    return json({ ...(await status(admin, env, row)), import: { ...(data || {}), applied: body.importItems === 'confirm' } })
   }
 
   if (body.syncTracking) {

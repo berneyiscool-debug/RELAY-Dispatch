@@ -14,7 +14,7 @@ import { localDateLabel } from '../utils/dateUtils.js';
 import { toDateKey, todayLocalISO, parseDate, dateLabel } from './dates.js';
 import { LEAD_STAGES, LEAD_STAGE_ORDER, weightedLeadValue, isOpenLead, isLeadStale } from '../pages/leads/leadStages.js';
 import { invalidInput } from './errors.js';
-import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState } from '../utils/xero.js';
+import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState, fetchStockSyncJobs, xeroStockSyncState } from '../utils/xero.js';
 
 /** Per-collection search fields, compact output shape and label. */
 const RECORD_TYPES = {
@@ -522,15 +522,16 @@ defineAction({
   name: 'get_xero_sync',
   title: 'Check Xero sync',
   description:
-    'Whether invoices have reached Xero. With an invoice (number or id): that invoice\'s Xero state and any error. Without: the connection, and every invoice that failed to sync or is still waiting, with the reason. Use for questions like "did INV-1042 go to Xero?" or "what is stuck in Xero?".',
+    'Whether invoices and stock items have reached Xero. With an invoice (number or id): that invoice\'s Xero state and any error. With a stock item (name, SKU or id): that item\'s Xero state and code. Without either: the connection, and every invoice and stock item that failed to sync or is still waiting, with the reason. Use for questions like "did INV-1042 go to Xero?", "is the tempering valve in Xero?" or "what is stuck in Xero?".',
   readOnly: true,
   inputSchema: objectSchema(
     {
       invoice: str('Optional invoice number or id to check.'),
+      stockItem: str('Optional stock item name, SKU or id to check.'),
     },
     []
   ),
-  run: async ({ invoice }) => {
+  run: async ({ invoice, stockItem }) => {
     if (!xeroEnabled()) {
       return { summary: 'Xero is not available on this account.', connected: false };
     }
@@ -544,11 +545,30 @@ defineAction({
         status: status?.status || 'disconnected',
       };
     }
-    const jobs = await fetchInvoiceSyncJobs({ force: true });
+    const [jobs, stockJobs] = await Promise.all([fetchInvoiceSyncJobs({ force: true }), fetchStockSyncJobs({ force: true })]);
     const describe = (record) => {
       const state = xeroInvoiceSyncState(record, jobs.get(String(record.id)));
       return { ...compact('invoices', record), xero: state.label, xeroState: state.state, detail: state.detail || undefined };
     };
+    const describeStock = (record) => {
+      const state = xeroStockSyncState(record, stockJobs.get(String(record.id)));
+      return { ...compact('stock', record), xero: state.label, xeroState: state.state, xeroItemCode: record.xeroItemCode || undefined, detail: state.detail || undefined };
+    };
+
+    if (stockItem) {
+      const { record } = resolveOne('stock', stockItem, {
+        label: RECORD_TYPES.stock.label,
+        searchFields: RECORD_TYPES.stock.search,
+        what: 'stock item',
+      });
+      const out = describeStock(record);
+      return {
+        summary: `${record.name}: ${out.xero}${out.detail ? ` (${out.detail})` : ''}.`,
+        connected: true,
+        tenantName: status.tenantName,
+        stockItem: out,
+      };
+    }
 
     if (invoice) {
       const { record } = resolveOne('invoices', invoice, {
@@ -569,13 +589,20 @@ defineAction({
     const failed = all.filter((i) => i.xeroState === 'error');
     const waiting = all.filter((i) => i.xeroState === 'pending');
     const missing = all.filter((i) => i.xeroState === 'missing');
+    const stock = (store.getAll('stock') || []).map(describeStock);
+    const stockFailed = stock.filter((s) => s.xeroState === 'error');
+    const stockWaiting = stock.filter((s) => s.xeroState === 'pending');
+    const stockMissing = stock.filter((s) => s.xeroState === 'missing');
     return {
-      summary: `Connected to ${status.tenantName || 'Xero'}: ${failed.length} failed, ${waiting.length} waiting, ${missing.length} sent before Xero was connected.`,
+      summary: `Connected to ${status.tenantName || 'Xero'}: ${failed.length} failed, ${waiting.length} waiting, ${missing.length} sent before Xero was connected. Stock: ${stockFailed.length} failed, ${stockWaiting.length} waiting, ${stockMissing.length} not in Xero.`,
       connected: true,
       tenantName: status.tenantName,
       failed: failed.slice(0, 25),
       waiting: waiting.slice(0, 25),
       notInXero: missing.length,
+      stockFailed: stockFailed.slice(0, 25),
+      stockWaiting: stockWaiting.slice(0, 25),
+      stockNotInXero: stockMissing.length,
     };
   },
 });

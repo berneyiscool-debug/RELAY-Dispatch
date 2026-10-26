@@ -221,6 +221,9 @@ export async function forgetXeroLinks(admin: any, companyId: string, reason: str
       xero_sync_error: null, xero_payment_ids: {},
     }).eq('company_id', companyId).not('xero_invoice_id', 'is', null),
     admin.from('customers').update({ xero_contact_id: null }).eq('company_id', companyId).not('xero_contact_id', 'is', null),
+    admin.from('stock').update({
+      xero_item_id: null, xero_item_code: null, xero_synced_at: null, xero_sync_error: null,
+    }).eq('company_id', companyId).not('xero_item_id', 'is', null),
     skipQueuedJobs(admin, companyId, reason),
   ]
   for (const step of steps) {

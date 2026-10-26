@@ -33,6 +33,7 @@ const DEFAULT_KEYS = [
   'defaultSalesAccountCode',
   'labourAccountCode',
   'materialsAccountCode',
+  'purchasesAccountCode',
   'paymentAccountCode',
   'stripeAccountCode',
   'taxTypeTaxed',
@@ -364,13 +365,116 @@ export async function retryInvoiceSync(invoiceId) {
   return requeued;
 }
 
+// ── Stock ↔ Xero Items ───────────────────────────────────────────────
+
+/**
+ * Where a stock item stands with Xero, for a badge. `jobs` is this item's
+ * entry from fetchStockSyncJobs(). Icon and words, never colour alone.
+ */
+export function xeroStockSyncState(stock, jobs = { pending: false, failed: [] }) {
+  const failed = jobs.failed || [];
+  if (!stock) return { state: 'none', label: '—', tone: 'neutral', icon: 'remove', detail: '' };
+  if (jobs.pending) return { state: 'pending', label: 'Syncing', tone: 'info', icon: 'sync', detail: 'Waiting to sync to Xero.' };
+  if (failed.length || (stock.xeroSyncError && !stock.xeroItemId)) {
+    return { state: 'error', label: 'Sync failed', tone: 'danger', icon: 'sync_problem', detail: failed[0]?.lastError || stock.xeroSyncError || '' };
+  }
+  if (stock.xeroItemId) {
+    const detail = stock.xeroItemCode ? `Xero item code ${stock.xeroItemCode}` : '';
+    if (stock.xeroSyncError) return { state: 'warning', label: 'In Xero', tone: 'warning', icon: 'warning_amber', detail: stock.xeroSyncError };
+    return { state: 'synced', label: 'In Xero', tone: 'success', icon: 'cloud_done', detail };
+  }
+  return { state: 'missing', label: 'Not in Xero', tone: 'neutral', icon: 'cloud_off', detail: 'Added before Xero was connected. Use Send stock to Xero.' };
+}
+
+let stockJobs = new Map();
+let stockJobsAt = 0;
+
+/** Unfinished item jobs, keyed by stock id (same shape as fetchInvoiceSyncJobs). */
+export async function fetchStockSyncJobs({ force = false, maxAgeMs = 20_000 } = {}) {
+  if (!xeroEnabled()) return new Map();
+  if (!force && stockJobsAt && Date.now() - stockJobsAt < maxAgeMs) return stockJobs;
+  const { data, error } = await supabase
+    .from('xero_sync_jobs')
+    .select('id, entity_id, status, last_error')
+    .eq('entity', 'item')
+    .in('status', ['pending', 'running', 'failed'])
+    .order('id', { ascending: false })
+    .limit(1000);
+  if (error) throw new Error(error.message);
+  stockJobs = groupInvoiceJobs(data || []);
+  stockJobsAt = Date.now();
+  return stockJobs;
+}
+
+/** "Send stock to Xero": 'missing' or a list of stock ids. Returns how many were queued. */
+export async function pushStockToXero(target = 'missing') {
+  const data = await invoke('relay-xero-status', { pushItems: target });
+  remember(data);
+  stockJobsAt = 0;
+  nudgeXeroSync();
+  return data?.queued || 0;
+}
+
+/**
+ * Import items from Xero. 'preview' only counts; 'confirm' links matching
+ * stock (SKU, then name) and adds the rest with quantity 0.
+ * @returns {Promise<{ linked: number, created: number, already_linked: number, applied: boolean }>}
+ */
+export async function importXeroItems(mode = 'preview') {
+  const data = await invoke('relay-xero-status', { importItems: mode });
+  remember(data);
+  // The import wrote stock server-side; reload it rather than rely on realtime.
+  if (data?.import?.applied) await reloadStock().catch(() => {});
+  return data?.import || { linked: 0, created: 0, already_linked: 0, applied: false };
+}
+
+async function reloadStock() {
+  const { data, error } = await supabase.from('stock').select('*').eq('company_id', store.companyId);
+  if (error) throw new Error(error.message);
+  store.cache.stock = store.normalizeData(data || [], 'stock');
+  store.emit('stock', store.cache.stock);
+}
+
+/** Requeue this stock item's failed jobs. Returns how many were requeued. */
+export async function retryStockSync(stockId) {
+  const jobs = (await fetchStockSyncJobs({ force: true })).get(String(stockId));
+  let requeued = 0;
+  for (const job of jobs?.failed || []) requeued += (await retryXeroSync(job.id))?.requeued || 0;
+  stockJobsAt = 0;
+  nudgeXeroSync();
+  return requeued;
+}
+
+/** How much stock is in Xero, waiting, or failed, for the Accounting page. */
+export function xeroStockAttention(stock, jobs = new Map()) {
+  let inXero = 0;
+  let missing = 0;
+  const failed = [];
+  for (const s of stock || []) {
+    const state = xeroStockSyncState(s, jobs.get(String(s.id)));
+    if (s.xeroItemId) inXero++;
+    if (state.state === 'error') failed.push({ id: s.id, name: s.name || '', reason: state.detail || 'Xero rejected this item.' });
+    else if (state.state === 'missing') missing++;
+  }
+  return { inXero, missing, failed };
+}
+
 /** What the last fetches saw, for synchronous renders. */
 export const cachedXeroStatus = () => lastStatus;
 export const cachedInvoiceSyncJobs = () => invoiceJobs;
+export const cachedStockSyncJobs = () => stockJobs;
 
 /** Small inline badge for an invoice's sync state (icon + words, tooltip for detail). */
 export function xeroSyncBadgeHtml(invoice, jobs, escape) {
-  const s = xeroInvoiceSyncState(invoice, jobs);
+  return badgeHtml(xeroInvoiceSyncState(invoice, jobs), escape);
+}
+
+/** The same badge for a stock item. */
+export function xeroStockBadgeHtml(stock, jobs, escape) {
+  return badgeHtml(xeroStockSyncState(stock, jobs), escape);
+}
+
+function badgeHtml(s, escape) {
   if (s.state === 'none' || s.state === 'draft') return '<span class="text-tertiary">—</span>';
   const tip = s.detail ? ` data-tooltip="${escape(s.detail)}" data-tooltip-pos="left"` : '';
   return `<span class="badge badge-${s.tone}" style="display:inline-flex;align-items:center;gap:3px;"${tip}><span class="material-icons-outlined" style="font-size:12px;" aria-hidden="true">${s.icon}</span>${escape(s.label)}</span>`;
