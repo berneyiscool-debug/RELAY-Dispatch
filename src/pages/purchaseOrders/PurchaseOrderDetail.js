@@ -365,8 +365,10 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
       const stockId = sel ? sel.value : '';
       const desc = tr.querySelector('.item-desc').value;
       const finalDesc = stockId ? sel.options[sel.selectedIndex].text : desc;
-      
+
       return {
+        // Keep fields the table doesn't show, e.g. the quote line a row was ordered from.
+        ...(po.lineItems[parseInt(tr.dataset.index)] || {}),
         stockId,
         description: finalDesc,
         sku: tr.querySelector('.item-sku').value,
