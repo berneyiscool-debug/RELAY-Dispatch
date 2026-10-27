@@ -469,6 +469,21 @@ section[id] {
   color: var(--ink-3);
 }
 
+/* The no-signup demo: a quieter third option under the two main buttons. */
+.demo-link {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.demo-link a {
+  color: var(--orange-ink);
+  text-decoration: none;
+}
+
+.demo-link a:hover {
+  text-decoration: underline;
+}
+
 .hero__preview {
   display: flex;
   flex-direction: column;
