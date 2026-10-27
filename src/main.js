@@ -40,6 +40,7 @@ import { initSearchableSelects } from './utils/searchableSelect.js';
 import { storageGet, storageSet } from './utils/persist.js';
 import { setSessionUser, clearSessionUser, getSessionUser } from './pages/auth/session.js';
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
+import { isGuestDemo, exitDemoMode } from './utils/demoSession.js';
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
@@ -797,6 +798,9 @@ const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads',
 // `/subscribe` are where an account with no company or no subscription is sent,
 // so requiring either would be circular.
 const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
+// A demo guest has no account to sign in to or finish setting up; leaving the
+// demo (the pill menu) is how they reach the launch screen.
+const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
 const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
@@ -847,6 +851,8 @@ router.onNavigate = (path, params) => {
     router.navigate('/login');
     return false; // Prevent further navigation handling
   }
+
+  if (currentUser && isGuestDemo() && GUEST_BLOCKED_PATHS.has(basePath)) return '/';
 
   // Demo mode is a sandbox: pages that act on the real account (its sign-in
   // profile, its subscription) stay out of reach until the user exits.
@@ -969,6 +975,12 @@ router.onNavigate = (path, params) => {
 
 // Handle logout events globally
 window.addEventListener('relay-logout', () => {
+  // A guest is not signed in anywhere: signing out just ends the demo, and the
+  // account another tab may be signed in to stays signed in.
+  if (isGuestDemo()) {
+    exitDemoMode();
+    return;
+  }
   const wasDemo = store.demoMode;
   clearSessionUser();
   localStorage.removeItem('relay_login_mode');
@@ -1003,6 +1015,8 @@ function authIdentityOf(raw) {
 
 window.addEventListener('storage', (e) => {
   if (e.key !== 'currentUser') return;
+  // A guest demo tab is not running as whoever signs in or out elsewhere.
+  if (isGuestDemo()) return;
   if (authIdentityOf(e.newValue) === authIdentityOf(e.oldValue)) return;
   window.location.reload();
 });
@@ -1021,7 +1035,7 @@ if (currentUser && currentUser.companyId && String(currentUser.companyId).starts
 }
 // A legacy multi-user marker is already normalised to `local` above, before the
 // shell is built; here we only fill in a mode when nothing is recorded.
-if (currentUser && !localStorage.getItem('relay_login_mode')) {
+if (currentUser && !isGuestDemo() && !localStorage.getItem('relay_login_mode')) {
   const isLocal = currentUser.companyId && String(currentUser.companyId).startsWith('acct_');
   localStorage.setItem('relay_login_mode', isLocal ? 'local' : 'cloud');
 }

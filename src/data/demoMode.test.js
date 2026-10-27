@@ -2,6 +2,8 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { store, DEMO_COMPANY_ID } from './store.js';
 import { supabase } from '../utils/supabase.js';
+import { DEMO_GUEST_USER } from '../utils/demoSession.js';
+import { buildDemoDataset } from './demoDataset.js';
 
 // Demo mode must stay in memory: any write that reaches IndexedDB, the local
 // folder or Supabase would land on the real account the demo was opened from.
@@ -53,5 +55,13 @@ describe('demo mode', () => {
     await store.clearAll();
     assert.strictEqual(store.getAll('jobs').length, before);
     assert.deepStrictEqual(calls, []);
+  });
+
+  test('a guest plays the dataset\'s own owner', async () => {
+    await store.initializeDemo(DEMO_GUEST_USER);
+    const owner = store.getAll('technicians').find((t) => t.id === DEMO_GUEST_USER.id);
+    assert.ok(owner, 'the guest is on the crew');
+    assert.strictEqual(owner.name, buildDemoDataset({ scope: 'demo_' }).collections.technicians[0].name);
+    assert.ok(store.getAll('userTypes').some((ut) => ut.id === DEMO_GUEST_USER.userTypeId), 'the guest\'s user type exists');
   });
 });

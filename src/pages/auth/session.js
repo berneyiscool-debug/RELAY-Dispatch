@@ -6,7 +6,7 @@
 // test fails on any direct `currentUser` read elsewhere — so a demo guest held
 // in one tab (utils/demoSession.js) is seen by the whole app.
 
-import { clearDemoFlag } from '../../utils/demoSession.js';
+import { clearDemoFlag, getDemoGuest } from '../../utils/demoSession.js';
 
 const CURRENT_USER_KEY = 'currentUser';
 
@@ -36,8 +36,13 @@ export function clearSessionUser() {
   clearDemoFlag();
 }
 
-/** The signed-in user, or null when nobody is signed in. */
+/**
+ * The signed-in user, or null when nobody is signed in. A guest demo tab gets
+ * its guest owner, whoever is signed in on the browser's other tabs.
+ */
 export function getSessionUser() {
+  const guest = getDemoGuest();
+  if (guest) return guest;
   try {
     return JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
   } catch {
