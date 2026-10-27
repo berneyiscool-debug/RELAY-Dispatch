@@ -1,5 +1,6 @@
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
+import { richTextHtml, richTextPlain } from '../../utils/richText.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
@@ -932,7 +933,7 @@ export async function renderCustomerPortal(container, params) {
                       <div>
                         <h4 style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">Job Requirements</h4>
                         <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px; padding:12px; font-size:13px; color:var(--text-primary); line-height:1.5;">
-                          ${escapeHTML(job.description || 'No job descriptions provided.')}
+                          ${job.description ? richTextHtml(job.description) : 'No job description provided.'}
                         </div>
                       </div>
 
@@ -1523,8 +1524,8 @@ export async function renderCustomerPortal(container, params) {
                             <tr>
                               <td class="font-medium">${job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString('en-AU') : '—'}</td>
                               <td><span class="badge badge-success">${escapeHTML(job.number)}</span></td>
-                              <td>${escapeHTML(job.technicianName || 'Apex Service Specialist')}</td>
-                              <td class="text-secondary" style="font-size:11px; white-space:pre-wrap;">${escapeHTML(job.description || 'Routine safety check and generator test conducted.')}</td>
+                              <td>${escapeHTML(job.technicianName || '—')}</td>
+                              <td class="text-secondary" style="font-size:11px; white-space:pre-wrap;">${escapeHTML(richTextPlain(job.description) || '—')}</td>
                             </tr>
                           `).join('')}
                         </tbody>

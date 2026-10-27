@@ -697,6 +697,8 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     const quote = {
       id: id('quote'), number: null, version: 1, customerId: o.cust.id, customerName: displayName(o.cust), contactName: o.contactName || `${o.cust.firstName} ${o.cust.lastName}`.trim(),
       title: o.title, description: o.description || '', status: o.status, sections, ...totals, laborProfileId: 'rate_1',
+      // The Internal Estimation card reads this, as on a quote saved from the editor.
+      totalInternalCost: round2(sections.reduce((a, s) => a + s.lineItems.reduce((b, l) => b + l.qty * (l.internalCost || 0), 0), 0)),
       validUntil: dateKey(addDays(o.created, 30)), notes: o.notes || 'Price valid for 30 days. Includes all testing, certification (CCEW) and removal of rubbish.',
       leadId: o.leadId || null, siteAddress: o.site ? o.site.address : o.cust.address,
       createdAt: o.created.toISOString(), updatedAt: (o.decided || o.sent || o.created).toISOString(),

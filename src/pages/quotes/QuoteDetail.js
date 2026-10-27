@@ -20,6 +20,7 @@ import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 import { entityLink } from '../../components/EntityLink.js';
+import { quoteEstimate, quoteStatusOptions, isSignedQuote } from './quoteSummary.js';
 
 export function renderQuoteDetail(container, params) {
   const { id, customerId, type, tab } = params;
@@ -110,6 +111,8 @@ export function renderQuoteDetail(container, params) {
   const quoteInvoices = isTemplate ? [] : (store.getAll('invoices') || []).filter(i => i.originalQuoteId === id);
 
   function render() {
+    const signed = isSignedQuote(quote.status);
+    const estimate = quoteEstimate(quote);
     container.innerHTML = `
       ${renderDetailHeader({
         title: isTemplate ? (isNew ? 'New Quote Template' : escapeHTML(quote.name)) : (`${isNew ? 'New Quote' : escapeHTML(quote.number)} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`),
@@ -202,7 +205,7 @@ export function renderQuoteDetail(container, params) {
             <div class="form-group">
               <label class="form-label">Status</label>
               <select class="form-select" id="quote-status" ${quote.status === 'Archived' ? 'disabled' : ''}>
-                ${['Draft','Finalised','Sent','Accepted','Declined','Archived'].map(s => `<option ${quote.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                ${quoteStatusOptions(quote.status).map(s => `<option ${quote.status === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -246,11 +249,11 @@ export function renderQuoteDetail(container, params) {
           <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center">
             <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
               <span class="text-secondary">Est. Cost</span>
-              <span>$${(quote.totalInternalCost || 0).toFixed(2)}</span>
+              <span>$${estimate.cost.toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; color:${estimate.margin >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
               <span>Est. Margin</span>
-              <span>$${(quote.subtotal - (quote.totalInternalCost || 0)).toFixed(2)} (${quote.subtotal > 0 ? Math.round(((quote.subtotal - quote.totalInternalCost) / quote.subtotal) * 100) : 0}%)</span>
+              <span>$${estimate.margin.toFixed(2)} (${estimate.percent}%)</span>
             </div>
             <div style="font-size:11px; color:var(--text-tertiary); margin-top:8px">
               * Based on stock cost and internal labor rates.
@@ -261,23 +264,28 @@ export function renderQuoteDetail(container, params) {
 
         <!-- Client Agreement & Signature Panel -->
         ${!isTemplate ? `
-        <div class="card" style="width:340px; margin:0; display:flex; flex-direction:column; border:1px solid ${quote.status === 'Accepted' ? 'var(--color-success)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--border-color)'}">
-          <div class="card-header" style="padding:10px 16px; background:${quote.status === 'Accepted' ? 'rgba(16,185,129,0.05)' : quote.status === 'Declined' ? 'rgba(239,68,68,0.05)' : 'rgba(0,0,0,0.02)'}">
-            <h5 style="margin:0; font-size:13px; color:${quote.status === 'Accepted' ? 'var(--color-success-dark)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--text-secondary)'}">Client Agreement</h5>
+        <div class="card" style="width:340px; margin:0; display:flex; flex-direction:column; border:1px solid ${signed ? 'var(--color-success)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--border-color)'}">
+          <div class="card-header" style="padding:10px 16px; background:${signed ? 'rgba(16,185,129,0.05)' : quote.status === 'Declined' ? 'rgba(239,68,68,0.05)' : 'rgba(0,0,0,0.02)'}">
+            <h5 style="margin:0; font-size:13px; color:${signed ? 'var(--color-success-dark)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--text-secondary)'}">Client Agreement</h5>
           </div>
           <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center; gap:8px">
-            ${quote.status === 'Accepted' ? `
+            ${signed ? `
               <div style="display:flex; align-items:center; gap:8px; color:var(--color-success); font-weight:700; font-size:14px">
                 <span class="material-icons-outlined">check_circle</span>
-                <span>Accepted & Signed</span>
+                <span>${quote.signedAt ? 'Accepted & Signed' : 'Accepted'}${quote.status === 'Converted' ? ' · Converted to job' : ''}</span>
               </div>
+              ${quote.signedAt ? `
               <div style="font-size:12px; color:var(--text-secondary)">
                 <div><strong>Signed By:</strong> ${escapeHTML(quote.signedByName || 'Client')}</div>
-                <div style="margin-top:2px"><strong>Signed At:</strong> ${quote.signedAt ? new Date(quote.signedAt).toLocaleString() : '—'}</div>
+                <div style="margin-top:2px"><strong>Signed At:</strong> ${new Date(quote.signedAt).toLocaleString()}</div>
               </div>
+              ${quote.signatureData ? `
               <div style="border:1px solid var(--border-color); background:var(--bg-color); height:60px; border-radius:4px; display:flex; align-items:center; justify-content:center; margin-top:4px">
-                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:var(--color-primary); font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
-              </div>
+                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:var(--color-primary); font-style:italic; font-weight:500">${escapeHTML(quote.signatureData)}</span>
+              </div>` : ''}
+              ` : `
+              <div style="font-size:12px; color:var(--text-secondary)">Marked as accepted in RELAY — there's no online signature on file.</div>
+              `}
             ` : quote.status === 'Declined' ? `
               <div style="display:flex; align-items:center; gap:8px; color:var(--color-danger); font-weight:700; font-size:14px">
                 <span class="material-icons-outlined">cancel</span>
