@@ -62,7 +62,7 @@ const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 export const TRIAL_DAYS = 14;
 
 // Does this account have the cloud plan — should the app show cloud features?
-// True for a real cloud company, and for the demo, which simulates a full Cloud+
+// True for a real cloud company, and for the demo, which simulates a Cloud
 // company in memory. Whether data actually lives in Supabase is a different
 // question: see isCloudCompany().
 export function isCloudUser() {

@@ -155,8 +155,10 @@ The guest is held in that browser tab only (`src/utils/demoSession.js`), so the
 demo never touches localStorage accounts or other tabs. The desktop app does not
 offer it.
 
-The demo simulates a full **Cloud+** company: an active subscription for the crew,
-brny Max, Users, the customer portal, email and the Leads Marketplace. Two checks
+The demo simulates a **Cloud** company (not Cloud+): an active Cloud subscription
+for the crew, brny, Users, the customer portal, email and the Leads Marketplace.
+Nothing about it is saved in Supabase: no auth user, company or profile is ever
+created, and the whole business lives in the browser tab. Two checks
 in `src/utils/subscription.js` keep this safe. `isCloudUser()` is the *plan*
 (true for a cloud company and for the demo), which decides what the UI shows.
 `isCloudCompany()` is the *data* (true only for a real company in Supabase),

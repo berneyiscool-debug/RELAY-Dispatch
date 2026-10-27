@@ -65,19 +65,41 @@ describe('demo mode', () => {
     assert.ok(store.getAll('userTypes').some((ut) => ut.id === DEMO_GUEST_USER.userTypeId), 'the guest\'s user type exists');
   });
 
-  describe('simulates a full Cloud+ account', () => {
-    test('the plan checks see Cloud+, while the data stays local', async () => {
+  describe('simulates a Cloud account (not Cloud+)', () => {
+    test('the plan checks see Cloud, while the data stays local', async () => {
       const sub = await import('../utils/subscription.js');
       const { hasDeputyMax, getAITier } = await import('../utils/aiTier.js');
       assert.strictEqual(sub.isCloudUser(), true);
       assert.strictEqual(sub.isCloudCompany(), false, 'nothing is read from or written to Supabase');
-      assert.strictEqual(sub.getTier(), 'cloud_plus');
+      assert.strictEqual(sub.getTier(), 'cloud');
       assert.strictEqual(sub.subscriptionActive(), true);
       assert.strictEqual(sub.subscriptionRequired(), false);
       assert.strictEqual(sub.trialActive(), false, 'no trial banner');
-      assert.strictEqual(getAITier(), 'cloudPlus');
-      assert.strictEqual(hasDeputyMax(), true);
+      assert.strictEqual(getAITier(), 'cloud');
+      assert.strictEqual(hasDeputyMax(), false, 'brny Max is a Cloud+ feature');
+      assert.strictEqual(sub.isCloudPlus(), false);
       assert.strictEqual(sub.getSubscription().seats, store.getAll('technicians').filter((t) => !t.deactivated).length);
+    });
+
+    test('starting a demo creates no account, company or profile in Supabase', async () => {
+      const saved = { rpc: supabase.rpc, auth: supabase.auth };
+      const touched = [];
+      supabase.rpc = (fn) => { touched.push(`rpc:${fn}`); return Promise.resolve({ data: null, error: null }); };
+      supabase.auth = new Proxy(saved.auth, {
+        get: (target, key) => (['signUp', 'signInWithPassword', 'signInAnonymously', 'admin'].includes(key)
+          ? (...args) => { touched.push(`auth:${String(key)}`); return target[key]?.(...args); }
+          : target[key]),
+      });
+      try {
+        await store.initializeDemo(DEMO_GUEST_USER);
+        store.create('jobs', { title: 'Demo job' });
+        await new Promise((r) => setTimeout(r, 10));
+      } finally {
+        supabase.rpc = saved.rpc;
+        supabase.auth = saved.auth;
+      }
+      assert.deepStrictEqual(touched, []);
+      assert.deepStrictEqual(calls, [], 'no table was written');
     });
 
     test('refreshing the subscription never asks the server', async () => {

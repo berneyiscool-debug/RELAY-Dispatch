@@ -839,16 +839,17 @@ class DataStore {
       permissions: withWorkRules(ut.permissions, defaultWorkRules(ut.name)),
     }));
     this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
-    // The demo shows a full Cloud+ company: a live subscription for the crew, and
-    // brny Max. Server-backed features stay simulated (see subscription.js).
+    // The demo shows a Cloud company: a live Cloud subscription for the crew (not
+    // Cloud+, so no brny Max). It is never saved anywhere: server-backed features
+    // stay simulated (see subscription.js).
     const seats = (this.cache.technicians || []).filter(t => !t.deactivated).length || 1;
     const renews = new Date();
     renews.setDate(renews.getDate() + 18);
     this.companySettings = {
       ...settings,
-      ai: { ...(settings.ai || {}), tier: 'cloudPlus' },
+      ai: { ...(settings.ai || {}), tier: 'cloud' },
       _subscription: {
-        tier: 'cloud_plus',
+        tier: 'cloud',
         status: 'active',
         seats,
         currentPeriodEnd: renews.toISOString(),
