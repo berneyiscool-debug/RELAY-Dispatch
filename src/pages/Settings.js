@@ -14,7 +14,7 @@ import { WORK_RULES, defaultWorkRules, workRulesForType, workRulesFromPermission
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
-import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
+import { enterDemoMode, exitDemoMode, isGuestDemo } from '../utils/demoSession.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription, trialActive, trialDaysLeft, trialEndTime } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan, fetchStockSyncJobs, xeroStockAttention, pushStockToXero, importXeroItems, retryStockSync } from '../utils/xero.js';
@@ -229,7 +229,9 @@ export function renderSettings(container) {
           <div class="card-header"><h4>Not available in demo mode</h4></div>
           <div class="card-body">
             <p class="text-secondary" style="margin-bottom:var(--space-lg); line-height:1.5;">
-              This part of Settings manages your real account, so it's switched off while you explore the demo. Everything else — company details, rates, materials, templates — is yours to try.
+              ${isGuestDemo()
+                ? "This part of Settings manages a real account's storage, users and backups, so it's switched off in the demo. Everything else — company details, rates, materials, templates — is yours to try."
+                : "This part of Settings manages your real account, so it's switched off while you explore the demo. Everything else — company details, rates, materials, templates — is yours to try."}
             </p>
             <button class="btn btn-primary" id="btn-exit-demo-settings"><span class="material-icons-outlined">logout</span> Exit Demo Mode</button>
           </div>

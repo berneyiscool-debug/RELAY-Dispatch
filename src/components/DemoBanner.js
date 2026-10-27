@@ -7,7 +7,7 @@
 
 import { store } from '../data/store.js';
 import { DEMO_COMPANY_NAME } from '../data/demoDataset.js';
-import { resetDemoMode, exitDemoMode } from '../utils/demoSession.js';
+import { resetDemoMode, exitDemoMode, exitDemoToSignup, isGuestDemo } from '../utils/demoSession.js';
 
 export const DEMO_BANNER_ID = 'relay-demo-pill';
 
@@ -29,13 +29,16 @@ function onKey(e) {
 function openMenu() {
   const wrap = document.getElementById(DEMO_BANNER_ID);
   if (!wrap) return;
+  // A guest has no data of their own; what they need instead is the way to an account.
+  const guest = isGuestDemo();
   wrap.insertAdjacentHTML('beforeend', `
     <div class="dropdown-menu demo-pill-menu" id="${DEMO_BANNER_ID}-menu" role="menu">
       <div class="demo-pill-menu-text">
         You're exploring <strong>${DEMO_COMPANY_NAME}</strong>, a sample business. Try anything —
-        changes last until you reset or leave, and nothing is sent to anyone. Your own data is untouched.
+        changes last until you reset or leave, and nothing is sent to anyone.${guest ? '' : ' Your own data is untouched.'}
       </div>
       <div class="dropdown-divider"></div>
+      ${guest ? `<button type="button" class="dropdown-item" data-demo-act="signup" role="menuitem"><span class="material-icons-outlined" style="font-size:16px">person_add</span> Create an account</button>` : ''}
       <button type="button" class="dropdown-item" data-demo-act="reset" role="menuitem"><span class="material-icons-outlined" style="font-size:16px">restart_alt</span> Reset demo</button>
       <button type="button" class="dropdown-item" data-demo-act="exit" role="menuitem"><span class="material-icons-outlined" style="font-size:16px">logout</span> Exit demo</button>
     </div>
@@ -43,6 +46,7 @@ function openMenu() {
   document.getElementById(`${DEMO_BANNER_ID}-btn`)?.setAttribute('aria-expanded', 'true');
   wrap.querySelector('[data-demo-act="reset"]').addEventListener('click', () => { closeMenu(); resetDemoMode(); });
   wrap.querySelector('[data-demo-act="exit"]').addEventListener('click', () => { closeMenu(); exitDemoMode(); });
+  wrap.querySelector('[data-demo-act="signup"]')?.addEventListener('click', () => { closeMenu(); exitDemoToSignup(); });
   document.addEventListener('mousedown', onOutside, true);
   document.addEventListener('keydown', onKey, true);
 }

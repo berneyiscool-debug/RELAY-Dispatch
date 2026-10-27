@@ -22,6 +22,7 @@ import {
   signInWithEmailCandidates,
 } from '../../utils/cloudOnboarding.js';
 import { downloadDataSnapshot } from '../../utils/dataBackup.js';
+import { enterGuestDemo, takeSignupRequest } from '../../utils/demoSession.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -86,7 +87,9 @@ export function renderLaunchScreen(container, onComplete) {
   }
 
   // State variables
-  let cloudView = 'signin'; // 'signin' | 'signup' | 'verify'
+  // A demo guest who chose "Create an account" lands on the signup form.
+  const signupRequested = takeSignupRequest();
+  let cloudView = signupRequested ? 'signup' : 'signin'; // 'signin' | 'signup' | 'verify'
   // Address awaiting email confirmation, and the field-level detail kept so the
   // check-inbox screen can offer a resend and a "wrong email?" way back.
   let verifyState = null; // { email, companyName, adminName, adminPhone } | null
@@ -101,7 +104,7 @@ export function renderLaunchScreen(container, onComplete) {
   // Live company-name availability binding for the signup form; rebuilt on every
   // render, so the previous one is disposed before the DOM it watched is dropped.
   let companyNameCheck = null;
-  let majoritySide = localStorage.getItem('relay_last_login_side') || 'left'; // 'left' | 'right'
+  let majoritySide = signupRequested ? 'left' : (localStorage.getItem('relay_last_login_side') || 'left'); // 'left' | 'right'
 
   // Injected scoped styles
   const styles = `
@@ -606,6 +609,18 @@ export function renderLaunchScreen(container, onComplete) {
       margin-bottom: 16px;
       line-height: 1.4;
     }
+    .launch-demo {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      text-align: center;
+    }
+    .launch-demo-note {
+      margin: 6px 0 0 0;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #8a8a87;
+    }
     .launch-download {
       margin-top: 18px;
       padding-top: 14px;
@@ -711,6 +726,7 @@ export function renderLaunchScreen(container, onComplete) {
             </div>
 
             ${cloudView === 'signin' ? renderCloudSignInHTML() : cloudView === 'signup' ? renderCloudSignUpHTML() : renderCheckInboxHTML()}
+            ${cloudView === 'signin' ? renderDemoEntryHTML() : ''}
             ${renderDesktopDownloadHTML()}
           </div>
         </div>
@@ -752,6 +768,20 @@ export function renderLaunchScreen(container, onComplete) {
 
     // Attach event listeners
     attachEventListeners();
+  };
+
+  // The no-signup demo, for visitors weighing RELAY up on the web. The desktop
+  // app is only installed by someone who has already chosen it, so it has none.
+  const renderDemoEntryHTML = () => {
+    if (isDesktopBuild()) return '';
+    return `
+      <div class="launch-demo">
+        <button type="button" class="launch-btn launch-btn-secondary" id="btn-try-demo">
+          <span class="material-icons-outlined" style="font-size: 18px;">science</span> Try the demo — no signup
+        </button>
+        <p class="launch-demo-note">Explore a sample electrical business. Nothing to set up, and nothing you do is saved or sent.</p>
+      </div>
+    `;
   };
 
   // Offered here because the website is where new users land. Hidden inside the
@@ -1100,6 +1130,11 @@ export function renderLaunchScreen(container, onComplete) {
         }
       });
     }
+
+    container.querySelector('#btn-try-demo')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterGuestDemo('launch');
+    });
 
     // The installer URL carries the version, so it is looked up on click rather
     // than baked into the bundle — a new release then needs no site change.

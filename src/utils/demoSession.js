@@ -23,6 +23,9 @@ const GUEST_KEY = 'relay_demo_guest';
 // Where the demo was opened from, held until the start is recorded (see
 // takeDemoStartSource) so a reload — the reset — is not counted as a new start.
 const START_KEY = 'relay_demo_start';
+// Set when a guest leaves the demo to sign up, so the launch screen opens on
+// the signup form (see takeSignupRequest).
+const SIGNUP_KEY = 'relay_demo_signup';
 // Hash parameter that carries demo mode into a tab the demo opens (see demoTabUrl).
 const HANDOFF_PARAM = 'demo';
 // Public entry route: the website and the launch screen link here.
@@ -176,6 +179,25 @@ export function resetDemoMode() {
 export function exitDemoMode() {
   clearDemoFlag();
   restart();
+}
+
+/** Leave a guest demo for the launch screen's signup form. */
+export function exitDemoToSignup() {
+  clearDemoFlag();
+  sessionSet(SIGNUP_KEY, '1');
+  restart();
+}
+
+// Held for the page load: the launch screen can be drawn more than once on boot.
+let signupRequested = null;
+
+/** True for the page load after exitDemoToSignup(): the launch screen should open on signup. */
+export function takeSignupRequest() {
+  if (signupRequested === null) {
+    signupRequested = sessionGet(SIGNUP_KEY) === '1';
+    if (signupRequested) sessionRemove(SIGNUP_KEY);
+  }
+  return signupRequested;
 }
 
 /** Drop the flag without reloading — used when the session ends (sign-out). */

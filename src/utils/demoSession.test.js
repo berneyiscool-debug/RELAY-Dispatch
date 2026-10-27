@@ -134,3 +134,32 @@ describe('guest demo', () => {
     assert.strictEqual(replaced, null);
   });
 });
+
+describe('leaving a guest demo to sign up', () => {
+  let session;
+  beforeEach(() => {
+    session = {};
+    globalThis.sessionStorage = {
+      getItem: (k) => (k in session ? session[k] : null),
+      setItem: (k, v) => { session[k] = String(v); },
+      removeItem: (k) => { delete session[k]; },
+    };
+    globalThis.window = { location: { hash: '#/', reload: () => {} } };
+  });
+
+  afterEach(() => {
+    delete globalThis.sessionStorage;
+    delete globalThis.window;
+  });
+
+  test('ends the demo and asks the launch screen for the signup form', async () => {
+    const { exitDemoToSignup, takeSignupRequest } = await import('./demoSession.js');
+    session.relay_demo_mode = '1';
+    session.relay_demo_guest = '1';
+    exitDemoToSignup();
+    assert.strictEqual(isDemoSession(), false);
+    assert.strictEqual(takeSignupRequest(), true);
+    assert.strictEqual(takeSignupRequest(), true, 'the launch screen may draw twice on boot');
+    assert.strictEqual(session.relay_demo_signup, undefined, 'a later reload opens on sign-in');
+  });
+});
