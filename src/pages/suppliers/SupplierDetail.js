@@ -333,7 +333,7 @@ export function renderSupplierDetail(container, { id, tab }) {
               </thead>
               <tbody>
                 ${purchaseOrders.map(po => {
-                  const total = (po.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0), 0);
+                  const total = (po.lineItems || po.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0), 0);
                   const statusColors = {
                     'Draft': 'badge-draft',
                     'Pending Approval': 'badge-warning',

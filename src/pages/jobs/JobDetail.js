@@ -32,6 +32,7 @@ import {
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
+import { quoteForJob, planQuotePurchasing, groupIntoPurchaseOrders, isActiveSupplier, LINE_ISSUES } from '../../utils/quotePurchasing.js';
 import { statCard } from '../../components/StatCard.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { getSessionUser } from '../auth/session.js';
@@ -4202,7 +4203,10 @@ export function renderJobDetail(container, { id, tab, form }) {
           <div class="card" style="margin-bottom:var(--space-lg)">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
               <h4 style="margin:0">Purchase Orders</h4>
-              <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_shopping_cart</span> Raise PO</button>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-pos-from-quote"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">playlist_add_check</span> Create POs from Quote</button>
+                <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_shopping_cart</span> Raise PO</button>
+              </div>
             </div>
             <div class="card-body" style="padding:0">
               <table class="data-table">
@@ -4598,7 +4602,7 @@ export function renderJobDetail(container, { id, tab, form }) {
             <label class="form-label">Supplier *</label>
             <select class="form-select" id="po-supplier">
               <option value="">Select supplier...</option>
-              ${activeSuppliers.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
+              ${activeSuppliers.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(s.name)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -4639,20 +4643,164 @@ export function renderJobDetail(container, { id, tab, form }) {
                 }
 
                 const part = stockItems.find(s => s.id === partId);
+                const supplierRec = activeSuppliers.find(s => s.id === supplier);
 
                 const po = store.create('purchaseOrders', {
                   number: store.getNextNumber('PO-', 'purchaseOrders'),
                   jobId: id,
                   jobNumber: job.number,
-                  supplierName: supplier,
-                  issueDate: new Date().toISOString(),
+                  supplierId: supplierRec ? supplierRec.id : '',
+                  supplierName: supplierRec ? supplierRec.name : '',
+                  issueDate: todayLocalISO(),
                   expectedDate: date,
                   status: 'Draft',
-                  items: [{ stockId: partId, name: part.name, quantity: qty, unitCost: part.costPrice || 0, total: (part.costPrice || 0) * qty }],
+                  lineItems: [{ stockId: partId, description: part.name, sku: part.sku || '', quantity: qty, unitCost: part.costPrice || 0 }],
                   total: (part.costPrice || 0) * qty
                 });
 
                 showToast('Quick PO Created', 'success', { link: `/purchase-orders/${po.id}` });
+                renderTabContent();
+                close();
+              }
+            }
+          ]
+        });
+      });
+
+      tc.querySelector('#btn-pos-from-quote')?.addEventListener('click', () => {
+        const quote = quoteForJob(job, store.getAll('quotes'));
+        if (!quote) {
+          showToast('No quote is linked to this job.', 'warning');
+          return;
+        }
+
+        const suppliers = store.getAll('suppliers') || [];
+        const activeSuppliers = suppliers.filter(isActiveSupplier);
+        const rows = planQuotePurchasing({
+          quote,
+          stock: store.getAll('stock') || [],
+          suppliers,
+          purchaseOrders: store.getAll('purchaseOrders') || []
+        }).map(r => ({ ...r, qty: r.remaining, selected: !r.issue && r.remaining > 0 }));
+
+        if (rows.length === 0) {
+          showToast(`No materials found on Quote ${quote.number}`, 'info');
+          return;
+        }
+
+        const flagged = rows.filter(r => r.issue && r.remaining > 0).length;
+        const supplierOptions = (selectedId) => `
+          <option value="">Choose supplier...</option>
+          ${activeSuppliers.map(s => `<option value="${escapeHTML(s.id)}" ${s.id === selectedId ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
+        `;
+
+        const content = `
+          <p class="text-secondary" style="font-size:12px; margin:0 0 12px">
+            Tick the materials to order. Each supplier gets its own draft PO against ${escapeHTML(job.number || 'this job')}, priced at stock cost.
+          </p>
+          ${flagged ? `<div style="display:flex; gap:8px; align-items:center; padding:8px 10px; margin-bottom:12px; border-radius:6px; background:var(--warning-bg, rgba(245,158,11,0.12)); color:var(--warning-color, #b45309); font-size:12px">
+            <span class="material-icons-outlined" style="font-size:16px">warning_amber</span>
+            ${flagged} item${flagged === 1 ? '' : 's'} couldn't be matched to a supplier. Choose one, or leave ${flagged === 1 ? 'it' : 'them'} unticked.
+          </div>` : ''}
+          <table class="data-table">
+            <thead><tr><th style="width:40px"></th><th>Item</th><th>Supplier</th><th style="width:72px">Qty</th><th style="text-align:right">Unit Cost</th></tr></thead>
+            <tbody>
+              ${rows.map((r, idx) => `
+                <tr data-idx="${idx}">
+                  <td><input type="checkbox" class="pfq-check" ${r.selected ? 'checked' : ''} /></td>
+                  <td>
+                    <div>${escapeHTML(r.description)}</div>
+                    ${r.alreadyOrdered ? `<div class="text-secondary" style="font-size:11px">${r.alreadyOrdered} of ${r.quantity} already ordered</div>` : ''}
+                    ${r.issue ? `<div style="font-size:11px; color:var(--warning-color, #b45309)">${escapeHTML(LINE_ISSUES[r.issue])}</div>` : ''}
+                  </td>
+                  <td><select class="form-select pfq-supplier" style="padding:4px 8px">${supplierOptions(r.supplierId)}</select></td>
+                  <td><input type="number" class="form-input pfq-qty" style="padding:4px 8px" min="0" value="${r.qty}" /></td>
+                  <td style="text-align:right">$${r.unitCost.toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p id="pfq-summary" class="text-secondary" style="font-size:12px; margin:12px 0 0"></p>
+        `;
+
+        const summarise = (drawer) => {
+          const chosen = rows.filter(r => r.selected);
+          const pos = groupIntoPurchaseOrders(chosen, { quote, suppliers });
+          const missing = chosen.filter(r => !r.supplierId).length;
+          const el = drawer.querySelector('#pfq-summary');
+          if (!el) return;
+          el.textContent = pos.length
+            ? `Will create ${pos.length} draft PO${pos.length === 1 ? '' : 's'}: ${pos.map(p => `${p.supplierName} ($${p.total.toFixed(2)})`).join(', ')}.${missing ? ` ${missing} ticked item${missing === 1 ? ' has' : 's have'} no supplier yet.` : ''}`
+            : 'Nothing selected to order yet.';
+        };
+
+        showDrawer({
+          title: `Create POs from Quote ${quote.number}`,
+          content,
+          width: 720,
+          onMount: (drawer) => {
+            drawer.querySelectorAll('tr[data-idx]').forEach(tr => {
+              const row = rows[parseInt(tr.dataset.idx)];
+              const check = tr.querySelector('.pfq-check');
+              check.addEventListener('change', () => { row.selected = check.checked; summarise(drawer); });
+              tr.querySelector('.pfq-supplier').addEventListener('change', (e) => {
+                row.supplierId = e.target.value;
+                if (row.supplierId && row.qty > 0) { row.selected = true; check.checked = true; }
+                summarise(drawer);
+              });
+              tr.querySelector('.pfq-qty').addEventListener('input', (e) => {
+                row.qty = parseFloat(e.target.value) || 0;
+                summarise(drawer);
+              });
+            });
+            summarise(drawer);
+          },
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Create POs', className: 'btn-primary', onClick: (close) => {
+                const chosen = rows.filter(r => r.selected);
+                if (chosen.some(r => !r.supplierId)) {
+                  showToast('Choose a supplier for every ticked item, or untick it.', 'error');
+                  return;
+                }
+                const planned = groupIntoPurchaseOrders(chosen, { quote, suppliers });
+                if (planned.length === 0) {
+                  showToast('Tick at least one item with a quantity to order.', 'error');
+                  return;
+                }
+
+                const created = planned.map(p => {
+                  const po = store.create('purchaseOrders', {
+                    number: store.getNextNumber('PO-', 'purchaseOrders'),
+                    supplierId: p.supplierId,
+                    supplierName: p.supplierName,
+                    jobId: id,
+                    jobNumber: job.number,
+                    quoteId: quote.id,
+                    issueDate: todayLocalISO(),
+                    expectedDate: '',
+                    status: 'Draft',
+                    lineItems: p.lineItems,
+                    total: p.total,
+                    notes: `Raised from Quote ${quote.number}.`
+                  });
+                  logActivity({
+                    type: 'purchase_order',
+                    text: `Purchase order ${po.number} raised with ${po.supplierName} from Quote ${quote.number}`,
+                    recordType: 'purchaseOrder',
+                    recordId: po.id,
+                  });
+                  return po;
+                });
+
+                showToast(
+                  created.length === 1
+                    ? `Draft ${created[0].number} created for ${created[0].supplierName}`
+                    : `${created.length} draft POs created: ${created.map(p => p.number).join(', ')}`,
+                  'success',
+                  created.length === 1 ? { link: `/purchase-orders/${created[0].id}` } : undefined
+                );
                 renderTabContent();
                 close();
               }
