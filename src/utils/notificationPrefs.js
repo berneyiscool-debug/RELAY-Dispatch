@@ -20,7 +20,7 @@
 // stale mirror on a device that hasn't seen the newer choice yet.
 
 import { supabase } from './supabase.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 const MIRROR_PREFIX = 'notificationsHideSystem_';
 const PREF_KEY = 'notificationsHideSystem';
 const CHANGE_EVENT = 'relay:notif-pref-changed';
@@ -37,7 +37,7 @@ let writeToken = null;
 function currentUser() {
   if (typeof localStorage === 'undefined') return null;
   try {
-    return JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return getSessionUser();
   } catch {
     return null;
   }

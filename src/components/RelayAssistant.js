@@ -36,7 +36,8 @@ import { localDateTimeLabel } from '../utils/dateUtils.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-
+import { getSessionUser } from '../pages/auth/session.js';
+import { isDemoSession } from '../utils/demoSession.js';
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
@@ -604,7 +605,7 @@ async function renderMemoryInspectorView(container) {
     : null;
 
   // Structured "personal memory" factsheet, categorised the same way the chat context uses it.
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
   const enabledKey = `relay_factsheet_enabled_${userId}`;
@@ -1556,7 +1557,7 @@ function handleClearChatClick() {
             await clearDeputyThread(currentThreadId);
           } else {
             chatHistory = [];
-            localStorage.removeItem(`relay_chat_history_${getUserId()}`);
+            chatStorage().removeItem(`relay_chat_history_${getUserId()}`);
             localStorage.removeItem(`relay_draft_message_${getUserId()}`);
             thread.innerHTML = '';
             renderIntroDashboard(thread);
@@ -1584,7 +1585,7 @@ function bindTopbarRelayControls() {
 // never spends any of the user's AI allowance. All the numbers and wording come
 // from `buildIntroCard`, which keeps the layout dumb and the data testable.
 function renderIntroDashboard(thread) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userName = currentUser ? (currentUser.name || 'Admin') : 'Admin';
   const firstName = userName.split(' ')[0];
 
@@ -1676,6 +1677,7 @@ let suppressActionToasts = false;
 // Whether Deputy's hosted AI is usable right now. It ships with a paid Cloud
 // workspace and is called through the secure edge function (no client key), so
 // there is no per-account switch. Local accounts get the rule-based assistant.
+// The demo counts as cloud and runs on its own capped allowance (relay-demo).
 function canUseAI() {
   return isCloudUser();
 }
@@ -1696,8 +1698,14 @@ store.on('settings', () => {
 });
 
 function getUserId() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   return currentUser ? currentUser.id : 'default';
+}
+
+// Where the single chat history and the unsent draft are kept. A demo's stay in
+// the tab, so every demo starts clean and never mixes with the account's chats.
+function chatStorage() {
+  return isDemoSession() ? sessionStorage : localStorage;
 }
 
 function loadChatHistory() {
@@ -1710,7 +1718,7 @@ function loadChatHistory() {
   // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = chatStorage().getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error('Failed to load chat history', e);
@@ -1730,7 +1738,7 @@ function saveChatHistory(history) {
   // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
-    localStorage.setItem(key, JSON.stringify(history));
+    chatStorage().setItem(key, JSON.stringify(history));
   } catch (e) {
     console.error('Failed to save chat history', e);
   }
@@ -1824,7 +1832,7 @@ export async function openRelay() {
   activeTab = isExpanded ? 'watchdog' : 'chat';
 
   const draftKey = `relay_draft_message_${getUserId()}`;
-  const draftVal = localStorage.getItem(draftKey) || '';
+  const draftVal = chatStorage().getItem(draftKey) || '';
   const cloud = isCloudUser();
   pendingAttachments = [];
 
@@ -1938,7 +1946,7 @@ export async function openRelay() {
     const hasFiles = pendingAttachments.length > 0;
     if (!text && !hasFiles) return;
 
-    localStorage.removeItem(draftKey);
+    chatStorage().removeItem(draftKey);
 
     // ── Attachment turn (vision extraction, cloud only) ──
     if (hasFiles) {
@@ -2050,7 +2058,7 @@ export async function openRelay() {
   input.addEventListener('input', () => {
     autoGrow(input);
     syncComposer();
-    localStorage.setItem(draftKey, input.value);
+    chatStorage().setItem(draftKey, input.value);
   });
   input.addEventListener('focus', () => {
     input.classList.add('focused');
@@ -3799,7 +3807,7 @@ export function getSystemContext(slim = false, { tags = true } = {}) {
     return `${sanitizePromptText(t.name, 60)} (${sanitizePromptText(t.role || 'Tech', 40)}): ${assignedCount} active job(s)`;
   }).join(' | ');
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
   const enabledKey = `relay_factsheet_enabled_${userId}`;
@@ -4443,7 +4451,7 @@ function executeAction(action, param) {
           showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
         }
       } else if (action === 'UPDATE_FACTSHEET' && param) {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        const currentUser = getSessionUser();
         const userId = currentUser ? currentUser.id : 'default';
         const enabledKey = `relay_factsheet_enabled_${userId}`;
         const isEnabled = localStorage.getItem(enabledKey) !== 'false';

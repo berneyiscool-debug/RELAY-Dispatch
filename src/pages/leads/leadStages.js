@@ -13,6 +13,7 @@
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
+import { getSessionUser } from '../auth/session.js';
 
 export const LEAD_STAGES = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
@@ -73,11 +74,8 @@ function toDate(value) {
 }
 
 function currentUserName() {
-  if (typeof localStorage === 'undefined') return 'System';
   try {
-    const raw = localStorage.getItem('currentUser');
-    if (!raw) return 'System';
-    return JSON.parse(raw)?.name || 'System';
+    return getSessionUser()?.name || 'System';
   } catch (error) {
     return 'System';
   }

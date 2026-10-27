@@ -105,3 +105,56 @@ describe('remembered sign-in identity', () => {
     assert.strictEqual(mem.has('relay_remembered_email'), false);
   });
 });
+
+describe('guest demo user', () => {
+  const tab = new Map();
+  beforeEach(() => {
+    mem.clear();
+    tab.clear();
+    globalThis.sessionStorage = {
+      getItem: (k) => (tab.has(k) ? tab.get(k) : null),
+      setItem: (k, v) => tab.set(k, String(v)),
+      removeItem: (k) => tab.delete(k),
+    };
+  });
+
+  test('a guest demo tab sees its guest, even with an account signed in elsewhere', async () => {
+    const { DEMO_GUEST_USER } = await import('../../utils/demoSession.js');
+    setSessionUser({ id: 'u1', companyId: 'c1', name: 'Real' });
+    tab.set('relay_demo_mode', '1');
+    tab.set('relay_demo_guest', '1');
+    assert.deepStrictEqual(getSessionUser(), { ...DEMO_GUEST_USER });
+    assert.strictEqual(JSON.parse(mem.get('currentUser')).id, 'u1', 'the account is left signed in');
+  });
+
+  test('an account demo still sees the account', () => {
+    setSessionUser({ id: 'u1', companyId: 'c1' });
+    tab.set('relay_demo_mode', '1');
+    assert.strictEqual(getSessionUser().id, 'u1');
+  });
+});
+
+describe('one read path for the signed-in user', () => {
+  test('nothing outside session.js reads currentUser from localStorage directly', async () => {
+    // A demo guest lives only in its tab, not in localStorage, so a direct read
+    // would see "nobody signed in" (or the real account) inside a guest demo.
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join, relative } = await import('node:path');
+    const srcRoot = new URL('../../', import.meta.url).pathname;
+    const READ_ALLOWED = new Set(['session.js', 'demoSession.js']);
+    const offenders = [];
+    const walk = async (dir) => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        // demoSession.js checks for a signed-in account only to choose between a
+        // guest demo and the account's own demo when a demo link is opened.
+        else if (entry.name.endsWith('.js') && !entry.name.endsWith('.test.js') && !READ_ALLOWED.has(entry.name)) {
+          if (/getItem\(\s*['"]currentUser['"]\s*\)/.test(await readFile(full, 'utf8'))) offenders.push(relative(srcRoot, full));
+        }
+      }
+    };
+    await walk(srcRoot);
+    assert.deepStrictEqual(offenders, [], `use getSessionUser() instead in: ${offenders.join(', ')}`);
+  });
+});

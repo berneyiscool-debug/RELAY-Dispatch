@@ -11,14 +11,13 @@ import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
 import { permissionDenied, unsupported } from './errors.js';
 import { LEGACY_ENTITY_KEYS } from '../data/activityRecord.js';
+import { getSessionUser } from '../pages/auth/session.js';
 
 /** The signed-in user, from the same storage the rest of the app reads. */
 export function currentActor() {
-  if (typeof localStorage === 'undefined') return { id: 'system', name: 'System' };
   try {
-    const raw = localStorage.getItem('currentUser');
-    if (!raw) return { id: 'system', name: 'System' };
-    const user = JSON.parse(raw) || {};
+    const user = getSessionUser();
+    if (!user) return { id: 'system', name: 'System' };
     return {
       id: user.id || 'system',
       name: user.name || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'System',

@@ -38,9 +38,10 @@ import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
 import { bindWalkthroughListeners, refreshWalkthrough } from './components/Walkthrough.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import { storageGet, storageSet } from './utils/persist.js';
-import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
+import { setSessionUser, clearSessionUser, getSessionUser } from './pages/auth/session.js';
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
-
+import { isGuestDemo, exitDemoMode, takeDemoStartSource } from './utils/demoSession.js';
+import { trackDemoEvent } from './utils/demoTracking.js';
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
@@ -201,7 +202,7 @@ if (localStorage.getItem('relay_login_mode') === 'local_multiuser') {
 // behind before the shell renders, so the sidebar profile cannot report the
 // removed Simple Mode.
 if (localStorage.getItem('relay_login_mode') === 'local') {
-  const bootUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const bootUser = getSessionUser();
   if (bootUser && String(bootUser.companyId || '').startsWith('acct_')) {
     if (localStorage.getItem('uiMode') === 'technician') {
       localStorage.setItem('uiMode', 'admin');
@@ -798,6 +799,9 @@ const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads',
 // `/subscribe` are where an account with no company or no subscription is sent,
 // so requiring either would be circular.
 const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
+// A demo guest has no account to sign in to or finish setting up; leaving the
+// demo (the pill menu) is how they reach the launch screen.
+const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
 const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
@@ -805,7 +809,7 @@ const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/priv
 let portalRouteActive = false;
 
 router.onNavigate = (path, params) => {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
   const isContractorPortal = path.startsWith('/contractor-portal');
@@ -848,6 +852,8 @@ router.onNavigate = (path, params) => {
     router.navigate('/login');
     return false; // Prevent further navigation handling
   }
+
+  if (currentUser && isGuestDemo() && GUEST_BLOCKED_PATHS.has(basePath)) return '/';
 
   // Demo mode is a sandbox: pages that act on the real account (its sign-in
   // profile, its subscription) stay out of reach until the user exits.
@@ -970,6 +976,12 @@ router.onNavigate = (path, params) => {
 
 // Handle logout events globally
 window.addEventListener('relay-logout', () => {
+  // A guest is not signed in anywhere: signing out just ends the demo, and the
+  // account another tab may be signed in to stays signed in.
+  if (isGuestDemo()) {
+    exitDemoMode();
+    return;
+  }
   const wasDemo = store.demoMode;
   clearSessionUser();
   localStorage.removeItem('relay_login_mode');
@@ -1004,12 +1016,14 @@ function authIdentityOf(raw) {
 
 window.addEventListener('storage', (e) => {
   if (e.key !== 'currentUser') return;
+  // A guest demo tab is not running as whoever signs in or out elsewhere.
+  if (isGuestDemo()) return;
   if (authIdentityOf(e.newValue) === authIdentityOf(e.oldValue)) return;
   window.location.reload();
 });
 
 // Before resolving, check if we need to redirect to login
-let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+let currentUser = getSessionUser();
 // Local mode is single-user: the owner account is the only identity that can
 // hold a local session. A staff session left behind by the removed multi-user
 // local mode is discarded here, so those installs land back on the launch
@@ -1022,7 +1036,7 @@ if (currentUser && currentUser.companyId && String(currentUser.companyId).starts
 }
 // A legacy multi-user marker is already normalised to `local` above, before the
 // shell is built; here we only fill in a mode when nothing is recorded.
-if (currentUser && !localStorage.getItem('relay_login_mode')) {
+if (currentUser && !isGuestDemo() && !localStorage.getItem('relay_login_mode')) {
   const isLocal = currentUser.companyId && String(currentUser.companyId).startsWith('acct_');
   localStorage.setItem('relay_login_mode', isLocal ? 'local' : 'cloud');
 }
@@ -1060,6 +1074,12 @@ if (resolvesEarly) router.resolve();
 if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
+      // Counted once the demo has actually loaded, and only for a fresh start:
+      // a reload (the reset) leaves no start source behind.
+      if (store.demoMode) {
+        const source = takeDemoStartSource();
+        if (source) void trackDemoEvent('demo_started', { source });
+      }
       repairMailerSettings();
       migrateJobNumberPrefix();
       if (!resolvesEarly) router.resolve();

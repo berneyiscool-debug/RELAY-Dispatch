@@ -23,7 +23,7 @@ import {
 import {
   canEditFile, renameFile, deleteFiles, duplicateFile, withExtension, COPY_FOLDER,
 } from './documentEdits.js';
-
+import { getSessionUser } from '../auth/session.js';
 const ROOT = 'All Documents';
 const VIEW_KEY = 'documentCenter.view';
 
@@ -242,7 +242,7 @@ function collectDocuments() {
 // ---- Page ------------------------------------------------------------------
 
 export function renderDocumentBrowser(container, params) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
 
   function getVisibleFolders() {
     if (currentUser.role === 'admin' || currentUser.role === 'manager') return ALL_FOLDERS;

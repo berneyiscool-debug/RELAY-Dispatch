@@ -9,6 +9,7 @@ import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisib
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 import { isDemoSession } from '../utils/demoSession.js';
 import { defaultWorkRules, withWorkRules } from '../utils/workRules.js';
+import { getSessionUser } from '../pages/auth/session.js';
 
 // Demo mode runs under this pseudo local account, so every "is this a cloud
 // company?" check in the app answers no and cloud features stay switched off.
@@ -703,9 +704,7 @@ class DataStore {
     this.backupDirPermissionGranted = false;
 
     // Check if we have a cloud user at boot (before filling cache)
-    const bootUser = typeof localStorage !== 'undefined'
-      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
-      : null;
+    const bootUser = getSessionUser();
     // Demo mode (see utils/demoSession.js): this tab runs on the in-memory demo
     // business instead of the signed-in account's data. Nothing below touches
     // that account — no cloud sync, no IndexedDB, no folder.
@@ -737,7 +736,7 @@ class DataStore {
       if (this.demoMode) return;
       if (session) {
         this.userId = session.user.id;
-        const userMeta = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const userMeta = getSessionUser() || {};
         this.companyId = userMeta.companyId || null;
         // INITIAL_SESSION (every page load), TOKEN_REFRESHED and repeat SIGNED_IN
         // events arrive for a company that is already synced or syncing. Starting a
@@ -840,7 +839,25 @@ class DataStore {
       permissions: withWorkRules(ut.permissions, defaultWorkRules(ut.name)),
     }));
     this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
-    this.companySettings = settings;
+    // The demo shows a Cloud company: a live Cloud subscription for the crew (not
+    // Cloud+, so no brny Max). It is never saved anywhere: server-backed features
+    // stay simulated (see subscription.js).
+    const seats = (this.cache.technicians || []).filter(t => !t.deactivated).length || 1;
+    const renews = new Date();
+    renews.setDate(renews.getDate() + 18);
+    this.companySettings = {
+      ...settings,
+      ai: { ...(settings.ai || {}), tier: 'cloud' },
+      _subscription: {
+        tier: 'cloud',
+        status: 'active',
+        seats,
+        currentPeriodEnd: renews.toISOString(),
+        trialEndsAt: null,
+        hasCustomer: true,
+        compTier: null,
+      },
+    };
 
     // The demo addresses are fictional: pre-warm the geocode cache with
     // suburb-accurate pins so the map works without a lookup.
@@ -1762,9 +1779,7 @@ class DataStore {
     if (!this.portalScope) return;
     await this._portalQueue;
     this.portalScope = null;
-    const bootUser = typeof localStorage !== 'undefined'
-      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
-      : null;
+    const bootUser = getSessionUser();
     this.initPromise = this.initializeUser(bootUser);
     return this.initPromise;
   }
@@ -3176,17 +3191,16 @@ class DataStore {
     if (collection === 'technicians') {
       const loginMode = typeof localStorage !== 'undefined' ? localStorage.getItem('relay_login_mode') : null;
       if (loginMode === 'local' && this.isDemoCrew()) {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        const currentUser = getSessionUser();
         // The signed-in owner keeps their own name and colour on the crew list.
         return currentUser && currentUser.id
           ? items.map(t => (t.id === currentUser.id ? { ...t, name: currentUser.name || t.name, color: currentUser.color || t.color, startLocation: this._localStartLocation() } : t))
           : items;
       }
       if (loginMode === 'local') {
-        const currentUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('currentUser') : null;
-        if (currentUserStr) {
-          const currentUser = JSON.parse(currentUserStr);
-          if (currentUser && currentUser.id) {
+        const currentUser = getSessionUser();
+        if (currentUser) {
+          if (currentUser.id) {
             return [{
               id: currentUser.id,
               name: currentUser.name || 'Local Admin',
@@ -4083,7 +4097,7 @@ class DataStore {
   _localAccountRecord() {
     try {
       const accounts = JSON.parse(localStorage.getItem('relay_accounts') || '[]');
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const currentUser = getSessionUser();
       const list = Array.isArray(accounts) ? accounts : [];
       const index = list.findIndex(a => a && a.id === currentUser?.companyId);
       return index === -1 ? null : { list, index, account: list[index] };
@@ -4099,8 +4113,7 @@ class DataStore {
   }
 
   async setStartLocation(startLocation) {
-    const currentUser = typeof localStorage !== 'undefined'
-      ? JSON.parse(localStorage.getItem('currentUser') || 'null') : null;
+    const currentUser = getSessionUser();
     if (!currentUser?.id) throw new Error('Not signed in');
 
     // Update cache first so getStartLocation() sees it immediately

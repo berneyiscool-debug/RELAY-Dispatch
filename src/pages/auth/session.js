@@ -1,11 +1,12 @@
 // ============================================
 // RELAY — SIGNED-IN USER SESSION AND REMEMBERED SIGN-IN IDENTITY
 // ============================================
-// One place that writes the signed-in user and the "remember me" hints. Reads
-// stay where they are: `localStorage.getItem('currentUser')` is how the rest of
-// the app discovers who is signed in, and that contract does not change.
+// One place that reads and writes the signed-in user and the "remember me"
+// hints. Every read of the signed-in user goes through getSessionUser() — a
+// test fails on any direct `currentUser` read elsewhere — so a demo guest held
+// in one tab (utils/demoSession.js) is seen by the whole app.
 
-import { clearDemoFlag } from '../../utils/demoSession.js';
+import { clearDemoFlag, getDemoGuest } from '../../utils/demoSession.js';
 
 const CURRENT_USER_KEY = 'currentUser';
 
@@ -35,8 +36,13 @@ export function clearSessionUser() {
   clearDemoFlag();
 }
 
-/** The signed-in user, or null when nobody is signed in. */
+/**
+ * The signed-in user, or null when nobody is signed in. A guest demo tab gets
+ * its guest owner, whoever is signed in on the browser's other tabs.
+ */
 export function getSessionUser() {
+  const guest = getDemoGuest();
+  if (guest) return guest;
   try {
     return JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
   } catch {

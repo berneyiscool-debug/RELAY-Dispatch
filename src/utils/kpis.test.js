@@ -31,7 +31,7 @@ describe('launch cards against the demo dataset', () => {
     jobs_completed:      [33,       50,      13],
     scheduled_today:     [8,        null,    8],
     unscheduled_backlog: [6,        null,    6],
-    new_leads:           [7,        2,       3],
+    new_leads:           [10,       2,       6],  // incl. the 3 Leads Marketplace prospects
     quotes_sent:         [5,        4,       2],
     quote_win_rate:      [1,        1,       1],
     open_pipeline:       [21338.2,  null,    21338.2],

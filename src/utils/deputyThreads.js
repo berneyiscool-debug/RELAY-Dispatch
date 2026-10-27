@@ -10,12 +10,12 @@
 // history once into a "Main" thread, then removes the old key.
 import { store } from '../data/store.js';
 import { hasDeputyMax } from './aiTier.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 const LEGACY_HISTORY_KEY_PREFIX = 'relay_chat_history_';
 const DEFAULT_TITLE = 'New chat';
 
 function getUserId() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   return currentUser ? currentUser.id : 'default';
 }
 

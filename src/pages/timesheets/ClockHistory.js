@@ -43,7 +43,7 @@ import {
   fmtTime, hoursLabel, isoOf, measuredHours, msToHours, payableHours, round2
 } from '../../utils/hoursMath.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
-
+import { getSessionUser } from '../auth/session.js';
 const EXCEPTION_BADGE = {
   [EXCEPTION.OPEN_SESSION]: { label: 'Still clocked in', icon: 'timer', cls: 'badge-danger' },
   [EXCEPTION.MISSING_HOURS]: { label: 'Missing hours', icon: 'error_outline', cls: 'badge-danger' },
@@ -136,7 +136,7 @@ function breakTimeline(sessions, now) {
 }
 
 function getContext() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
   const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
   const canViewAll = ['admin', 'manager', 'office'].includes(currentUser.role)
     || isLocalAdmin

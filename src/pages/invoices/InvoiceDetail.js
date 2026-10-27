@@ -23,7 +23,7 @@ import { HOURS_SOURCE, hoursSourceLabel } from '../../utils/invoiceLabour.js';
 import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSyncState, xeroHoldsPayment, xeroInvoiceUrl, retryInvoiceSync } from '../../utils/xero.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 import { entityLink } from '../../components/EntityLink.js';
-
+import { getSessionUser } from '../auth/session.js';
 export function renderInvoiceDetail(container, params) {
   const { id, tab } = params;
   const isNew = id === 'new';
@@ -95,7 +95,7 @@ export function renderInvoiceDetail(container, params) {
 
   function logInvoiceActivity(type, title, description, icon = 'history', badgeClass = 'badge-neutral') {
     if (!invoice.historyLog) invoice.historyLog = [];
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const currentUser = getSessionUser() || {};
     const userName = currentUser.name || currentUser.email || 'System';
 
     invoice.historyLog.unshift({

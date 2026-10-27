@@ -13,7 +13,7 @@ import { DESKTOP_RELEASES_URL, bindInstallerDownload, isDesktopBuild } from '../
 import { getBrnyPersonality } from '../utils/brnyPersonalities.js';
 import { getUserBrnyPersonality, setUserBrnyPersonality } from '../utils/brnyPersonalityPref.js';
 import { brnyPersonalityPickerHTML, wireBrnyPersonalityPicker } from '../components/brnyPersonalityPicker.js';
-
+import { getSessionUser } from './auth/session.js';
 const PRESET_AVATAR_COLORS = [
   '#FF5C00', // Orange
   '#1B6DE0', // Blue
@@ -62,7 +62,7 @@ const compressImage = (file) => {
 };
 
 export function renderProfile(container) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const currentUser = getSessionUser() || {};
 
   let activeAvatarColor = currentUser.color || '#FF5C00';
   let uploadedAvatarUrl = currentUser.avatarUrl || null;

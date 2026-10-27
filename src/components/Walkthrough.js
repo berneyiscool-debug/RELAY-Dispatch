@@ -23,7 +23,7 @@ import {
   loadOnboardingState, saveOnboardingState, workflowProgress, coachFor,
   PAGES_TOUR, SETTINGS_TOUR,
 } from '../utils/onboarding.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 const GUIDE_ID = 'relay-guide';
 const RING_ID = 'relay-guide-ring';
 const TOUR_ID = 'relay-tour';
@@ -32,7 +32,7 @@ const listeners = new Set();
 
 function currentUser() {
   try {
-    return JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return getSessionUser();
   } catch (e) {
     return null;
   }

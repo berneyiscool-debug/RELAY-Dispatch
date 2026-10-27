@@ -61,9 +61,17 @@ const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 // provisioning path — change all three together.
 export const TRIAL_DAYS = 14;
 
-// A real cloud account: a company id that isn't the local `acct_` namespace.
-// Mirrors the inline check used across the app (and in payments.js).
+// Does this account have the cloud plan — should the app show cloud features?
+// True for a real cloud company, and for the demo, which simulates a Cloud
+// company in memory. Whether data actually lives in Supabase is a different
+// question: see isCloudCompany().
 export function isCloudUser() {
+  return !!store.demoMode || isCloudCompany();
+}
+
+// A real cloud company: a company id that isn't the local `acct_` namespace, so
+// its rows, subscription and server functions are in Supabase. Never the demo.
+export function isCloudCompany() {
   return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
 }
 
@@ -78,7 +86,7 @@ export function getSubscription() {
 // switch/cancel, or the webhook finishing after checkout — is invisible until we
 // refetch. Call this when showing billing. Best-effort; returns the raw row.
 export async function refreshSubscription() {
-  if (!isCloudUser()) return null;
+  if (!isCloudCompany()) return null;
   return await refreshSubscriptionFor(store.companyId);
 }
 

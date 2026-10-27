@@ -176,3 +176,15 @@ test('the bar width and the percentage cannot be driven by the payload', () => {
   assert.match(clamped, /aria-valuenow="100"/);
   assert.doesNotMatch(clamped, /999/);
 });
+
+test('a demo guest gets one demo allowance bar and no team bar', () => {
+  const html = usageBarsHtmlFor({ ...snapshot(), guest: true, company: undefined });
+  assert.match(html, /Demo allowance today/);
+  assert.doesNotMatch(html, /team usage/);
+  const blocked = usageBarsHtmlFor({ ...snapshot(), guest: true, company: undefined, blocked: 'user' });
+  assert.match(blocked, /brny allowance is used up for today/);
+});
+
+test('a non-guest snapshot still needs both meters', () => {
+  assert.strictEqual(usageBarsHtmlFor({ ...snapshot(), company: undefined }), '');
+});

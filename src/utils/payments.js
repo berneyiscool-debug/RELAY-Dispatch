@@ -11,11 +11,11 @@ import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
 import { appUrl } from './webOrigin.js';
+import { isCloudUser } from './subscription.js';
 
-// Cloud accounts only. Mirrors the check used across the app.
-function isCloudUser() {
-  return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
-}
+// The demo simulates a cloud company, so the Payments screens show, but it has
+// no Stripe account behind it: every server call stops here with this message.
+export const DEMO_CONNECTIONS_MESSAGE = "Connecting outside services isn't available in the demo. Create an account to set it up for real.";
 
 // Per-company payments config (currency, per-doc toggles) lives in settings.payments.
 export function paymentsSettings() {
@@ -48,6 +48,7 @@ export function paymentsEnabledFor(docType = 'invoice') {
 
 // Shared with utils/xero.js — the same edge-function error unwrapping.
 export async function invoke(fn, body) {
+  if (store.demoMode) throw new Error(DEMO_CONNECTIONS_MESSAGE);
   const { data, error } = await supabase.functions.invoke(fn, { body: body || {} });
   if (error) {
     let detail = error.message || String(error);
@@ -77,6 +78,8 @@ export async function startConnectOnboarding(returnPath = '/settings?tab=payment
 /** Refresh the connected-account status into the store. Returns the status. */
 export async function refreshConnectStatus({ loginLink = false } = {}) {
   if (!isCloudUser()) return null;
+  // The demo is never connected to Stripe; say so without asking a server.
+  if (store.demoMode) return { chargesEnabled: false, detailsSubmitted: false };
   const data = await invoke('relay-connect-status', { loginLink });
   if (data && store.companySettings) {
     store.companySettings._connect = {

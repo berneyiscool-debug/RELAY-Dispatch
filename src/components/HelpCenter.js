@@ -10,7 +10,7 @@ import { store } from '../data/store.js';
 import { router } from '../router.js';
 import { showModal } from './Modal.js';
 import { escapeHTML } from '../utils/security.js';
-import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
+import { enterDemoMode, exitDemoMode, isGuestDemo } from '../utils/demoSession.js';
 import { HELP_GROUPS, visibleTopics, searchHelp } from '../utils/helpContent.js';
 import { restartOnboarding, startTour, isCloudAccount } from './Walkthrough.js';
 import { openDeputyWithPrompt } from './RelayAssistant.js';
@@ -87,7 +87,7 @@ function homeHtml() {
         <button type="button" class="help-card" data-run="demo">
           <span class="material-icons-outlined">${demo ? 'logout' : 'science'}</span>
           <strong>${demo ? 'Exit demo mode' : 'Explore demo mode'}</strong>
-          <span>${demo ? 'Back to your own data' : 'A sample business — your data stays untouched'}</span>
+          <span>${demo ? (isGuestDemo() ? 'Back to the sign-in screen' : 'Back to your own data') : 'A sample business — your data stays untouched'}</span>
         </button>
       </div>
     </div>

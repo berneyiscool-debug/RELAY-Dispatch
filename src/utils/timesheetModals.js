@@ -3,12 +3,12 @@ import { showModal } from '../components/Modal.js';
 import { showToast } from '../components/Notifications.js';
 import { escapeHTML } from './security.js';
 import { todayLocalISO } from './dateUtils.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 export function showTimesheetEditModal(timesheetId, onSaveCallback) {
   const ts = store.getById('timesheets', timesheetId);
   if (!ts) return;
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const currentUser = getSessionUser() || {};
   const pathBreadcrumbs = {};
   const idToPath = {};
 

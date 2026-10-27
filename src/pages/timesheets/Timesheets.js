@@ -25,9 +25,9 @@ import { hoursOf } from '../../utils/jobTimeLedger.js';
 import { downloadCSV } from '../../utils/hoursMath.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
-
+import { getSessionUser } from '../auth/session.js';
 export function renderTimesheetsList(container, params = {}) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
   const userType = currentUser.userTypeId ? store.getById('userTypes', currentUser.userTypeId) : null;
   const permissions = userType ? userType.permissions?.find(p => p.module === 'Timesheets') : null;
 

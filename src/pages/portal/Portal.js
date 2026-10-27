@@ -6,7 +6,7 @@ import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/paymen
 import { roundCurrency } from '../../utils/pricing.js';
 import { applyTheme } from '../../utils/theme.js';
 import { loadPortal, portalAction } from '../../utils/portalClient.js';
-
+import { getSessionUser } from '../auth/session.js';
 export async function renderCustomerPortal(container, params) {
   const token = params.token;
 
@@ -239,7 +239,7 @@ export async function renderCustomerPortal(container, params) {
 
   // --- Core Layout & Portal Style ---
   function render() {
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const currentUser = getSessionUser() || {};
     const isStaff = currentUser.role && currentUser.role !== 'customer';
 
     const jobs = store.getAll('jobs').filter(j => j.customerId === customer.id);

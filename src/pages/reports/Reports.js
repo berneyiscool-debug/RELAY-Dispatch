@@ -454,11 +454,15 @@ export function renderReports(container, params) {
 // ── Cache & Insights Engine ────────────────────────────────────────────────
 const cachedAIInsights = {};
 
-// Insights have three possible sources: the Cloud AI ('live'), the on-device
-// rule engine in a local workspace ('local'), and that same rule engine standing
-// in for an AI call that failed ('offline'). Only 'live' is a real AI response,
-// so only 'live' may claim the AI branding.
+// Insights have four possible sources: the Cloud AI ('live'), the on-device
+// rule engine in a local workspace ('local'), that same rule engine standing
+// in for an AI call that failed ('offline'), and the rule engine filling the
+// panel in demo mode ('demo'). Only 'live' is a real AI response, so only
+// 'live' may claim the AI branding.
 function insightsCopy(source) {
+  if (source === 'demo') {
+    return { title: 'RELAY Insights', badgeLabel: 'Demo sample', badgeClass: 'badge-neutral', borderColor: 'var(--color-primary-light)' };
+  }
   if (source === 'offline') {
     return { title: 'RELAY AI Insights', badgeLabel: 'RELAY Offline', badgeClass: 'badge-danger', borderColor: 'var(--color-danger-bg)' };
   }
@@ -466,6 +470,13 @@ function insightsCopy(source) {
     return { title: 'RELAY AI Insights', badgeLabel: 'RELAY Live', badgeClass: 'badge-success', borderColor: 'var(--color-primary-light)' };
   }
   return { title: 'RELAY Insights', badgeLabel: 'RELAY Local', badgeClass: 'badge-neutral', borderColor: 'var(--color-primary-light)' };
+}
+
+// The panel asks the AI on every report view, unprompted. The demo simulates a
+// Cloud account but must not spend AI on that, so it gets the rule engine's
+// insights, built from the demo data, instead.
+export function insightsUseAI() {
+  return isCloudUser() && !store.demoMode;
 }
 
 function renderAIInsightsPanel(reportId, filteredData) {
@@ -481,9 +492,9 @@ function renderAIInsightsPanel(reportId, filteredData) {
   }, 100);
 
   // Only a Cloud workspace makes a real AI call, so only Cloud gets the
-  // "Analyzing..." pending state; a local workspace resolves from rules.
-  const cloud = isCloudUser();
-  const copy = insightsCopy(cloud ? 'live' : 'local');
+  // "Analyzing..." pending state; a local workspace and the demo resolve from rules.
+  const cloud = insightsUseAI();
+  const copy = insightsCopy(cloud ? 'live' : (store.demoMode ? 'demo' : 'local'));
 
   return `
     <style>
@@ -519,7 +530,7 @@ async function fetchAIInsights(reportId, d, cacheKey) {
 
   const s = store.getSettings();
   // Deputy's hosted AI is part of a paid Cloud workspace — no per-account switch.
-  const canUseAI = isCloudUser();
+  const canUseAI = insightsUseAI();
 
   let insightsHTML = '';
 
@@ -597,7 +608,7 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
     }
   } else {
     const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-    insightsHTML = renderInsightsListHTML(reportId, localInsights, 'local', mode);
+    insightsHTML = renderInsightsListHTML(reportId, localInsights, store.demoMode ? 'demo' : 'local', mode);
   }
 
   cachedAIInsights[cacheKey] = insightsHTML;

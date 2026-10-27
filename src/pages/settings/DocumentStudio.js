@@ -14,6 +14,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { getPrintStyles, generateDocument } from '../../components/PrintPreview.js';
 import { fontFaceCss } from '../../utils/fonts.js';
+import { isCloudUser } from '../../utils/subscription.js';
 import {
   enterEditorChrome, group, btn, valueBtn, seg, swatch, field, select, slider,
   tabStrip, bindTabs, openPopover, closePopover, textPopoverHTML, bindTextPopover,
@@ -90,7 +91,7 @@ function sampleDoc() {
 export function renderDocumentStudio(container) {
   enterEditorChrome(container);
 
-  const isLocalMode = !store.companyId || String(store.companyId).startsWith('acct_');
+  const isLocalMode = !isCloudUser();
   const settings = store.getSettings() || {};
   const mockData = sampleDoc();
 

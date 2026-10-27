@@ -13,6 +13,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { emailSettings } from '../../utils/email.js';
+import { isCloudUser } from '../../utils/subscription.js';
 import { EMAIL_TEMPLATES, previewEmail } from '../../utils/emailTemplates.js';
 import {
   enterEditorChrome, group, btn, valueBtn, swatch, field,
@@ -31,7 +32,7 @@ const TEMPLATE_ICONS = {
 export function renderEmailStudio(container) {
   enterEditorChrome(container);
 
-  const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+  const isCloud = isCloudUser();
   if (!isCloud) {
     container.innerHTML = `
       <div class="rde">

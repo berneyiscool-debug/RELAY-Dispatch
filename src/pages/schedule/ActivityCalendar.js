@@ -8,7 +8,7 @@ import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
-
+import { getSessionUser } from '../auth/session.js';
 const ACTIVITY_TYPES = [
   { value: 'call',       label: 'Call',        icon: 'phone',           color: '#3B82F6' },
   { value: 'meeting',    label: 'Meeting',     icon: 'groups',          color: '#8B5CF6' },
@@ -37,7 +37,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
 
   const days = getWeekDays();
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const currentUser = getSessionUser() || {};
 
   // Filter state (declared before `technicians` — filterTechId is referenced in that filter)
   let filterStatus = 'active'; // 'all' | 'active' | 'completed' | 'overdue'

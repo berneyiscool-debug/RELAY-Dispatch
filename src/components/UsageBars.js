@@ -60,8 +60,13 @@ function meterHtml({ label, meter, bare }) {
 
 // The HTML for both bars, or '' when there is nothing trustworthy to show.
 export function usageBarsHtmlFor(snap, { bare = false } = {}) {
-  if (!snap || !snap.user || !snap.company) return '';
-  const bars = `
+  if (!snap || !snap.user) return '';
+  // A demo guest has one allowance and no team; anyone else needs both meters.
+  if (!snap.guest && !snap.company) return '';
+  const bars = snap.guest ? `
+    <div class="usage-bars">
+      ${meterHtml({ label: 'Demo allowance today', meter: snap.user, bare })}
+    </div>` : `
     <div class="usage-bars">
       ${meterHtml({ label: 'Your usage today', meter: snap.user, bare })}
       ${meterHtml({ label: "Today's team usage", meter: snap.company, bare })}
@@ -73,7 +78,9 @@ export function usageBarsHtmlFor(snap, { bare = false } = {}) {
   const reset = snap.resetsAt ? `Resets ${formatLocalReset(snap.resetsAt)}` : null;
   // A blocked scope is stated plainly, so the bar explains the limit message the
   // user is about to see instead of just looking full.
-  const note = snap.blocked === 'user'
+  const note = snap.blocked && snap.guest
+    ? "The demo's brny allowance is used up for today"
+    : snap.blocked === 'user'
     ? 'Your daily allowance is used up'
     : snap.blocked === 'company'
       ? "Your team's daily allowance is used up"

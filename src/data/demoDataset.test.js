@@ -47,7 +47,9 @@ describe('demo dataset', () => {
       });
 
       test('every reference points at a real record', () => {
-        [...C.leads, ...C.quotes, ...C.jobs, ...C.invoices].forEach((x) => assert.ok(customers.has(x.customerId), `${x.number} customer`));
+        // Marketplace leads are prospects nobody has taken on yet, so they have no customer record.
+        const ownLeads = C.leads.filter((l) => l.origin !== 'Marketplace');
+        [...ownLeads, ...C.quotes, ...C.jobs, ...C.invoices].forEach((x) => assert.ok(customers.has(x.customerId), `${x.number} customer`));
         C.jobs.forEach((j) => {
           if (j.quoteId) assert.ok(quotes[j.quoteId], `${j.number} quote`);
           if (j.parentJobId) assert.ok(jobs[j.parentJobId], `${j.number} parent`);
@@ -163,4 +165,16 @@ describe('demo dataset', () => {
       });
     });
   }
+});
+
+test('the simulated Cloud account has a Leads Marketplace to browse', () => {
+  const { collections } = buildDemoDataset({ now: new Date('2026-10-08T09:00:00+11:00'), scope: 'demo_' });
+  const market = collections.leads.filter((l) => l.origin === 'Marketplace');
+  assert.strictEqual(market.length, 3);
+  market.forEach((l) => {
+    assert.strictEqual(l.customerId, null, 'a prospect, not a customer');
+    assert.match(l.number, /^LD-\d{5}$/);
+  });
+  const numbers = collections.leads.map((l) => l.number);
+  assert.strictEqual(new Set(numbers).size, numbers.length, 'lead numbers are unique');
 });

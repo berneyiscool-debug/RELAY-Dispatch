@@ -73,6 +73,12 @@ export const supabase = isConfigured
 // maps. A demo tab must not send anything or spend anything on the real
 // account, whichever screen asks. (`functions` is a getter that builds a new
 // client on every read, so the guard wraps the getter rather than the instance.)
+// The one exception is relay-demo, which touches no account: it records demo
+// usage and serves a guest's capped brny allowance.
+export function isDemoFunction(name) {
+  return typeof name === 'string' && /^relay-demo(\?|$)/.test(name);
+}
+
 (function guardFunctionsInDemo(client) {
   const proto = Object.getPrototypeOf(client);
   const descriptor = (proto && Object.getOwnPropertyDescriptor(proto, 'functions')) || Object.getOwnPropertyDescriptor(client, 'functions');
@@ -82,7 +88,12 @@ export const supabase = isConfigured
     get() {
       const functions = read();
       if (!isDemoSession() || !functions) return functions;
-      return { ...functions, invoke: async () => ({ data: null, error: new Error('Not available in demo mode.') }) };
+      return {
+        ...functions,
+        invoke: async (name, options) => (isDemoFunction(name)
+          ? functions.invoke(name, options)
+          : { data: null, error: new Error("Not available in demo mode: the demo doesn't send, charge or connect anything.") }),
+      };
     },
   });
 })(supabase);
