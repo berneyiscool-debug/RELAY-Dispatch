@@ -102,6 +102,11 @@ describe('demo mode', () => {
       assert.deepStrictEqual(calls, [], 'no table was written');
     });
 
+    test('report insights come from the rules engine, not the AI', async () => {
+      const { insightsUseAI } = await import('../pages/reports/Reports.js');
+      assert.strictEqual(insightsUseAI(), false);
+    });
+
     test('refreshing the subscription never asks the server', async () => {
       const { refreshSubscription } = await import('../utils/subscription.js');
       assert.strictEqual(await refreshSubscription(), null);
