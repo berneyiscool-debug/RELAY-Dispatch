@@ -40,7 +40,8 @@ import { initSearchableSelects } from './utils/searchableSelect.js';
 import { storageGet, storageSet } from './utils/persist.js';
 import { setSessionUser, clearSessionUser, getSessionUser } from './pages/auth/session.js';
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
-import { isGuestDemo, exitDemoMode } from './utils/demoSession.js';
+import { isGuestDemo, exitDemoMode, takeDemoStartSource } from './utils/demoSession.js';
+import { trackDemoEvent } from './utils/demoTracking.js';
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
@@ -1073,6 +1074,12 @@ if (resolvesEarly) router.resolve();
 if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
+      // Counted once the demo has actually loaded, and only for a fresh start:
+      // a reload (the reset) leaves no start source behind.
+      if (store.demoMode) {
+        const source = takeDemoStartSource();
+        if (source) void trackDemoEvent('demo_started', { source });
+      }
       repairMailerSettings();
       migrateJobNumberPrefix();
       if (!resolvesEarly) router.resolve();

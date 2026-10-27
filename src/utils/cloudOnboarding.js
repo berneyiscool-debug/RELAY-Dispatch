@@ -19,6 +19,7 @@ import { store } from '../data/store.js';
 import { setSessionUser } from '../pages/auth/session.js';
 import { TRIAL_DAYS } from './subscription.js';
 import { markTrialWelcomePending } from './trialWelcome.js';
+import { trackDemoSignup } from './demoTracking.js';
 
 export const PENDING_SIGNUP_KEY = 'relay_pending_cloud_signup';
 export const PENDING_MIGRATION_KEY = 'relay_pending_cloud_migration';
@@ -448,6 +449,9 @@ export async function provisionCloudAccount({ userId, companyName, adminName, ad
   // the company row, so signup leaves a one-tab marker for it to consume and
   // show the welcome notice once. Only a trial that actually started counts.
   if (trialEndsAt && data) markTrialWelcomePending(data);
+
+  // A browser that tried the demo first is credited to it (demo funnel).
+  void trackDemoSignup();
 
   return { companyId: data, trialEndsAt };
 }

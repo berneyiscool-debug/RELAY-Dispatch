@@ -147,6 +147,33 @@ webhook, `relay-create-payment`) run the same way, but a function that serves a
 signed-in user must never copy the flag; see
 [docs/SUPABASE_MIGRATION.md](./docs/SUPABASE_MIGRATION.md) §12a and §12c.
 
+### The no-signup demo: tracking and guest brny
+
+Anyone can open the Harbourline demo without an account: **Try the demo** on the
+web launch screen, or a link to `/app/#/demo` (the website adds `?from=site`).
+The guest is held in that browser tab only (`src/utils/demoSession.js`), so the
+demo never touches localStorage accounts or other tabs. The desktop app does not
+offer it.
+
+`relay-demo` records the demo funnel in `public.demo_events` and serves a guest's
+brny turns, capped at a sixth of a cloud user's daily allowance per visitor plus
+a daily ceiling for all guests together. Two steps against the live project:
+
+```bash
+# 1. The event log and the two reporting views.
+supabase db push        # applies 20261027120000_demo_tracking.sql
+
+# 2. The function. JWT verification MUST be off — a guest has no session.
+supabase functions deploy relay-demo --project-ref <ref> --no-verify-jwt
+```
+
+Optional secrets (defaults in brackets): `RELAY_AI_DEMO_CAP` [RELAY_AI_USER_CAP ÷ 6
+= 25 calls per visitor per day], `RELAY_AI_DEMO_POOL` [2000 calls per day for all
+guests], `RELAY_DEMO_EVENTS_PER_DAY` [60], and `RELAY_DEMO_IP_SALT`, the key for
+the hashed visitor IP [the service role key]. Read the numbers in the SQL editor
+from `demo_funnel_daily` (per day) and `demo_conversion` (demo → signup by first
+demo day and source); both are service-role only.
+
 ### brny: changing its behaviour and skills
 
 brny is the assistant in the panel, and both its behaviour and its skills live in
