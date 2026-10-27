@@ -74,7 +74,10 @@ export function createAnthropicTransport(options = {}) {
 
   async function invoke(name, request = {}) {
     const fn = String(name || '').split('?')[0];
-    if (fn !== 'relay-copilot') {
+    // The harness runs brny inside demo mode (for the dataset), and a demo tab
+    // sends its turns to relay-demo's chat action. The body has the same shape.
+    const demoChat = fn === 'relay-demo' && String(name).includes('action=chat');
+    if (fn !== 'relay-copilot' && !demoChat) {
       return { data: null, error: new Error(`The eval transport only serves relay-copilot, not ${name}.`) };
     }
     if (!apiKey) {

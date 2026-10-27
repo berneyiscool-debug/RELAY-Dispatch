@@ -37,7 +37,8 @@ describe('action lists against the demo dataset', () => {
     assert.deepEqual(jobsAtRisk(d, ctx).map(r => r.job.number), ['J-02340', 'J-02402']);
     assert.deepEqual(crewWeek(d, ctx).rows.map(r => Math.round(r.booked)), [5, 23, 25, 31, 19, 0]);
     assert.deepEqual(deliveriesDue(d, ctx).map(r => r.po.number), ['PO-00020', 'PO-00021', 'PO-00022']);
-    assert.deepEqual(leadsWaiting(d, ctx).map(r => r.lead.number), ['LD-00049', 'LD-00050']);
+    // Includes the three new Leads Marketplace prospects (LD-00051 to LD-00053).
+    assert.deepEqual(leadsWaiting(d, ctx).map(r => r.lead.number), ['LD-00053', 'LD-00049', 'LD-00052', 'LD-00050', 'LD-00051']);
     assert.equal(portalActivity(d, ctx).length, 11);
     assert.deepEqual(expiringDocuments(d, ctx).map(r => `${r.doc.type}:${r.days}`), ['Public Liability Insurance:12']);
   });

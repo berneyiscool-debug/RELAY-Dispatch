@@ -15,7 +15,7 @@ import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
 import { enterDemoMode, exitDemoMode, isGuestDemo } from '../utils/demoSession.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription, trialActive, trialDaysLeft, trialEndTime } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription, trialActive, trialDaysLeft, trialEndTime, isCloudUser, isCloudCompany } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan, fetchStockSyncJobs, xeroStockAttention, pushStockToXero, importXeroItems, retryStockSync } from '../utils/xero.js';
 import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
@@ -163,7 +163,8 @@ export function renderSettings(container) {
   // that tasklist template's editor open. Read once, so re-renders don't reopen it.
   let pendingTasklistEdit = templatesSubTab === 'tasklists' ? urlParams.get('edit') : null;
 
-  const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+  // The free plan: cloud-only tabs are gated. The demo simulates a cloud company.
+  const isLocalMode = !isCloudUser();
   const settings = store.getSettings();
 
   // Cloud-only tabs open the upgrade nudge instead of silently landing on Company.
@@ -221,16 +222,17 @@ export function renderSettings(container) {
   function renderContent() {
     const tc = container.querySelector('#settings-content');
 
-    // Demo mode: these tabs act on the real account (its storage, backups,
-    // sign-ins and data management), so they stay closed until the user exits.
-    if (store.demoMode && ['system', 'local_storage', 'users', 'storage_options'].includes(activeTab)) {
+    // Demo mode: these tabs act on the real account (its storage, backups and
+    // data management), so they stay closed until the user exits.
+    // Users stays open: the demo crew lives in memory, like the rest of the demo.
+    if (store.demoMode && ['system', 'local_storage', 'storage_options'].includes(activeTab)) {
       tc.innerHTML = `
         <div class="card" style="max-width:640px;">
           <div class="card-header"><h4>Not available in demo mode</h4></div>
           <div class="card-body">
             <p class="text-secondary" style="margin-bottom:var(--space-lg); line-height:1.5;">
               ${isGuestDemo()
-                ? "This part of Settings manages a real account's storage, users and backups, so it's switched off in the demo. Everything else — company details, rates, materials, templates — is yours to try."
+                ? "This part of Settings manages a real account's storage and backups, so it's switched off in the demo. Everything else — company details, rates, materials, templates — is yours to try."
                 : "This part of Settings manages your real account, so it's switched off while you explore the demo. Everything else — company details, rates, materials, templates — is yours to try."}
             </p>
             <button class="btn btn-primary" id="btn-exit-demo-settings"><span class="material-icons-outlined">logout</span> Exit Demo Mode</button>
@@ -1475,7 +1477,8 @@ export function renderSettings(container) {
               // Cloud accounts hand the raw password to Supabase Auth (the
               // invite-user function hashes it server-side); local accounts
               // store the hash themselves, like every other local password.
-              updates.password = isLocalAccount() ? await hashPassword(password) : password;
+              // The demo keeps its users in memory like a local account, so it hashes too.
+              updates.password = !isCloudCompany() ? await hashPassword(password) : password;
             }
 
             if (editId) {
@@ -2868,7 +2871,7 @@ export function renderSettings(container) {
   }
 
   function renderBillingTab(tc, currentUser, openMigrationModal) {
-    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    const isCloud = isCloudUser();
     const isAdmin = (currentUser?.role === 'admin');
 
     // Post-checkout / portal return flag. Stripe returns to #/settings?billing=…;
@@ -3092,7 +3095,7 @@ export function renderSettings(container) {
   function renderPaymentsTab(tc) {
     const settings = store.getSettings() || {};
     const pay = settings.payments || {};
-    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    const isCloud = isCloudUser();
 
     if (!isCloud) {
       tc.innerHTML = `
@@ -3225,7 +3228,7 @@ export function renderSettings(container) {
   function renderEmailTab(tc) {
     const settings = store.getSettings() || {};
     const email = emailSettings();   // settings.mailer — see utils/email.js
-    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    const isCloud = isCloudUser();
 
     if (!isCloud) {
       tc.innerHTML = `
@@ -3645,7 +3648,7 @@ export function renderSettings(container) {
   // cloud accounts have server rows and use the same tab to mirror them to a folder.
   // Mirrors the isLocalMode check inside renderSettings (module scope can't see it).
   function isLocalAccount() {
-    return !store.companyId || store.companyId.startsWith('acct_');
+    return !isCloudUser();
   }
 
   // One tab for the on-disk side of RELAY: local accounts write their database to

@@ -64,4 +64,56 @@ describe('demo mode', () => {
     assert.strictEqual(owner.name, buildDemoDataset({ scope: 'demo_' }).collections.technicians[0].name);
     assert.ok(store.getAll('userTypes').some((ut) => ut.id === DEMO_GUEST_USER.userTypeId), 'the guest\'s user type exists');
   });
+
+  describe('simulates a full Cloud+ account', () => {
+    test('the plan checks see Cloud+, while the data stays local', async () => {
+      const sub = await import('../utils/subscription.js');
+      const { hasDeputyMax, getAITier } = await import('../utils/aiTier.js');
+      assert.strictEqual(sub.isCloudUser(), true);
+      assert.strictEqual(sub.isCloudCompany(), false, 'nothing is read from or written to Supabase');
+      assert.strictEqual(sub.getTier(), 'cloud_plus');
+      assert.strictEqual(sub.subscriptionActive(), true);
+      assert.strictEqual(sub.subscriptionRequired(), false);
+      assert.strictEqual(sub.trialActive(), false, 'no trial banner');
+      assert.strictEqual(getAITier(), 'cloudPlus');
+      assert.strictEqual(hasDeputyMax(), true);
+      assert.strictEqual(sub.getSubscription().seats, store.getAll('technicians').filter((t) => !t.deactivated).length);
+    });
+
+    test('refreshing the subscription never asks the server', async () => {
+      const { refreshSubscription } = await import('../utils/subscription.js');
+      assert.strictEqual(await refreshSubscription(), null);
+      assert.deepStrictEqual(calls, []);
+    });
+
+    test('email sends are simulated and logged in memory', async () => {
+      const { sendEmail, getSenderInfo, emailEnabled } = await import('../utils/email.js');
+      const realInvoke = Object.getOwnPropertyDescriptor(supabase, 'functions');
+      let invoked = 0;
+      Object.defineProperty(supabase, 'functions', { configurable: true, get: () => ({ invoke: async () => { invoked += 1; return { data: null, error: null }; } }) });
+      try {
+        assert.strictEqual(emailEnabled(), true);
+        const sent = await sendEmail({ to: 'customer@example.com', subject: 'Invoice', html: '<p>Hi</p>', template: 'invoice' });
+        assert.strictEqual(sent.demo, true);
+        assert.match(sent.from, /harbourline@relaydispatch\.com\.au$/);
+        assert.ok(store.getAll('emailLog').some((row) => row.subject === 'Invoice' && row.status === 'sent'));
+        assert.ok((await getSenderInfo()).addresses.invoice);
+        assert.strictEqual(invoked, 0, 'no email function was called');
+      } finally {
+        Object.defineProperty(supabase, 'functions', realInvoke);
+      }
+    });
+
+    test('Stripe and Xero show as not connected, and connecting explains the demo', async () => {
+      const payments = await import('../utils/payments.js');
+      const xero = await import('../utils/xero.js');
+      assert.strictEqual(payments.paymentsEnabled(), true, 'the Payments screens show');
+      assert.deepStrictEqual(await payments.refreshConnectStatus(), { chargesEnabled: false, detailsSubmitted: false });
+      await assert.rejects(payments.startConnectOnboarding(), { message: payments.DEMO_CONNECTIONS_MESSAGE });
+      assert.strictEqual((await xero.getXeroStatus()).connected, false);
+      assert.strictEqual((await xero.fetchInvoiceSyncJobs({ force: true })).size, 0);
+      await assert.rejects(xero.startXeroConnect(), { message: payments.DEMO_CONNECTIONS_MESSAGE });
+      assert.deepStrictEqual(calls, [], 'no Supabase table was read');
+    });
+  });
 });

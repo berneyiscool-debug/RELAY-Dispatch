@@ -12,17 +12,16 @@
 // When Stripe plans land, the webhook writes this field server-side.
 
 import { store } from '../data/store.js';
-import { isCloudPlus } from './subscription.js';
+import { isCloudPlus, isCloudUser } from './subscription.js';
+
+// The cloud-plan check (a cloud company, or the demo's simulated Cloud+ one).
+export { isCloudUser };
 
 export const AI_TIERS = {
   LOCAL: 'local',
   CLOUD: 'cloud',
   CLOUD_PLUS: 'cloudPlus',
 };
-
-export function isCloudUser() {
-  return !!(store.companyId && !store.companyId.startsWith('acct_'));
-}
 
 export function getAITier() {
   if (!isCloudUser()) return AI_TIERS.LOCAL;

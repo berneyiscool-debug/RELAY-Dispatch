@@ -16,7 +16,7 @@
 
 import { supabase } from './supabase.js';
 import { isCloudUser } from './aiTier.js';
-import { isGuestDemo } from './demoSession.js';
+import { isDemoSession } from './demoSession.js';
 import { getDemoId } from './demoTracking.js';
 
 // The allowance resets at Sydney midnight. Callers show the reset in the user's
@@ -128,12 +128,13 @@ function toProviderMessages(messages) {
 // and usage). The edge function owns the host and the model, so there is nothing
 // provider-related left for a caller to pass in.
 async function requestCompletion(messages, options = {}) {
-  // A demo guest has no account: their turns go to relay-demo, which holds them
-  // to the demo's own daily allowance and answers in the same shape.
-  const guest = isGuestDemo();
-  if (isCloudUser() || guest) {
+  // The demo's turns go to relay-demo, which holds them to the demo's own daily
+  // allowance and answers in the same shape. That includes a signed-in account's
+  // demo tab: its brny works on demo data, not on the account's allowance.
+  const demo = isDemoSession();
+  if (isCloudUser() || demo) {
     const body = { messages };
-    if (guest) body.demoId = getDemoId();
+    if (demo) body.demoId = getDemoId();
     if (options.system) body.system = options.system;
     if (Array.isArray(options.tools) && options.tools.length) {
       body.tools = options.tools;
@@ -144,7 +145,7 @@ async function requestCompletion(messages, options = {}) {
     // Only when the caller has one: supabase-js drops the request on abort, which
     // is what lets the agent loop's stop button cancel a step already in flight.
     if (options.signal) request.signal = options.signal;
-    const { data, error } = await supabase.functions.invoke(guest ? 'relay-demo?action=chat' : 'relay-copilot', request);
+    const { data, error } = await supabase.functions.invoke(demo ? 'relay-demo?action=chat' : 'relay-copilot', request);
     if (error) {
       // supabase-js hides the real upstream message on non-2xx; the actual body
       // is on error.context (a Response). Surface it, keeping the structured
@@ -220,7 +221,7 @@ export async function dispatchChat(messages) {
 // Callers hide the bars on null rather than drawing a misleading zero, and a
 // decorative meter must never be able to break the panel it sits in.
 export async function fetchUsage() {
-  if (isGuestDemo()) return fetchGuestUsage();
+  if (isDemoSession()) return fetchDemoUsage();
   if (!isCloudUser()) return null;
   try {
     // The action travels as a query parameter because the proxy reads it before
@@ -237,9 +238,9 @@ export async function fetchUsage() {
   }
 }
 
-// A demo guest's single allowance meter, from relay-demo. Same contract as
+// The demo's single allowance meter, from relay-demo. Same contract as
 // fetchUsage(): null, never a throw, whenever it can't be trusted.
-async function fetchGuestUsage() {
+async function fetchDemoUsage() {
   try {
     const { data, error } = await supabase.functions.invoke('relay-demo?action=usage', {
       body: { demoId: getDemoId() },

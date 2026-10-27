@@ -37,7 +37,7 @@ import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { getSessionUser } from '../pages/auth/session.js';
-import { isGuestDemo } from '../utils/demoSession.js';
+import { isDemoSession } from '../utils/demoSession.js';
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
@@ -1677,9 +1677,9 @@ let suppressActionToasts = false;
 // Whether Deputy's hosted AI is usable right now. It ships with a paid Cloud
 // workspace and is called through the secure edge function (no client key), so
 // there is no per-account switch. Local accounts get the rule-based assistant.
-// A demo guest gets it too, on the demo's own capped allowance (relay-demo).
+// The demo counts as cloud and runs on its own capped allowance (relay-demo).
 function canUseAI() {
-  return isCloudUser() || isGuestDemo();
+  return isCloudUser();
 }
 
 // An expired trial pauses brny completely. It is a paid Cloud feature, every
@@ -1702,10 +1702,10 @@ function getUserId() {
   return currentUser ? currentUser.id : 'default';
 }
 
-// Where the single chat history and the unsent draft are kept. A demo guest's
-// stay in the tab, so every demo starts clean and nothing is left behind.
+// Where the single chat history and the unsent draft are kept. A demo's stay in
+// the tab, so every demo starts clean and never mixes with the account's chats.
 function chatStorage() {
-  return isGuestDemo() ? sessionStorage : localStorage;
+  return isDemoSession() ? sessionStorage : localStorage;
 }
 
 function loadChatHistory() {

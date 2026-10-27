@@ -679,7 +679,7 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
   const makeLead = (o) => {
     const lead = {
       id: id('lead'), number: null, title: o.title, customerId: o.cust.id, customerName: displayName(o.cust), contactName: `${o.cust.firstName} ${o.cust.lastName}`.trim(),
-      phone: o.cust.phone, email: o.cust.email, status: o.status, source: o.source, origin: 'Internal', value: o.value, budget: o.budget || 0,
+      phone: o.cust.phone, email: o.cust.email, status: o.status, source: o.source, origin: o.origin || 'Internal', value: o.value, budget: o.budget || 0,
       priority: o.priority || 'Medium', description: o.description || '', requirements: o.requirements || '',
       assignedTo: o.assignedTo ? T[o.assignedTo].id : '', assignedToName: o.assignedTo ? T[o.assignedTo].name : '', salesRepName: o.assignedTo ? T[o.assignedTo].name : '',
       nextActionDate: o.nextAction ? dateKey(o.nextAction) : '',
@@ -1358,6 +1358,27 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
   C.invoices.sort((a, b) => new Date(a.issueDate) - new Date(b.issueDate)).forEach((inv, i) => { inv.number = num('INV-', INVOICE_START + i); });
   C.leads.sort(byCreated).forEach((l, i) => { l.number = num('LD-', i + 1); });
   C.purchaseOrders.sort(byCreated).forEach((p, i) => { p.number = num('PO-', i + 1); });
+
+  // ---- Leads Marketplace (a Cloud feature) ------------------------------------
+  // Jobs posted by homeowners nearby that the business hasn't picked up yet, so
+  // the demo's simulated Cloud account has a Marketplace to browse. They are
+  // prospects, not customers, and are numbered after the business's own leads
+  // so the history above keeps its numbers.
+  let marketSeq = C.leads.length;
+  [
+    { first: 'Tegan', last: 'Marsh', phone: '0491 570 601', title: 'Switchboard upgrade before solar install', value: 2800, days: 0, hour: 7.4, status: 'New', priority: 'High',
+      description: 'Old ceramic fuses. Solar company says the board needs upgrading before they can connect a 6.6kW system.' },
+    { first: 'Owen', last: 'Pritchard', phone: '0491 570 602', title: 'Outdoor lighting and two weatherproof power points', value: 1650, days: -1, hour: 18.6, status: 'New', priority: 'Medium',
+      description: 'New deck at the back. Want garden lights on a timer and two outdoor GPOs near the BBQ.' },
+    { first: 'Lina', last: 'Haddad', phone: '0491 570 603', title: 'Split system for main bedroom', value: 2400, days: -2, hour: 12.1, status: 'New', priority: 'Medium',
+      description: '3.5kW reverse-cycle split for the main bedroom. Back-to-back install on an external wall, single storey.' },
+  ].forEach((m) => {
+    const created = atTime(bd(m.days), m.hour);
+    const prospect = { id: null, company: '', firstName: m.first, lastName: m.last, phone: m.phone, email: `${m.first}.${m.last}@mail.example`.toLowerCase() };
+    const lead = makeLead({ cust: prospect, origin: 'Marketplace', title: m.title, source: 'Marketplace', status: m.status, value: m.value, priority: m.priority, created, description: m.description,
+      history: [[created, 'New', 'Posted to the RELAY Leads Marketplace.']] });
+    lead.number = num('LD-', ++marketSeq);
+  });
   C.projects.sort(byCreated).forEach((p, i) => { p.number = num('PRJ-', i + 1); });
   C.notifications.sort(byCreated).forEach((nt, i) => { nt.number = num('NT-', i + 1); });
 

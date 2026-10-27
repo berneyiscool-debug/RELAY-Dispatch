@@ -155,6 +155,15 @@ The guest is held in that browser tab only (`src/utils/demoSession.js`), so the
 demo never touches localStorage accounts or other tabs. The desktop app does not
 offer it.
 
+The demo simulates a full **Cloud+** company: an active subscription for the crew,
+brny Max, Users, the customer portal, email and the Leads Marketplace. Two checks
+in `src/utils/subscription.js` keep this safe. `isCloudUser()` is the *plan*
+(true for a cloud company and for the demo), which decides what the UI shows.
+`isCloudCompany()` is the *data* (true only for a real company in Supabase),
+which decides where reads and writes go. The demo's data stays in memory.
+Server-backed features are simulated: email sends are logged as sent but nothing
+leaves the browser, and Stripe and Xero show as not connected.
+
 `relay-demo` records the demo funnel in `public.demo_events` and serves a guest's
 brny turns, capped at a sixth of a cloud user's daily allowance per visitor plus
 a daily ceiling for all guests together. Two steps against the live project:

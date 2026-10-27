@@ -92,7 +92,7 @@ export function isDemoFunction(name) {
         ...functions,
         invoke: async (name, options) => (isDemoFunction(name)
           ? functions.invoke(name, options)
-          : { data: null, error: new Error('Not available in demo mode.') }),
+          : { data: null, error: new Error("Not available in demo mode: the demo doesn't send, charge or connect anything.") }),
       };
     },
   });

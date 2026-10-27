@@ -10,13 +10,10 @@ import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
 import { invoke } from './payments.js';
 import { supabase } from './supabase.js';
+import { isCloudUser } from './subscription.js';
 import { desiredTracking, trackingCollisions, trackingName } from '../../supabase/functions/_xero/tracking.js';
 
 export const XERO_RETURN_PATH = '/settings?tab=accounting';
-
-function isCloudUser() {
-  return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
-}
 
 /** Show the Xero tab and card for this user? */
 export function xeroEnabled() {
@@ -121,6 +118,8 @@ export async function startXeroConnect(returnPath = XERO_RETURN_PATH) {
 /** { connected, status, tenantName, baseCurrency, lastError, pendingJobs, failedJobs, tenants? } */
 export async function getXeroStatus() {
   if (!isCloudUser()) return null;
+  // The demo's simulated cloud company has no Xero organisation behind it.
+  if (store.demoMode) return remember({ connected: false, status: 'disconnected' });
   return remember(await invoke('relay-xero-status', {}));
 }
 
@@ -286,7 +285,7 @@ let invoiceJobsAt = 0;
 
 /** @returns {Promise<Map<string, { pending: boolean, failed: Array<{ id: number, lastError: string }> }>>} */
 export async function fetchInvoiceSyncJobs({ force = false, maxAgeMs = 20_000 } = {}) {
-  if (!xeroEnabled()) return new Map();
+  if (!xeroEnabled() || store.demoMode) return new Map();
   if (!force && invoiceJobsAt && Date.now() - invoiceJobsAt < maxAgeMs) return invoiceJobs;
   const { data, error } = await supabase
     .from('xero_sync_jobs')
@@ -391,7 +390,7 @@ let stockJobsAt = 0;
 
 /** Unfinished item jobs, keyed by stock id (same shape as fetchInvoiceSyncJobs). */
 export async function fetchStockSyncJobs({ force = false, maxAgeMs = 20_000 } = {}) {
-  if (!xeroEnabled()) return new Map();
+  if (!xeroEnabled() || store.demoMode) return new Map();
   if (!force && stockJobsAt && Date.now() - stockJobsAt < maxAgeMs) return stockJobs;
   const { data, error } = await supabase
     .from('xero_sync_jobs')

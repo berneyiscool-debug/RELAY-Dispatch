@@ -839,7 +839,24 @@ class DataStore {
       permissions: withWorkRules(ut.permissions, defaultWorkRules(ut.name)),
     }));
     this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
-    this.companySettings = settings;
+    // The demo shows a full Cloud+ company: a live subscription for the crew, and
+    // brny Max. Server-backed features stay simulated (see subscription.js).
+    const seats = (this.cache.technicians || []).filter(t => !t.deactivated).length || 1;
+    const renews = new Date();
+    renews.setDate(renews.getDate() + 18);
+    this.companySettings = {
+      ...settings,
+      ai: { ...(settings.ai || {}), tier: 'cloudPlus' },
+      _subscription: {
+        tier: 'cloud_plus',
+        status: 'active',
+        seats,
+        currentPeriodEnd: renews.toISOString(),
+        trialEndsAt: null,
+        hasCustomer: true,
+        compTier: null,
+      },
+    };
 
     // The demo addresses are fictional: pre-warm the geocode cache with
     // suburb-accurate pins so the map works without a lookup.

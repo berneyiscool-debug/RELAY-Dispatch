@@ -16,11 +16,18 @@
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
+import { isCloudUser } from './subscription.js';
 
-// Cloud accounts only (paid API). Mirrors the check used across the app: a real
-// company id that isn't a local `acct_` namespace.
-function isCloudUser() {
-  return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+// The demo's addresses, shaped like relay-email's sender.get answer.
+const DEMO_SENDER = 'harbourline';
+function demoSenderInfo() {
+  const at = (prefix) => `${prefix}.${DEMO_SENDER}@relaydispatch.com.au`;
+  return {
+    mode: 'relay',
+    domain: 'relaydispatch.com.au',
+    slug: DEMO_SENDER,
+    addresses: { quote: at('quotes'), invoice: at('billing'), receipt: at('billing'), reminder: at('billing'), portal_invite: at('hello') },
+  };
 }
 
 // Mailer config lives at settings.mailer:
@@ -122,6 +129,13 @@ export function emailBlockedReason(template) {
 }
 
 async function invokeEmail(body) {
+  // The demo simulates a cloud company's email: a send is logged and reported
+  // as sent like a real one, but nothing leaves the browser.
+  if (store.demoMode) {
+    if (body.action === 'send') return { id: `demo_${Date.now()}`, from: demoSenderInfo().addresses[body.template] || demoSenderInfo().addresses.invoice, demo: true };
+    if (body.action === 'sender.get') return demoSenderInfo();
+    throw new Error("Using your own email domain isn't available in the demo.");
+  }
   const { data, error } = await supabase.functions.invoke('relay-email', { body });
   if (error) {
     let detail = error.message || String(error);
