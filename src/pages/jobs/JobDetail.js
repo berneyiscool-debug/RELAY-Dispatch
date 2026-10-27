@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { richTextHtml } from '../../utils/richText.js';
 import { logActivity } from '../../actions/context.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
@@ -1765,7 +1766,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                 <div class="card">
                   <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Description & Scope</h4></div>
                   <div class="card-body" style="padding:20px; font-size:14px; color:var(--text-secondary); line-height:1.6;">
-                    ${job.description ? escapeHTML(job.description).replace(/\n/g, '<br>') : 'No job description provided.'}
+                    ${job.description ? richTextHtml(job.description) : 'No job description provided.'}
                   </div>
                 </div>
 
