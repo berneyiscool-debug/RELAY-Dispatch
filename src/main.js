@@ -38,9 +38,8 @@ import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
 import { bindWalkthroughListeners, refreshWalkthrough } from './components/Walkthrough.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import { storageGet, storageSet } from './utils/persist.js';
-import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
+import { setSessionUser, clearSessionUser, getSessionUser } from './pages/auth/session.js';
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
-
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
@@ -201,7 +200,7 @@ if (localStorage.getItem('relay_login_mode') === 'local_multiuser') {
 // behind before the shell renders, so the sidebar profile cannot report the
 // removed Simple Mode.
 if (localStorage.getItem('relay_login_mode') === 'local') {
-  const bootUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const bootUser = getSessionUser();
   if (bootUser && String(bootUser.companyId || '').startsWith('acct_')) {
     if (localStorage.getItem('uiMode') === 'technician') {
       localStorage.setItem('uiMode', 'admin');
@@ -805,7 +804,7 @@ const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/priv
 let portalRouteActive = false;
 
 router.onNavigate = (path, params) => {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
   const isContractorPortal = path.startsWith('/contractor-portal');
@@ -1009,7 +1008,7 @@ window.addEventListener('storage', (e) => {
 });
 
 // Before resolving, check if we need to redirect to login
-let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+let currentUser = getSessionUser();
 // Local mode is single-user: the owner account is the only identity that can
 // hold a local session. A staff session left behind by the removed multi-user
 // local mode is discarded here, so those installs land back on the launch

@@ -12,7 +12,7 @@ import { resolveSettingsTab } from '../utils/settingsTabs.js';
 import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_TOOLTIP, COMING_SOON_SETTINGS_TABS } from './CloudUpgrade.js';
 import { showToast } from './Notifications.js';
 import { sectionNav, resolveSection } from '../utils/timesheetSections.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
 // Rule: any submenu tab that opens into child tabs of its own carries
@@ -954,7 +954,7 @@ function syncActiveFromRoute(sidebar, path) {
 
 // Compute the current user's display identity for the sidebar profile block.
 function getSidebarProfileInfo() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const currentUser = getSessionUser() || {};
   const name = currentUser.name || 
                currentUser.full_name || 
                currentUser.displayName || 
@@ -1013,7 +1013,7 @@ export function updateSidebarAccess(sidebarElement) {
   if (!sidebar) return;
   updateSidebarProfile(sidebar);
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
   if (currentUser.role === 'customer') { sidebar.style.display = 'none'; return; }
   sidebar.style.display = '';
 

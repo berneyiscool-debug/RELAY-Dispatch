@@ -1,9 +1,10 @@
 // ============================================
 // RELAY — SIGNED-IN USER SESSION AND REMEMBERED SIGN-IN IDENTITY
 // ============================================
-// One place that writes the signed-in user and the "remember me" hints. Reads
-// stay where they are: `localStorage.getItem('currentUser')` is how the rest of
-// the app discovers who is signed in, and that contract does not change.
+// One place that reads and writes the signed-in user and the "remember me"
+// hints. Every read of the signed-in user goes through getSessionUser() — a
+// test fails on any direct `currentUser` read elsewhere — so a demo guest held
+// in one tab (utils/demoSession.js) is seen by the whole app.
 
 import { clearDemoFlag } from '../../utils/demoSession.js';
 

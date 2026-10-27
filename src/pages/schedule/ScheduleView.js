@@ -33,7 +33,7 @@ import {
   isMondayDateKey,
   normalizeExpectedRosterTime
 } from '../../utils/expectedWorkRoster.js';
-
+import { getSessionUser } from '../auth/session.js';
 const SCHEDULE_HOUR_HEIGHT = 32;
 
 function initScheduleTimePickers(root) {
@@ -89,7 +89,7 @@ export function renderScheduleView(container) {
   container.style.overflow = 'hidden';
   container.style.padding = '0';
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const currentUser = getSessionUser() || {};
   const loginMode = localStorage.getItem('relay_login_mode');
   // Local profiles are single-user, so every booking lands on the owner's row —
   // except while the demo dataset is loaded, which brings its own crew.

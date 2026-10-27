@@ -9,7 +9,7 @@ import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
 import { openHelpCenter } from './HelpCenter.js';
 import { mountTrialChip, TRIAL_SLOT_ID } from './TrialChip.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
 function buildBrandHtml() {
@@ -199,7 +199,7 @@ export function updateTopbarAccess(topbarEl) {
   const topbar = topbarEl || document.getElementById('topbar');
   if (!topbar) return;
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
 
   // Trial accounts need to be able to tell they are on a trial from day one.
   mountTrialChip(topbar);

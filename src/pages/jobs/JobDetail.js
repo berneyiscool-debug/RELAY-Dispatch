@@ -33,7 +33,7 @@ import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js'
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
 import { statCard } from '../../components/StatCard.js';
 import { entityLink } from '../../components/EntityLink.js';
-
+import { getSessionUser } from '../auth/session.js';
 // Display an uploaded activity image at full size in a centered lightbox modal
 function showImageLightbox(src, name) {
   const wrapper = document.createElement('div');
@@ -1248,7 +1248,7 @@ export function renderJobDetail(container, { id, tab, form }) {
 
     if (activeTab === 'schedule') {
       // One ledger for the job: the plan (dispatches) and the record (booked hours).
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      const currentUser = getSessionUser() || {};
       const canSeeBookedTime = hasPermission('Jobs', 'view_timesheets_tab');
       const canManageBookings = canSeeBookedTime
         && (['admin', 'manager', 'office'].includes(currentUser.role) || hasPermission('Timesheets', 'delete'));
@@ -1517,7 +1517,7 @@ export function renderJobDetail(container, { id, tab, form }) {
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
 
       tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const currentUser = getSessionUser() || {};
         const now = new Date();
         const p = n => n.toString().padStart(2, '0');
         const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
@@ -1901,7 +1901,7 @@ export function renderJobDetail(container, { id, tab, form }) {
       });
 
     } else if (activeTab === 'tasks') {
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      const currentUser = getSessionUser() || {};
       let canEditTasks = true;
 
       if (!job.tasks) {
@@ -2230,7 +2230,7 @@ export function renderJobDetail(container, { id, tab, form }) {
           node.status = e.target.checked ? 'Completed' : 'Not Started';
           
           if (!job.historyLog) job.historyLog = [];
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const currentUser = getSessionUser() || {};
           const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
           
           if (e.target.checked) {
@@ -2347,7 +2347,7 @@ export function renderJobDetail(container, { id, tab, form }) {
               node.assignedContractorIds = selectedIds;
               
               if (!job.historyLog) job.historyLog = [];
-              const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+              const currentUser = getSessionUser() || {};
               const assignedNames = selectedIds.map(cid => {
                 const c = store.getById('contractors', cid);
                 return c ? (c.businessName || c.name) : cid;
@@ -2523,7 +2523,7 @@ export function renderJobDetail(container, { id, tab, form }) {
       tc.querySelector('.btn-save-values')?.addEventListener('click', () => {
         const node = getTaskByPath(job.tasks, taskExpandedPath);
         if (!node || !node.valueFields) return;
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const currentUser = getSessionUser() || {};
         tc.querySelectorAll('.vf-value-input').forEach(inp => {
           const idx = parseInt(inp.dataset.vfIdx);
           const val = inp.value.trim();
@@ -2849,7 +2849,7 @@ export function renderJobDetail(container, { id, tab, form }) {
         btn.addEventListener('click', (e) => {
           const path = e.currentTarget.dataset.path.split('-').map(Number);
           const node = getTaskByPath(job.tasks, path);
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const currentUser = getSessionUser() || {};
 
           const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
           const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
@@ -3946,7 +3946,7 @@ export function renderJobDetail(container, { id, tab, form }) {
         const val = tc.querySelector('#new-note-input').value.trim();
         if (!val && !stagedFiles.length) return;
 
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const currentUser = getSessionUser() || {};
         job.activityLog.unshift({
           id: Math.random().toString(36).substr(2, 9),
           type: 'combined',
@@ -3966,7 +3966,7 @@ export function renderJobDetail(container, { id, tab, form }) {
         const val = tc.querySelector('#new-customer-message-input').value.trim();
         if (!val) return;
 
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const currentUser = getSessionUser() || {};
         job.customerActivityLog.unshift({
           id: Math.random().toString(36).substr(2, 9),
           content: val,
@@ -4729,7 +4729,7 @@ export function renderJobDetail(container, { id, tab, form }) {
       const newStatus = e.target.value;
       if (job.status !== newStatus) {
         if (!job.historyLog) job.historyLog = [];
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const currentUser = getSessionUser() || {};
         const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
         job.historyLog.unshift({
           id: store.generateId(),
@@ -5211,7 +5211,7 @@ export function renderJobDetail(container, { id, tab, form }) {
           }
 
           if (complete && f.type === 'signature') {
-            responses[f.id] = JSON.parse(localStorage.getItem('currentUser'))?.name || 'Unknown';
+            responses[f.id] = getSessionUser()?.name || 'Unknown';
           }
         });
       });
@@ -5222,7 +5222,7 @@ export function renderJobDetail(container, { id, tab, form }) {
         ...currentInstances[idx],
         responses,
         status: complete ? 'Completed' : 'Pending',
-        submittedBy: complete ? JSON.parse(localStorage.getItem('currentUser'))?.id : currentInstances[idx].submittedBy,
+        submittedBy: complete ? getSessionUser()?.id : currentInstances[idx].submittedBy,
         submittedAt: complete ? new Date().toISOString() : currentInstances[idx].submittedAt
       };
       // Signing off a scanned draft is the review: its flags stop showing.

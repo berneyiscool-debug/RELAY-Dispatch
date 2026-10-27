@@ -36,7 +36,7 @@ import { localDateTimeLabel } from '../utils/dateUtils.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-
+import { getSessionUser } from '../pages/auth/session.js';
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
@@ -604,7 +604,7 @@ async function renderMemoryInspectorView(container) {
     : null;
 
   // Structured "personal memory" factsheet, categorised the same way the chat context uses it.
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
   const enabledKey = `relay_factsheet_enabled_${userId}`;
@@ -1584,7 +1584,7 @@ function bindTopbarRelayControls() {
 // never spends any of the user's AI allowance. All the numbers and wording come
 // from `buildIntroCard`, which keeps the layout dumb and the data testable.
 function renderIntroDashboard(thread) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userName = currentUser ? (currentUser.name || 'Admin') : 'Admin';
   const firstName = userName.split(' ')[0];
 
@@ -1696,7 +1696,7 @@ store.on('settings', () => {
 });
 
 function getUserId() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   return currentUser ? currentUser.id : 'default';
 }
 
@@ -3799,7 +3799,7 @@ export function getSystemContext(slim = false, { tags = true } = {}) {
     return `${sanitizePromptText(t.name, 60)} (${sanitizePromptText(t.role || 'Tech', 40)}): ${assignedCount} active job(s)`;
   }).join(' | ');
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
   const enabledKey = `relay_factsheet_enabled_${userId}`;
@@ -4443,7 +4443,7 @@ function executeAction(action, param) {
           showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
         }
       } else if (action === 'UPDATE_FACTSHEET' && param) {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        const currentUser = getSessionUser();
         const userId = currentUser ? currentUser.id : 'default';
         const enabledKey = `relay_factsheet_enabled_${userId}`;
         const isEnabled = localStorage.getItem(enabledKey) !== 'false';

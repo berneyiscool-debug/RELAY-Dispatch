@@ -19,7 +19,7 @@ import {
   logLeadStageChange, notifyLeadOwner, primaryLeadStage,
   summarizeByStage, weightedLeadValue,
 } from './leadStages.js';
-
+import { getSessionUser } from '../auth/session.js';
 export function renderLeadsList(container, params) {
   const hash = window.location.hash || '';
   const cloud = isCloudUser();
@@ -77,7 +77,7 @@ function renderLeadsTable(container, opts = {}) {
   
   function currentUserId() {
     try {
-      return JSON.parse(localStorage.getItem('currentUser') || 'null')?.id || null;
+      return getSessionUser()?.id || null;
     } catch {
       return null;
     }

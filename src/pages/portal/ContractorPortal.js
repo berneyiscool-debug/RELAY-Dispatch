@@ -5,7 +5,7 @@ import { todayLocalISO } from '../../utils/dateUtils.js';
 import { showToast } from '../../components/Notifications.js';
 import { applyTheme } from '../../utils/theme.js';
 import { loadPortal, portalAction } from '../../utils/portalClient.js';
-
+import { getSessionUser } from '../auth/session.js';
 export async function renderContractorPortal(container, params) {
   const token = params.token;
 
@@ -407,7 +407,7 @@ export async function renderContractorPortal(container, params) {
     const crmCompanyName = settings.name || 'Relay — Dispatch';
     
     // Check if a staff account is logged in locally
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    const currentUser = getSessionUser();
     const isStaffUser = currentUser && currentUser.role !== 'customer';
 
     container.innerHTML = `

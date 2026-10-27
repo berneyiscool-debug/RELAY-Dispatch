@@ -30,12 +30,12 @@ import {
 } from '../../utils/hoursMath.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
 import { getWorkRules } from '../../utils/workRules.js';
-
+import { getSessionUser } from '../auth/session.js';
 // Small gaps are rounding and travel, not a finding — only flag a day past this.
 const TOLERANCE_HOURS = 0.25;
 
 function getContext() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
   const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
   const canViewAll = ['admin', 'manager', 'office'].includes(currentUser.role)
     || isLocalAdmin

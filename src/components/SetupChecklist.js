@@ -26,7 +26,7 @@ import {
   getOnboardingState, setOnboardingState, onOnboardingChange, workflowData,
   startGuide, stopGuide, startTour, refreshWalkthrough, bindWalkthroughListeners, isCloudAccount,
 } from './Walkthrough.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 export const CHECKLIST_ID = 'relay-setup-checklist';
 
 let panelOpen = false;
@@ -48,7 +48,7 @@ function technicianCount() {
 // every item already done.
 export function checklistState() {
   let user = null;
-  try { user = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (e) { /* none */ }
+  try { user = getSessionUser(); } catch (e) { /* none */ }
   if (!user || store.demoMode || isReadOnly()) return null;
 
   const state = getOnboardingState();

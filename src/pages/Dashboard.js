@@ -30,7 +30,7 @@ import {
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 import { ACTION_WIDGETS, wireActionWidgets, openRevenueGoalEditor } from './dashboard/actionWidgets.js';
-
+import { getSessionUser } from './auth/session.js';
 // Permanent quick actions, icon-only (name on hover). They're rendered as the
 // page's header actions, so the app shell moves them into the breadcrumb bar at
 // the same size as every other page's action buttons. Icons match the sidebar's
@@ -92,12 +92,12 @@ const snap  = (v) => Math.round(v / GRID) * GRID;
 const snapZoom = (z) => clamp(Math.round(Math.round(z / ZOOM_STEP) * ZOOM_STEP * 100) / 100, ZOOM_MIN, ZOOM_MAX);
 
 function getLayoutKey() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   return currentUser ? `dashboardCanvas_v1_${currentUser.id}` : 'dashboardCanvas_v1';
 }
 
 function getLockKey() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   return currentUser ? `dashboardLocked_${currentUser.id}` : 'dashboardLocked';
 }
 
@@ -386,7 +386,7 @@ function makeHomeView(widgets) {
 
 async function loadLayout() {
   let widgets = null, view = null, pins = null, home = null, period = null, stored = false;
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   // For a logged-in cloud account, Supabase is the source of truth. Track whether it
   // actually answered so a stale per-origin localStorage copy can't mask the cloud
   // layout — that per-origin drift is what made dashboards differ between the browser
@@ -488,7 +488,7 @@ async function saveLayout() {
   const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins, period: live.period });
   // Save to localStorage for offline fallback
   localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const isCloudUser = currentUser && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
   if (currentUser && currentUser.id && isCloudUser) {
     try {
@@ -521,7 +521,7 @@ export async function renderDashboard(container) {
     }
   };
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   const uid = currentUser ? currentUser.id : 'anon';
 
   // (Re)load live state on first paint or when the user changes; otherwise keep the
@@ -2196,10 +2196,10 @@ let _remoteRefresh = false;
 
 const isCloudAccount = () => {
   if (store.demoMode) return false;
-  const u = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const u = getSessionUser();
   return !!(u && u.companyId && !String(u.companyId).startsWith('acct_'));
 };
-const companyKey = () => `relay_kpis_${JSON.parse(localStorage.getItem('currentUser') || '{}').companyId || ''}`;
+const companyKey = () => `relay_kpis_${(getSessionUser() || {}).companyId || ''}`;
 const timeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } };
 
 function invalidateKpis() {
@@ -2655,7 +2655,7 @@ function renderRecentLeads(data, item) {
 }
 
 function renderTodaySchedule(data, item) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   
   // Get today's date in local YYYY-MM-DD format
   const now = new Date();
@@ -3210,7 +3210,7 @@ const LEGACY_TODO_MIGRATION_KEY = 'todos_migrated_v1';
 /** The signed-in user, used to decide whose to-dos the card shows. */
 function todoViewer() {
   try {
-    const user = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    const user = getSessionUser();
     return user && user.id ? user : null;
   } catch {
     return null;

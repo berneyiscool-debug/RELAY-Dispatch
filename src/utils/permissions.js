@@ -3,9 +3,9 @@
 // ============================================
 
 import { store } from '../data/store.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 export function hasPermission(module, key) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
   if (!currentUser) return false;
   // Demo mode: the visitor plays the business owner, so every module is open.
   if (store.demoMode) return true;

@@ -105,3 +105,25 @@ describe('remembered sign-in identity', () => {
     assert.strictEqual(mem.has('relay_remembered_email'), false);
   });
 });
+
+describe('one read path for the signed-in user', () => {
+  test('nothing outside session.js reads currentUser from localStorage directly', async () => {
+    // A demo guest lives only in its tab, not in localStorage, so a direct read
+    // would see "nobody signed in" (or the real account) inside a guest demo.
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join, relative } = await import('node:path');
+    const srcRoot = new URL('../../', import.meta.url).pathname;
+    const offenders = [];
+    const walk = async (dir) => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (entry.name.endsWith('.js') && !entry.name.endsWith('.test.js') && entry.name !== 'session.js') {
+          if (/getItem\(\s*['"]currentUser['"]\s*\)/.test(await readFile(full, 'utf8'))) offenders.push(relative(srcRoot, full));
+        }
+      }
+    };
+    await walk(srcRoot);
+    assert.deepStrictEqual(offenders, [], `use getSessionUser() instead in: ${offenders.join(', ')}`);
+  });
+});

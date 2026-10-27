@@ -14,7 +14,7 @@ import { isDemoSession } from './demoSession.js';
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { geocodeAddress, getCachedGeo } from './geocode.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 const CACHE_KEY = 'relay.routeCache.v1';
 const ETA_TTL_MS = 15 * 60 * 1000;        // traffic-aware ETAs
 const ORDER_TTL_MS = 12 * 60 * 60 * 1000; // optimized order (traffic-unaware)
@@ -77,7 +77,7 @@ export async function computeRoute({ origin, stops, roundTrip = true, optimize =
  * Returns { lat, lng, label, source: 'user'|'company' } or null if nothing resolvable.
  */
 export async function getStartLocation() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const currentUser = getSessionUser();
 
   // 1. Per-user override, stored on the user's profile record
   if (currentUser?.id) {

@@ -29,7 +29,7 @@ import { hashPassword, verifyPassword } from './auth/password.js';
 import { setSessionUser, clearSessionUser } from './auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
 import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_SETTINGS_TABS } from '../components/CloudUpgrade.js';
-
+import { getSessionUser } from './auth/session.js';
 // Stripe Checkout and the billing portal run in the system browser, so the
 // desktop app sits in the background while the user pays. The company row is
 // cached at sign-in with no realtime updates, so the billing tab re-checks the
@@ -185,7 +185,7 @@ export function renderSettings(container) {
     activeTab = 'company';
   }
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = getSessionUser() || { role: 'admin' };
 
   // Team management writes to other people's profiles; 039 only lets a company
   // admin through that policy, so a non-admin deep link lands on Company with an
@@ -4476,7 +4476,7 @@ export function renderSettings(container) {
       const clearSlots = () => slots.forEach(s => { if (s) s.innerHTML = ''; });
       // Read like renderSettings does: this page is also redrawn from its own
       // buttons, which have no renderSettings locals to pass in.
-      const sessionUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+      const sessionUser = getSessionUser() || { role: 'admin' };
       const isAdmin = sessionUser.role === 'admin';
 
       // Back from Xero's consent screen: say what happened once, then drop the

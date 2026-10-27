@@ -7,7 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getStorageLocationOptionsHtml, getStorageLocationTypeOptionsHtml, getStorageLocationTypeByName } from '../../utils/storageLocations.js';
-
+import { getSessionUser } from '../auth/session.js';
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const item = isEdit ? store.getById('stock', id) : {};
@@ -240,7 +240,7 @@ export function renderStockForm(container, { id }) {
 
 function checkReorderLevel(data) {
   if (data.quantity <= data.reorderLevel) {
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const currentUser = getSessionUser() || {};
     let hasStockPerm = false;
     if (currentUser.role === 'admin') hasStockPerm = true;
     else if (currentUser.userTypeId) {

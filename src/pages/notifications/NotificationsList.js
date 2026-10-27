@@ -10,7 +10,7 @@ import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { filterSystemNotifications, countByStatus, emptyStateMessage } from '../../utils/notificationVisibility.js';
 import { getHideSystemNotifications, setHideSystemNotifications, loadHideSystemNotifications, onNotificationPrefChanged } from '../../utils/notificationPrefs.js';
-
+import { getSessionUser } from '../auth/session.js';
 const STATUS_FILTERS = ['Pending', 'Converted', 'Dismissed'];
 
 // Only one notifications page is mounted at a time, so the previous subscription
@@ -408,7 +408,7 @@ export function renderNotificationsList(container, params) {
 
   function openNotificationFormDrawer(existingN = null) {
     const jobs = store.getAll('jobs');
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const currentUser = getSessionUser() || {};
 
     showDrawer({
       title: existingN ? 'Edit Notification' : 'Raise Notification',

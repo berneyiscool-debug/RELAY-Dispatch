@@ -24,7 +24,7 @@ import {
   leadActivityFileSize, leadActivityFileUrl, leadActivityInitials, normalizeLeadActivityLog,
   removeLeadActivityEntry, shouldCollapseLeadActivity,
 } from './leadActivity.js';
-
+import { getSessionUser } from '../auth/session.js';
 // The Details / Activity split is owned by the route (?tab=), so every tab
 // switch re-enters renderLeadDetail. Keeping the composer's work above the
 // render stops a trip to the other tab from throwing away a half-written note.
@@ -34,7 +34,7 @@ let composerDraft = '';
 
 function currentUserName() {
   try {
-    return JSON.parse(localStorage.getItem('currentUser') || '{}').name || 'Unknown User';
+    return (getSessionUser() || {}).name || 'Unknown User';
   } catch {
     return 'Unknown User';
   }

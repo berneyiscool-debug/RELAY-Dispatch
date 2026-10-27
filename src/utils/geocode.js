@@ -11,7 +11,7 @@
 
 import { supabase } from './supabase.js';
 import { isDemoSession } from './demoSession.js';
-
+import { getSessionUser } from '../pages/auth/session.js';
 const CACHE_KEY = 'relay.geocodeCache.v1';
 const inFlight = new Map(); // normalizedAddress -> Promise, dedupes concurrent lookups
 
@@ -20,7 +20,7 @@ const inFlight = new Map(); // normalizedAddress -> Promise, dedupes concurrent 
 function isCloudUser() {
   try {
     const loginMode = localStorage.getItem('relay_login_mode');
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const currentUser = getSessionUser() || {};
     return loginMode === 'cloud' && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
   } catch {
     return false;
