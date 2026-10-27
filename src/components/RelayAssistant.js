@@ -37,6 +37,7 @@ import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { getSessionUser } from '../pages/auth/session.js';
+import { isGuestDemo } from '../utils/demoSession.js';
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
@@ -1556,7 +1557,7 @@ function handleClearChatClick() {
             await clearDeputyThread(currentThreadId);
           } else {
             chatHistory = [];
-            localStorage.removeItem(`relay_chat_history_${getUserId()}`);
+            chatStorage().removeItem(`relay_chat_history_${getUserId()}`);
             localStorage.removeItem(`relay_draft_message_${getUserId()}`);
             thread.innerHTML = '';
             renderIntroDashboard(thread);
@@ -1676,8 +1677,9 @@ let suppressActionToasts = false;
 // Whether Deputy's hosted AI is usable right now. It ships with a paid Cloud
 // workspace and is called through the secure edge function (no client key), so
 // there is no per-account switch. Local accounts get the rule-based assistant.
+// A demo guest gets it too, on the demo's own capped allowance (relay-demo).
 function canUseAI() {
-  return isCloudUser();
+  return isCloudUser() || isGuestDemo();
 }
 
 // An expired trial pauses brny completely. It is a paid Cloud feature, every
@@ -1700,6 +1702,12 @@ function getUserId() {
   return currentUser ? currentUser.id : 'default';
 }
 
+// Where the single chat history and the unsent draft are kept. A demo guest's
+// stay in the tab, so every demo starts clean and nothing is left behind.
+function chatStorage() {
+  return isGuestDemo() ? sessionStorage : localStorage;
+}
+
 function loadChatHistory() {
   // Deputy Max: history lives in the active thread (cloud-synced).
   if (hasDeputyMax()) {
@@ -1710,7 +1718,7 @@ function loadChatHistory() {
   // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = chatStorage().getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error('Failed to load chat history', e);
@@ -1730,7 +1738,7 @@ function saveChatHistory(history) {
   // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
-    localStorage.setItem(key, JSON.stringify(history));
+    chatStorage().setItem(key, JSON.stringify(history));
   } catch (e) {
     console.error('Failed to save chat history', e);
   }
@@ -1824,7 +1832,7 @@ export async function openRelay() {
   activeTab = isExpanded ? 'watchdog' : 'chat';
 
   const draftKey = `relay_draft_message_${getUserId()}`;
-  const draftVal = localStorage.getItem(draftKey) || '';
+  const draftVal = chatStorage().getItem(draftKey) || '';
   const cloud = isCloudUser();
   pendingAttachments = [];
 
@@ -1938,7 +1946,7 @@ export async function openRelay() {
     const hasFiles = pendingAttachments.length > 0;
     if (!text && !hasFiles) return;
 
-    localStorage.removeItem(draftKey);
+    chatStorage().removeItem(draftKey);
 
     // ── Attachment turn (vision extraction, cloud only) ──
     if (hasFiles) {
@@ -2050,7 +2058,7 @@ export async function openRelay() {
   input.addEventListener('input', () => {
     autoGrow(input);
     syncComposer();
-    localStorage.setItem(draftKey, input.value);
+    chatStorage().setItem(draftKey, input.value);
   });
   input.addEventListener('focus', () => {
     input.classList.add('focused');

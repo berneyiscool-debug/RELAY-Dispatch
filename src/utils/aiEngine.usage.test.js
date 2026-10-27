@@ -91,3 +91,36 @@ test('a refresh never rejects, so it cannot break the panel it sits in', async (
   const thrown = await asCompany('company-uuid', fetchUsage);
   assert.strictEqual(thrown, null);
 });
+
+// A demo guest has no account but does have the demo's own capped allowance,
+// served by relay-demo rather than relay-copilot.
+async function asGuest(body) {
+  const tab = { relay_demo_mode: '1', relay_demo_guest: '1' };
+  const local = {};
+  globalThis.sessionStorage = { getItem: (k) => tab[k] ?? null, setItem: (k, v) => { tab[k] = String(v); }, removeItem: (k) => { delete tab[k]; } };
+  globalThis.localStorage = { getItem: (k) => local[k] ?? null, setItem: (k, v) => { local[k] = String(v); }, removeItem: (k) => { delete local[k]; } };
+  try {
+    return await asCompany('acct_demo', body);
+  } finally {
+    delete globalThis.sessionStorage;
+    delete globalThis.localStorage;
+  }
+}
+
+test('a demo guest reads the demo allowance from relay-demo', async () => {
+  stubInvoke(() => ok({ guest: true, company: undefined }));
+  const snapshot = await asGuest(fetchUsage);
+  assert.strictEqual(calls, 1);
+  assert.strictEqual(lastCall[0], 'relay-demo?action=usage');
+  assert.match(lastCall[1].body.demoId, /^[0-9a-f-]{36}$/);
+  assert.strictEqual(snapshot.guest, true);
+});
+
+test('a demo guest\'s brny turn goes to relay-demo with the demo id', async () => {
+  const { completeChat } = await import('./aiEngine.js');
+  stubInvoke(() => ({ data: { content: [{ type: 'text', text: 'Hi from the demo' }] }, error: null }));
+  const reply = await asGuest(() => completeChat([{ role: 'user', content: 'hello' }]));
+  assert.strictEqual(lastCall[0], 'relay-demo?action=chat');
+  assert.match(lastCall[1].body.demoId, /^[0-9a-f-]{36}$/);
+  assert.strictEqual(reply.content, 'Hi from the demo');
+});
