@@ -4,6 +4,7 @@ import { applyTheme } from '../../utils/theme.js';
 import { setSessionUser } from '../auth/session.js';
 import { readPendingSignup, invitedCompanyId, sessionUserFromProfile } from '../../utils/cloudOnboarding.js';
 import { renderInviteNotProvisionedCard } from '../../components/InviteNotProvisionedCard.js';
+import { needsBackupEmailConfirmation, confirmBackupEmailToken, resendBackupEmailConfirmation } from '../../utils/backupEmailConfirmation.js';
 
 
 // Ordered list of routes to try — first permitted one wins
@@ -116,6 +117,12 @@ export async function handleCloudLoginSuccess(container, authUser) {
   // through create_company_and_admin (which inserts the profile too).
   if (!profile.company_id) {
     router.navigate('/subscribe');
+    return;
+  }
+
+  // A user an admin added confirms their backup email before anything else.
+  if (needsBackupEmailConfirmation(profile)) {
+    renderBackupEmailUnconfirmed(container, authUser, profile);
     return;
   }
 
@@ -369,4 +376,93 @@ function renderRecoveryLinkFailed(container, message) {
   // The message comes from the URL, so it is set as text, never as markup.
   container.querySelector('#recovery-failed-message').textContent = message;
   container.querySelector('#btn-recovery-back').addEventListener('click', () => router.navigate('/login'));
+}
+
+// The auth card shell the status screens below share.
+function renderStatusCard(container, { icon, iconTone = 'warning', title }) {
+  container.innerHTML = `
+    <div class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="auth-logo-icon" style="background:var(--color-${iconTone}-bg); border-radius:50%; width:48px; height:48px;">
+            <span class="material-icons-outlined text-${iconTone}" style="font-size: 28px;">${icon}</span>
+          </div>
+          <h1 class="auth-title" style="margin-top:12px;">${title}</h1>
+          <p class="auth-subtitle" data-status-message></p>
+        </div>
+        <div data-status-actions style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+      </div>
+    </div>
+  `;
+  return {
+    // Messages can carry an address or a server error, so they are set as text.
+    setMessage: (text) => { container.querySelector('[data-status-message]').textContent = text; },
+    addButton: (label, className, onClick) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `btn ${className}`;
+      btn.style.cssText = 'width:100%; padding:12px; font-size:15px; justify-content:center;';
+      btn.textContent = label;
+      btn.addEventListener('click', () => onClick(btn));
+      container.querySelector('[data-status-actions]').appendChild(btn);
+      return btn;
+    },
+  };
+}
+
+/**
+ * Sign-in stops here for a user an admin added until they open the link sent
+ * to their backup email. They keep their Supabase session so they can ask for
+ * another link; nothing of the app loads.
+ */
+function renderBackupEmailUnconfirmed(container, authUser, profile) {
+  const card = renderStatusCard(container, { icon: 'mark_email_unread', title: 'Confirm Your Email' });
+  card.setMessage(`We sent a confirmation link to ${profile.backup_email}. Open it to start using RELAY, then come back and continue.`);
+
+  card.addButton("I've Confirmed, Continue", 'btn-primary', async (btn) => {
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    try {
+      await handleCloudLoginSuccess(container, authUser);
+    } catch (err) {
+      card.setMessage(err.message || 'Could not check your account. Try again.');
+      btn.disabled = false;
+      btn.textContent = "I've Confirmed, Continue";
+    }
+  });
+
+  card.addButton('Resend Email', 'btn-secondary', async (btn) => {
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    try {
+      const { email } = await resendBackupEmailConfirmation();
+      card.setMessage(`A new confirmation link is on its way to ${email}. Earlier links no longer work.`);
+    } catch (err) {
+      card.setMessage(err.message || 'The email could not be sent.');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Resend Email';
+  });
+
+  card.addButton('Sign Out', 'btn-secondary', async () => {
+    await supabase.auth.signOut();
+    router.navigate('/login');
+  });
+}
+
+/** Where the link in a backup email confirmation lands (`#/confirm-email?token=…`). */
+export async function renderConfirmEmail(container, params = {}) {
+  const card = renderStatusCard(container, { icon: 'hourglass_top', title: 'Confirming Email' });
+  card.setMessage('One moment...');
+
+  try {
+    await confirmBackupEmailToken(params.token);
+    const done = renderStatusCard(container, { icon: 'mark_email_read', iconTone: 'success', title: 'Email Confirmed' });
+    done.setMessage('Your email is confirmed. Sign in with your username and company code to start using RELAY.');
+    done.addButton('Go to Sign In', 'btn-primary', () => router.navigate('/login'));
+  } catch (err) {
+    const failed = renderStatusCard(container, { icon: 'link_off', title: 'Link Not Valid' });
+    failed.setMessage(err.message || 'This confirmation link is not valid.');
+    failed.addButton('Back to Sign In', 'btn-primary', () => router.navigate('/login'));
+  }
 }

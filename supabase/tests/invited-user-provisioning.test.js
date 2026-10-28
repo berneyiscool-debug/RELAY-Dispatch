@@ -333,6 +333,7 @@ describe('the profile row an invite writes', () => {
       color: '#1B6DE0',
       pay_rate: 0,
       backup_email: 'ada@example.com',
+      backup_email_confirmation_required: true,
       force_password_change: false,
     });
   });
@@ -367,6 +368,7 @@ describe('the profile row an invite writes', () => {
       user_type_id: `${COMPANY_ID}_ut_tech`,
       username: 'ada',
       backup_email: 'ada@example.com',
+      backup_email_confirmation_required: true,
       force_password_change: false,
     });
   });

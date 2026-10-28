@@ -790,6 +790,9 @@ router.register('/setup', renderPage(lazy(() => import('./pages/auth/FinishSetup
 const authLink = readAuthLinkHash(window.location.hash);
 router.register('/reset-password', renderPage(lazy(() => import('./pages/login/Login.js'), 'renderPasswordRecovery', () => authLink)));
 
+// Backup email confirmation link (sent when an admin adds a user).
+router.register('/confirm-email', renderPage(lazy(() => import('./pages/login/Login.js'), 'renderConfirmEmail')));
+
 // Legal documents (content in pages/legal/content.js), linked from the cloud
 // signup form. They are public because a visitor reads them before they have an account.
 router.register('/terms', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderTerms')));
@@ -809,7 +812,7 @@ const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
 // demo (the pill menu) is how they reach the launch screen.
 const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
-const PUBLIC_PATHS = new Set(['/login', '/reset-password', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
+const PUBLIC_PATHS = new Set(['/login', '/reset-password', '/confirm-email', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 // Set by the guard below; see the portal-scope note there.
 let portalRouteActive = false;
@@ -1051,8 +1054,9 @@ if (currentUser && !isGuestDemo() && !localStorage.getItem('relay_login_mode')) 
 const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
 const isSetupHash = window.location.hash.startsWith('#/setup');
+const isConfirmEmailHash = window.location.hash.startsWith('#/confirm-email');
 const isLegalHash = ['#/terms', '#/privacy', '#/refunds', '#/acceptable-use'].some((h) => window.location.hash.startsWith(h));
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !authLink) {
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !isConfirmEmailHash && !authLink) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.

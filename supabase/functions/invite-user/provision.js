@@ -152,6 +152,9 @@ export function staffProfileValues(input) {
       color: color || '#1B6DE0',
       pay_rate: payRate || 0,
       backup_email: backupEmail || null,
+      // Every user added from here on confirms their backup email before
+      // signing in (20261028100000_backup_email_confirmation.sql).
+      backup_email_confirmation_required: true,
       force_password_change: forceChange,
     },
     updates: {
@@ -160,6 +163,7 @@ export function staffProfileValues(input) {
       user_type_id: techTypeId,
       username,
       backup_email: backupEmail || null,
+      backup_email_confirmation_required: true,
       force_password_change: forceChange,
     },
   };

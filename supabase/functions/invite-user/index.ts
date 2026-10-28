@@ -10,6 +10,21 @@ import {
   readProfileForUser,
   staffProfileValues
 } from './provision.js'
+import { startBackupEmailConfirmation } from '../_shared/backupEmailConfirmation.js'
+
+// Sends the backup email confirmation link. A failure here does not undo the
+// user: the response carries the reason so the admin can resend from the list.
+async function sendConfirmation(supabaseAdmin: any, userId: string) {
+  const result = await startBackupEmailConfirmation({
+    admin: supabaseAdmin,
+    userId,
+    resendKey: Deno.env.get('RESEND_API_KEY'),
+    domain: Deno.env.get('RELAY_EMAIL_DOMAIN') || undefined,
+    force: true
+  })
+  if (!result.sent) console.error('Backup email confirmation not sent:', result.error)
+  return result.sent ? null : result.error
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -94,7 +109,7 @@ serve(async (req) => {
       // kind an administrator of any company must not be able to reset.
       const { data: targetProfile } = await supabaseAdmin
         .from('profiles')
-        .select('role, company_id')
+        .select('role, company_id, backup_email')
         .eq('id', userId)
         .single()
 
@@ -198,8 +213,14 @@ serve(async (req) => {
         )
       }
 
+      // A new address needs confirming again (the profiles trigger has already
+      // cleared the old confirmation).
+      const confirmationError = normalizedBackupEmail && normalizedBackupEmail !== targetProfile.backup_email
+        ? await sendConfirmation(supabaseAdmin, userId)
+        : null
+
       return new Response(
-        JSON.stringify({ success: true, user: authData?.user }),
+        JSON.stringify({ success: true, user: authData?.user, confirmationError }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
 
@@ -383,8 +404,10 @@ serve(async (req) => {
         )
       }
 
+      const confirmationError = await sendConfirmation(supabaseAdmin, authUser.id)
+
       return new Response(
-        JSON.stringify({ success: true, user: authUser, repaired }),
+        JSON.stringify({ success: true, user: authUser, repaired, confirmationError }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
