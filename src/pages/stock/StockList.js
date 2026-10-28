@@ -14,7 +14,7 @@ import { getToolbarFilterTags, toolbarFilterMatches } from '../../components/Too
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
-import { getActiveKitTypes } from '../../utils/kitTypes.js';
+import { kitTypeLabel, kitTypeOptionsHtml, kitTypeGrouping, NO_KIT_TYPE_LABEL } from '../../utils/kitTypes.js';
 import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml, fitLabelNames } from '../../utils/stockLabels.js';
 import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
@@ -28,6 +28,8 @@ export function renderStockList(container, params) {
   let activeKitFilter = 'all';
   let itemTableInstance = null;
   let kitTableInstance = null;
+  const KIT_GROUP_KEY = 'relay.kitsGroupByType';
+  let groupKitsByType = (() => { try { return localStorage.getItem(KIT_GROUP_KEY) !== 'off'; } catch { return true; } })();
   let xeroChecked = false;
   const xeroStockSignature = () => `${!!cachedXeroStatus()?.connected}|${[...cachedStockSyncJobs().entries()].map(([k, v]) => `${k}:${v.pending}:${v.failed.length}`).join(',')}`;
 
@@ -104,6 +106,7 @@ export function renderStockList(container, params) {
         actionsContainer.innerHTML = `
           <div id="filter-mount" style="display:inline-flex; align-items:center;"></div>
           <div id="sort-mount" style="display:inline-flex; align-items:center;"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-group-kits" aria-pressed="${groupKitsByType}" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Show kits in sections by kit type"><span class="material-icons-outlined" style="font-size:13px;">view_list</span> <span class="btn-label" id="btn-group-kits-label">${groupKitsByType ? 'Grouped by Type' : 'Group by Type'}</span></button>
           <button class="btn btn-primary btn-sm" id="btn-new-kit" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Bundle multiple parts and labor items into a single pre-packaged kit for quick quoting"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Kit Bundle</span></button>
         `;
       }
@@ -385,7 +388,7 @@ export function renderStockList(container, params) {
 
     const columns = [
       { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}`, width: '26%' },
-      { key: 'category', label: 'Kit Type', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
+      { key: 'category', label: 'Kit Type', render: (r) => r.category ? `<span class="badge badge-neutral">${escapeHTML(r.category)}</span>` : `<span class="text-tertiary">${NO_KIT_TYPE_LABEL}</span>`, getValue: (r) => kitTypeLabel(r).toLowerCase(), width: '14%' },
       { key: 'items', label: 'Items Included', render: (r) => {
         const mCount = (r.items || []).filter(i => i.type !== 'labor').length;
         const lCount = (r.items || []).filter(i => i.type === 'labor').length;
@@ -403,6 +406,7 @@ export function renderStockList(container, params) {
     const table = createDataTable({
       columns,
       data: kits,
+      groupBy: groupKitsByType ? kitTypeGrouping(kits, 'kits-collapsed-by-type') : null,
       onRowClick: (id) => router.navigate(`/kits/${id}`),
       emptyMessage: 'No kits configured',
       emptyIcon: 'widgets',
@@ -414,17 +418,17 @@ export function renderStockList(container, params) {
           onClear: () => table.clearSelection(),
           actions: [
             {
-              label: 'Change Category',
+              label: 'Change Kit Type',
               icon: 'category',
               onClick: (ids) => {
-                const categories = getActiveKitTypes().map(t => t.name);
                 const content = document.createElement('div');
                 content.innerHTML = `
                   <div class="form-group">
                     <label class="form-label">Select Kit Type</label>
                     <select class="form-select" id="bulk-kit-category">
-                      ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
+                      ${kitTypeOptionsHtml('')}
                     </select>
+                    <small class="text-tertiary" style="display:block; margin-top:6px;">Add or rename kit types in <a href="#/settings?tab=materials" style="color:var(--color-primary)">Settings → Materials &amp; Catalog</a>.</small>
                   </div>
                 `;
                 showModal({
@@ -437,7 +441,7 @@ export function renderStockList(container, params) {
                       ids.forEach(id => store.update('kits', id, { category: newCat }));
                       table.clearSelection();
                       renderActiveTabContent();
-                      showToast(`Updated ${ids.length} kits to kit type: ${newCat}`, 'success');
+                      showToast(`Updated ${ids.length} kits to kit type: ${newCat || NO_KIT_TYPE_LABEL}`, 'success');
                       c();
                     }}
                   ]
@@ -515,11 +519,21 @@ export function renderStockList(container, params) {
         { value: 'totalPrice_desc', label: 'Sort: Sell (High-Low)' },
         { value: 'totalCost_desc', label: 'Sort: Cost (High-Low)' },
         { value: 'margin_desc', label: 'Sort: Margin (High-Low)' },
+        { value: 'category_asc', label: 'Sort: Kit Type' },
       ],
       onChange: (val) => {
         const [key, dir] = val.split('_');
         if (kitTableInstance) kitTableInstance.setSort(key, dir);
       }
+    });
+
+    findEl('#btn-group-kits')?.addEventListener('click', (e) => {
+      groupKitsByType = !groupKitsByType;
+      try { localStorage.setItem(KIT_GROUP_KEY, groupKitsByType ? 'on' : 'off'); } catch { /* not remembered */ }
+      const btn = e.currentTarget;
+      btn.setAttribute('aria-pressed', String(groupKitsByType));
+      btn.querySelector('#btn-group-kits-label').textContent = groupKitsByType ? 'Grouped by Type' : 'Group by Type';
+      renderKitsTable(container.querySelector('#stock-table-container'));
     });
 
     // New Kit button

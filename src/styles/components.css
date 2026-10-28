@@ -3027,6 +3027,16 @@ body > .searchable-select-dropdown {
   }
 }
 
+/* A single auth card on its own page (password change, reset link). */
+.auth-container--center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
 .auth-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -4990,3 +5000,78 @@ button.widget-picker-card {
   font-weight: 600;
   border-top: 1px solid var(--border-color);
 }
+
+/* ── Reports controls (moved into the breadcrumb bar by main.js) ──
+   Height and font size come from the shared #breadcrumb-actions control rules. */
+.report-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+.report-filter-pop {
+  min-width: 240px;
+  padding: 12px !important;
+}
+.report-period-pop { min-width: 220px; }
+.report-period-pop .dropdown-item.selected {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.report-pop-custom { padding: 6px 14px 8px; }
+.report-pop-heading {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+}
+.report-menu .report-pop-field {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+#breadcrumb-actions .report-menu .dropdown-menu .form-select,
+#breadcrumb-actions .report-menu .dropdown-menu .form-input { width: 100% !important; height: 30px !important; max-height: 30px !important; font-size: 12px !important; justify-content: flex-start !important; }
+.report-filter-pop #btn-clear-filters { width: 100%; }
+#breadcrumb-actions .report-menu .dropdown-item { height: auto !important; max-height: none !important; justify-content: flex-start !important; font-size: 12px !important; }
+#breadcrumb-actions .report-menu .dropdown-item .material-icons-outlined { font-size: 16px; color: var(--text-tertiary); }
+
+/* ── Reports PDF picker ── */
+.report-pdf-picker { max-height: 60vh; overflow-y: auto; }
+.report-pdf-report {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  margin-bottom: 8px;
+}
+.report-pdf-report > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.report-pdf-report > summary label { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.report-pdf-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 12px 36px;
+  font-size: 13px;
+}
+.report-pdf-blocks label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

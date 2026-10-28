@@ -41,6 +41,8 @@ export function getToolbarFilterTags(originalData, filterType) {
       const count = originalData.filter(k => k.category === cat).length;
       if (count > 0) tags.push({ key: `cat:${cat}`, label: `${cat} (${count})` });
     });
+    const untypedCount = originalData.filter(k => !k.category).length;
+    if (untypedCount > 0) tags.push({ key: 'smart:notype', label: `No type (${untypedCount})` });
 
     const hiMarginCount = originalData.filter(k => {
       const margin = k.totalPrice > 0 ? ((k.totalPrice - k.totalCost) / k.totalPrice * 100) : 0;
@@ -68,6 +70,7 @@ export function toolbarFilterMatches(item, filterKey, filterType) {
 
   if (filterType === 'kits') {
     if (type === 'cat') return item.category === value;
+    if (filterKey === 'smart:notype') return !item.category;
     if (filterKey === 'smart:himargin') {
       const margin = item.totalPrice > 0 ? ((item.totalPrice - item.totalCost) / item.totalPrice * 100) : 0;
       return margin >= 30;

@@ -1,6 +1,9 @@
 // ============================================
 // RELAY DISPATCH — REPORTS MODULE
 // ============================================
+// Every number here comes from src/utils/reportMetrics.js, which runs the
+// dashboard's own formulas over the report's filters, so Reports and the
+// dashboard always agree. Money is GST-exclusive throughout.
 
 import { store } from '../../data/store.js';
 import { dispatchChat } from '../../utils/aiEngine.js';
@@ -8,451 +11,394 @@ import { isCloudUser } from '../../utils/aiTier.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 import { statCard } from '../../components/StatCard.js';
+import { showModal } from '../../components/Modal.js';
+import { showToast } from '../../components/Notifications.js';
+import { buildReport, emptyFilters, toCsv } from '../../utils/reportMetrics.js';
+import { toDate } from '../../utils/kpis.js';
+import {
+  REPORTS, reportSpec, selectBlocks, localInsights,
+  money, wholeMoney, pct, hrs, assetServiceCost, lowStock, stockValue, costedSub, NOT_COSTED,
+} from './reportSpec.js';
 
-let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
+const COLLECTIONS = [
+  'jobs', 'quotes', 'invoices', 'customers', 'stock', 'technicians', 'leads', 'timesheets',
+  'assets', 'maintenancePlans', 'schedule', 'jobMaterials', 'purchaseOrders',
+];
+
+const PRESETS = [
+  { id: 'all', label: 'All time' },
+  { id: 'month', label: 'This month' },
+  { id: '30', label: 'Last 30 days' },
+  { id: '90', label: 'Last 90 days' },
+  { id: 'fy', label: 'Financial year' },
+];
+
+function isoDay(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// { start, end } for a preset; the financial year runs July–June.
+function presetDates(id, today = new Date()) {
+  const end = isoDay(today);
+  if (id === 'all') return { start: '', end: '' };
+  if (id === 'month') return { start: isoDay(new Date(today.getFullYear(), today.getMonth(), 1)), end };
+  if (id === 'fy') {
+    const fy = today.getMonth() >= 6 ? today.getFullYear() : today.getFullYear() - 1;
+    return { start: isoDay(new Date(fy, 6, 1)), end };
+  }
+  const start = new Date(today);
+  start.setDate(today.getDate() - Number(id));
+  return { start: isoDay(start), end };
+}
+
+function loadData() {
+  const data = {};
+  COLLECTIONS.forEach(c => { data[c] = store.getAll(c) || []; });
+  return data;
+}
 
 export function renderReports(container, params) {
-  let activeReport = (params && params.tab) || 'overview';
-
-  // Global filters state
-  let filterStartDate = '';
-  let filterEndDate = '';
-  let filterTechId = 'All';
-  let filterAssetType = 'All';
-  let filterCustomerId = 'All';
-
-  const reports = [
-    { id: 'overview', label: 'Business Overview', icon: 'dashboard' },
-    { id: 'revenue', label: 'Revenue & Profit', icon: 'trending_up' },
-    { id: 'jobs', label: 'Job Performance', icon: 'build' },
-    { id: 'job_costing', label: 'Job Costing', icon: 'price_check' },
-    { id: 'technicians', label: 'Technician Productivity', icon: 'engineering' },
-    { id: 'timesheets_labor', label: 'Timesheet & Labor', icon: 'schedule' },
-    { id: 'assets_maintenance', label: 'Asset Maintenance', icon: 'settings' },
-    { id: 'customers', label: 'Customer Analysis', icon: 'people' },
-    { id: 'inventory', label: 'Inventory Report', icon: 'inventory_2' },
-  ];
-
-  function formatDate(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  function getData() {
-    let jobs = store.getAll('jobs') || [];
-    let quotes = store.getAll('quotes') || [];
-    let invoices = store.getAll('invoices') || [];
-    const customers = store.getAll('customers') || [];
-    const stock = store.getAll('stock') || [];
-    const technicians = store.getAll('technicians') || [];
-    let leads = store.getAll('leads') || [];
-    const timesheets = store.getAll('timesheets') || [];
-    const assets = store.getAll('assets') || [];
-    const maintenancePlans = store.getAll('maintenancePlans') || [];
-
-    // 1. Date Range Filtering
-    if (filterStartDate) {
-      jobs = jobs.filter(j => (j.createdAt || '').split('T')[0] >= filterStartDate);
-      quotes = quotes.filter(q => (q.createdAt || '').split('T')[0] >= filterStartDate);
-      invoices = invoices.filter(i => (i.issueDate || i.createdAt || '').split('T')[0] >= filterStartDate);
-      leads = leads.filter(l => (l.createdAt || '').split('T')[0] >= filterStartDate);
-    }
-    if (filterEndDate) {
-      jobs = jobs.filter(j => (j.createdAt || '').split('T')[0] <= filterEndDate);
-      quotes = quotes.filter(q => (q.createdAt || '').split('T')[0] <= filterEndDate);
-      invoices = invoices.filter(i => (i.issueDate || i.createdAt || '').split('T')[0] <= filterEndDate);
-      leads = leads.filter(l => (l.createdAt || '').split('T')[0] <= filterEndDate);
-    }
-
-    // 2. Customer Filtering
-    if (filterCustomerId !== 'All') {
-      jobs = jobs.filter(j => j.customerId === filterCustomerId);
-      quotes = quotes.filter(q => q.customerId === filterCustomerId);
-      invoices = invoices.filter(i => i.customerId === filterCustomerId);
-      leads = leads.filter(l => l.customerId === filterCustomerId);
-    }
-
-    // 3. Technician Filtering
-    if (filterTechId !== 'All') {
-      jobs = jobs.filter(j => j.technicianId === filterTechId || (j.technicians && j.technicians.some(t => t.id === filterTechId)));
-    }
-
-    // 4. Asset Category / Type Filtering
-    if (filterAssetType !== 'All') {
-      const targetAssetIds = assets.filter(a => a.type === filterAssetType).map(a => a.id);
-      jobs = jobs.filter(j => {
-        if (j.assetId && targetAssetIds.includes(j.assetId)) return true;
-        if (j.assetIds && j.assetIds.some(id => targetAssetIds.includes(id))) return true;
-        return false;
-      });
-    }
-
-    // Technician/asset filters also gate invoices, but a combined or consolidated
-    // invoice can bill several jobs. Such an invoice is kept when at least one of the
-    // jobs it bills matches, and only the matching jobs' shares count as revenue so a
-    // shared invoice is never counted in full against every one of its jobs.
-    const jobLevelFilterActive = filterTechId !== 'All' || filterAssetType !== 'All';
-    const matchingJobIds = new Set(
-      (store.getAll('jobs') || [])
-        .filter(j => {
-          if (filterTechId !== 'All' && !(j.technicianId === filterTechId || (j.technicians && j.technicians.some(t => t.id === filterTechId)))) return false;
-          if (filterAssetType !== 'All') {
-            const targetAssetIds = assets.filter(a => a.type === filterAssetType).map(a => a.id);
-            if (j.assetId && targetAssetIds.includes(j.assetId)) return true;
-            if (j.assetIds && j.assetIds.some(id => targetAssetIds.includes(id))) return true;
-            return false;
-          }
-          return true;
-        })
-        .map(j => String(j.id))
-    );
-    const invoiceShare = (inv) => {
-      if (!jobLevelFilterActive) return inv.total || 0;
-      return store.invoiceJobIds(inv)
-        .filter(id => matchingJobIds.has(String(id)))
-        .reduce((s, id) => s + store.invoiceAmountForJob(inv, id), 0);
-    };
-    if (jobLevelFilterActive) {
-      invoices = invoices.filter(i => store.invoiceJobIds(i).some(id => matchingJobIds.has(String(id))));
-    }
-
-    // Timesheets Filtering
-    let filteredTimesheets = [...timesheets];
-    if (filterStartDate) {
-      filteredTimesheets = filteredTimesheets.filter(t => t.date >= filterStartDate);
-    }
-    if (filterEndDate) {
-      filteredTimesheets = filteredTimesheets.filter(t => t.date <= filterEndDate);
-    }
-    if (filterTechId !== 'All') {
-      filteredTimesheets = filteredTimesheets.filter(t => t.technicianId === filterTechId);
-    }
-    if (filterCustomerId !== 'All') {
-      filteredTimesheets = filteredTimesheets.filter(t => {
-        if (!t.jobId) return false;
-        const job = store.getById('jobs', t.jobId);
-        return job && job.customerId === filterCustomerId;
-      });
-    }
-    if (filterAssetType !== 'All') {
-      const targetAssetIds = assets.filter(a => a.type === filterAssetType).map(a => a.id);
-      filteredTimesheets = filteredTimesheets.filter(t => {
-        if (!t.jobId) return false;
-        const job = store.getById('jobs', t.jobId);
-        if (!job) return false;
-        if (job.assetId && targetAssetIds.includes(job.assetId)) return true;
-        if (job.assetIds && job.assetIds.some(id => targetAssetIds.includes(id))) return true;
-        return false;
-      });
-    }
-
-    // Assets & Plans Filtering
-    let filteredAssets = [...assets];
-    let filteredPlans = [...maintenancePlans];
-    if (filterCustomerId !== 'All') {
-      filteredAssets = filteredAssets.filter(a => a.customerId === filterCustomerId);
-      filteredPlans = filteredPlans.filter(p => p.customerId === filterCustomerId);
-    }
-    if (filterAssetType !== 'All') {
-      filteredAssets = filteredAssets.filter(a => a.type === filterAssetType);
-      filteredPlans = filteredPlans.filter(p => {
-        const asset = assets.find(a => a.id === p.assetId);
-        return asset && asset.type === filterAssetType;
-      });
-    }
-
-    // Revenue calcs
-    const totalRevenue = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + invoiceShare(i), 0);
-    const totalOutstanding = invoices.filter(i => i.status === 'Sent' || i.status === 'Overdue').reduce((s, i) => s + invoiceShare(i), 0);
-    const avgJobValue = jobs.length > 0 ? jobs.reduce((s, j) => s + (j.laborCost || 0) + (j.materialCost || 0), 0) / jobs.length : 0;
-    // Won = accepted, including quotes since converted to a job; measured against
-    // decided quotes only, so drafts and quotes awaiting a reply don't drag it down.
-    const wonQuotes = quotes.filter(q => q.status === 'Accepted' || q.status === 'Converted').length;
-    const decidedQuotes = wonQuotes + quotes.filter(q => q.status === 'Declined').length;
-    const quoteWinRate = decidedQuotes > 0 ? (wonQuotes / decidedQuotes * 100) : 0;
-    const leadConvRate = leads.length > 0 ? (leads.filter(l => l.status === 'Won').length / leads.length * 100) : 0;
-
-    // By status
-    const jobsByStatus = {};
-    jobs.forEach(j => { jobsByStatus[j.status] = (jobsByStatus[j.status] || 0) + 1; });
-    const invByStatus = {};
-    invoices.forEach(i => { invByStatus[i.status] = (invByStatus[i.status] || 0) + 1; });
-
-    // Technician stats
-    const techStats = technicians.map(t => {
-      const techJobs = jobs.filter(j => j.technicianId === t.id || (j.technicians && j.technicians.some(x => x.id === t.id)));
-      const completed = techJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
-      const revenue = techJobs.reduce((s, j) => s + (j.laborCost || 0) + (j.materialCost || 0), 0);
-      return { ...t, totalJobs: techJobs.length, completed, revenue };
-    });
-
-    // Customer revenue
-    const custRevenue = {};
-    invoices.filter(i => i.status === 'Paid').forEach(i => {
-      custRevenue[i.customerName] = (custRevenue[i.customerName] || 0) + invoiceShare(i);
-    });
-    const topCustomers = Object.entries(custRevenue).sort((a, b) => b[1] - a[1]).slice(0, 10);
-
-    // Stock value
-    const totalStockValue = stock.reduce((s, i) => s + (i.quantity * i.costPrice), 0);
-    const lowStockItems = stock.filter(i => i.quantity <= i.reorderLevel);
-
-    // Pre-calculate hours and costs by job for performance
-    const hoursByJob = {};
-    const internalLaborCostByJob = {};
-    
-    const techRates = {};
-    technicians.forEach(p => { if (p.payRate) techRates[p.id] = p.payRate; });
-
-    filteredTimesheets.forEach(t => {
-      hoursByJob[t.jobId] = (hoursByJob[t.jobId] || 0) + (t.hours || 0);
-      const rate = t.payRate || techRates[t.technicianId] || 0;
-      internalLaborCostByJob[t.jobId] = (internalLaborCostByJob[t.jobId] || 0) + (t.hours * rate);
-    });
-
-    return { 
-      jobs, quotes, invoices, customers, stock, technicians, leads, 
-      totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, 
-      jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, 
-      lowStockItems, timesheets: filteredTimesheets, hoursByJob, internalLaborCostByJob,
-      assets: filteredAssets, maintenancePlans: filteredPlans,
-      // Amount of a listed invoice that counts under the active filters.
-      invoiceShare
-    };
-  }
+  const activeReport = (params && params.tab) || 'overview';
+  const filters = emptyFilters();
+  let activePreset = 'all';
+  let openMenu = null;       // 'period' | 'filters' while one is being used, so a re-render keeps it open
+  let onDocClick = () => {};
 
   function render() {
-    const d = getData();
-    const technicians = store.getAll('technicians') || [];
-    const assets = store.getAll('assets') || [];
-    const customers = store.getAll('customers') || [];
-    const uniqueAssetTypes = [...new Set(assets.map(a => a.type).filter(Boolean))];
+    const data = loadData();
+    const r = buildReport(data, filters);
+    const assetTypes = [...new Set(data.assets.map(a => a.type).filter(Boolean))].sort();
+    const staff = data.technicians.filter(t => !t.deactivated && t.role !== 'customer');
+    const option = (value, label, selected) => `<option value="${escapeHTML(String(value))}" ${String(selected) === String(value) ? 'selected' : ''}>${escapeHTML(label)}</option>`;
 
+    const lines = filterLines(data);
+    const preset = PRESETS.find(p => p.id === activePreset);
+    const periodLabel = preset ? preset.label : shortRangeText(r.range);
+    const isOpen = (id) => openMenu === id;
+
+    // Everything in .page-header-actions is moved into the breadcrumb bar by
+    // main.js, so the controls are kept to three compact menus: Period (presets
+    // and a custom range), Filters (who and what), and Export.
     container.innerHTML = `
       <div class="page-header">
         <h1>Reports & Analytics</h1>
         <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-export-csv" data-tooltip="Export current report data to CSV" data-tooltip-pos="left"><span class="material-icons-outlined">download</span> Export CSV</button>
-        </div>
-      </div>
-
-      <!-- Global Filter Bar -->
-      <div class="card" style="margin-bottom:var(--space-md);">
-        <div class="card-body" style="display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:16px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">Date Range</span>
-            <input type="date" class="form-input" id="global-filter-start" value="${filterStartDate}" style="width:135px; height:32px; font-size:12px; margin:0; padding:4px 8px;" />
-            <span style="font-size:11px; color:var(--text-tertiary)">to</span>
-            <input type="date" class="form-input" id="global-filter-end" value="${filterEndDate}" style="width:135px; height:32px; font-size:12px; margin:0; padding:4px 8px;" />
-          </div>
-          
-          <div style="display:flex; gap:4px; align-items:center;">
-            <button class="btn btn-preset ${!filterStartDate && !filterEndDate ? 'active' : ''}" data-preset="all" style="padding:4px 10px; font-size:11px; height:32px; background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:var(--border-radius); cursor:pointer;">All Time</button>
-            <button class="btn btn-preset" data-preset="30" style="padding:4px 10px; font-size:11px; height:32px; background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:var(--border-radius); cursor:pointer;">30 Days</button>
-            <button class="btn btn-preset" data-preset="90" style="padding:4px 10px; font-size:11px; height:32px; background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:var(--border-radius); cursor:pointer;">90 Days</button>
-            <button class="btn btn-preset" data-preset="year" style="padding:4px 10px; font-size:11px; height:32px; background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:var(--border-radius); cursor:pointer;">This Year</button>
-          </div>
-          
-          <!-- Simple / Detailed View Mode Toggle -->
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">View Mode</span>
-            <div style="display:flex; border:1px solid var(--border-color); border-radius:var(--border-radius); overflow:hidden; height:32px; background:var(--card-bg);">
-              <button class="btn btn-view-mode ${reportViewMode === 'simple' ? 'active' : ''}" data-mode="simple" style="border:none; padding:4px 12px; font-size:11px; height:100%; cursor:pointer; background:${reportViewMode === 'simple' ? 'var(--color-primary)' : 'transparent'}; color:${reportViewMode === 'simple' ? '#fff' : 'var(--text-secondary)'}; font-weight:600; transition:all var(--transition-fast);">Simple</button>
-              <button class="btn btn-view-mode ${reportViewMode === 'detailed' ? 'active' : ''}" data-mode="detailed" style="border:none; padding:4px 12px; font-size:11px; height:100%; cursor:pointer; background:${reportViewMode === 'detailed' ? 'var(--color-primary)' : 'transparent'}; color:${reportViewMode === 'detailed' ? '#fff' : 'var(--text-secondary)'}; font-weight:600; border-left:1px solid var(--border-color); transition:all var(--transition-fast);">Detailed</button>
+          <div class="dropdown report-menu" data-menu="period">
+            <button class="btn btn-secondary" id="btn-report-period" aria-haspopup="true" aria-expanded="${isOpen('period')}">
+              <span class="material-icons-outlined">calendar_today</span> ${escapeHTML(periodLabel)}
+            </button>
+            <div class="dropdown-menu report-period-pop" style="display:${isOpen('period') ? 'block' : 'none'}">
+              ${PRESETS.map(p => `<button type="button" class="dropdown-item${activePreset === p.id ? ' selected' : ''}" data-preset="${p.id}">${p.label}</button>`).join('')}
+              <div class="dropdown-divider"></div>
+              <div class="report-pop-custom">
+                <span class="report-pop-heading">Custom range</span>
+                <label class="report-pop-field"><span>From</span><input type="date" class="form-input" id="report-from" value="${escapeHTML(filters.start)}" /></label>
+                <label class="report-pop-field"><span>To</span><input type="date" class="form-input" id="report-to" value="${escapeHTML(filters.end)}" /></label>
+              </div>
             </div>
           </div>
-          
+          <div class="dropdown report-menu" data-menu="filters">
+            <button class="btn btn-secondary" id="btn-report-filters" aria-haspopup="true" aria-expanded="${isOpen('filters')}" data-tooltip="${escapeHTML(lines.join(' · ') || 'Filter by technician, customer or asset type')}" data-tooltip-pos="bottom">
+              <span class="material-icons-outlined">filter_list</span> Filters${lines.length ? `<span class="report-filter-count">${lines.length}</span>` : ''}
+            </button>
+            <div class="dropdown-menu report-filter-pop" style="display:${isOpen('filters') ? 'block' : 'none'}">
+              <label class="report-pop-field"><span>Technician</span>
+                <select class="form-select" data-filter="technicianId">
+                  ${option('All', 'All technicians', filters.technicianId)}
+                  ${staff.map(t => option(t.id, t.name, filters.technicianId)).join('')}
+                </select>
+              </label>
+              <label class="report-pop-field"><span>Customer</span>
+                <select class="form-select" data-filter="customerId">
+                  ${option('All', 'All customers', filters.customerId)}
+                  ${data.customers.map(c => option(c.id, c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Customer', filters.customerId)).join('')}
+                </select>
+              </label>
+              ${assetTypes.length ? `
+              <label class="report-pop-field"><span>Asset type</span>
+                <select class="form-select" data-filter="assetType">
+                  ${option('All', 'All asset types', filters.assetType)}
+                  ${assetTypes.map(t => option(t, t, filters.assetType)).join('')}
+                </select>
+              </label>` : ''}
+              ${lines.length ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-clear-filters">Clear filters</button>' : ''}
+            </div>
+          </div>
+          <div class="dropdown report-menu" data-menu="export">
+            <button class="btn btn-secondary" id="btn-report-export" aria-haspopup="true"><span class="material-icons-outlined">download</span> Export</button>
+            <div class="dropdown-menu" style="display:none">
+              <button type="button" class="dropdown-item" id="btn-export-csv"><span class="material-icons-outlined">table_view</span> CSV of this report</button>
+              <button type="button" class="dropdown-item" id="btn-export-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF, choose what's in it</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style="display:flex;gap:var(--space-lg)">
-        <!-- Report Content -->
-        <div style="flex:1" id="report-content"></div>
-      </div>
+      <div id="report-content"></div>
     `;
 
-    renderReport(d);
-    bindEvents(d);
+    container.querySelector('#report-content').innerHTML = renderReport(activeReport, r);
+    bindEvents(r, lines);
   }
 
-  function renderReport(d) {
-    const rc = container.querySelector('#report-content');
-
-    switch (activeReport) {
-      case 'overview':
-        rc.innerHTML = renderOverviewReport(d, reportViewMode);
-        break;
-      case 'revenue':
-        rc.innerHTML = renderRevenueReport(d, reportViewMode);
-        break;
-      case 'jobs':
-        rc.innerHTML = renderJobsReport(d, reportViewMode);
-        break;
-      case 'job_costing':
-        rc.innerHTML = renderJobCostingReport(d, reportViewMode);
-        break;
-      case 'technicians':
-        rc.innerHTML = renderTechniciansReport(d, reportViewMode);
-        break;
-      case 'timesheets_labor':
-        rc.innerHTML = renderTimesheetsLaborReport(d, reportViewMode);
-        break;
-      case 'assets_maintenance':
-        rc.innerHTML = renderAssetsMaintenanceReport(d, reportViewMode);
-        break;
-      case 'customers':
-        rc.innerHTML = renderCustomersReport(d, reportViewMode);
-        break;
-      case 'inventory':
-        rc.innerHTML = renderInventoryReport(d, reportViewMode);
-        break;
-      default:
-        rc.innerHTML = '<div class="text-secondary">Select a report to view</div>';
-    }
+  // The filters in use, in words, for the PDF header.
+  function filterLines(data) {
+    const lines = [];
+    const tech = data.technicians.find(t => String(t.id) === String(filters.technicianId));
+    const cust = data.customers.find(c => String(c.id) === String(filters.customerId));
+    if (tech) lines.push(`Technician: ${tech.name}`);
+    if (cust) lines.push(`Customer: ${cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()}`);
+    if (filters.assetType && filters.assetType !== 'All') lines.push(`Asset type: ${filters.assetType}`);
+    return lines;
   }
 
-  function bindEvents(d) {
-    container.querySelector('#btn-export-csv')?.addEventListener('click', () => exportCSV(d));
-
-    // Global filters elements
-    container.querySelector('#global-filter-start')?.addEventListener('change', (e) => {
-      filterStartDate = e.target.value;
-      render();
-    });
-
-    container.querySelector('#global-filter-end')?.addEventListener('change', (e) => {
-      filterEndDate = e.target.value;
-      render();
-    });
-
-
-
-    // View mode toggle elements
-    container.querySelectorAll('.btn-view-mode').forEach(btn => {
+  // Bound while the controls are still inside `container`; main.js moves them
+  // into the breadcrumb bar afterwards and the listeners go with them.
+  function bindEvents(r, lines) {
+    const q = (sel) => container.querySelector(sel);
+    const menus = [...container.querySelectorAll('.report-menu')];
+    const closeMenus = () => {
+      menus.forEach(m => {
+        m.querySelector('.dropdown-menu').style.display = 'none';
+        m.querySelector('.btn').setAttribute('aria-expanded', 'false');
+      });
+      openMenu = null;
+    };
+    menus.forEach(m => {
+      const btn = m.querySelector('.btn');
+      const pop = m.querySelector('.dropdown-menu');
       btn.addEventListener('click', (e) => {
-        reportViewMode = e.target.dataset.mode;
+        e.stopPropagation();
+        const open = pop.style.display === 'none';
+        closeMenus();
+        pop.style.display = open ? 'block' : 'none';
+        btn.setAttribute('aria-expanded', String(open));
+        openMenu = open ? m.dataset.menu : null;
+      });
+      pop.addEventListener('click', (e) => e.stopPropagation());
+    });
+    document.removeEventListener('click', onDocClick);
+    onDocClick = closeMenus;
+    document.addEventListener('click', onDocClick);
+
+    q('#btn-export-csv')?.addEventListener('click', () => { closeMenus(); exportCSV(activeReport, r); });
+    q('#btn-export-pdf')?.addEventListener('click', () => { closeMenus(); openPdfDialog(activeReport, r, lines); });
+
+    container.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => {
+      activePreset = btn.dataset.preset;
+      Object.assign(filters, presetDates(activePreset));
+      openMenu = null;
+      render();
+    }));
+    // Typing a date makes it a custom range; the menu stays open for the other end.
+    const setDate = (key) => (e) => {
+      filters[key] = e.target.value;
+      activePreset = 'custom';
+      openMenu = 'period';
+      render();
+    };
+    q('#report-from')?.addEventListener('change', setDate('start'));
+    q('#report-to')?.addEventListener('change', setDate('end'));
+
+    container.querySelectorAll('[data-filter]').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        filters[e.target.dataset.filter] = e.target.value;
+        openMenu = 'filters';
         render();
       });
     });
-
-    // Preset button triggers
-    container.querySelectorAll('.btn-preset').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const preset = e.target.dataset.preset;
-        const today = new Date();
-        if (preset === 'all') {
-          filterStartDate = '';
-          filterEndDate = '';
-        } else if (preset === '30') {
-          const start = new Date();
-          start.setDate(today.getDate() - 30);
-          filterStartDate = formatDate(start);
-          filterEndDate = formatDate(today);
-        } else if (preset === '90') {
-          const start = new Date();
-          start.setDate(today.getDate() - 90);
-          filterStartDate = formatDate(start);
-          filterEndDate = formatDate(today);
-        } else if (preset === 'year') {
-          const start = new Date(today.getFullYear(), 0, 1);
-          filterStartDate = formatDate(start);
-          filterEndDate = formatDate(today);
-        }
-        render();
-      });
+    q('#btn-clear-filters')?.addEventListener('click', () => {
+      Object.assign(filters, { technicianId: 'All', customerId: 'All', assetType: 'All' });
+      openMenu = 'filters';
+      render();
     });
-  }
-
-  function exportCSV(d) {
-    let csv = '';
-    if (activeReport === 'overview' || activeReport === 'revenue') {
-      csv = 'Invoice #,Customer,Status,Total,Issue Date,Due Date\n';
-      d.invoices.forEach(i => {
-        csv += `"${i.number}","${i.customerName}","${i.status}",${d.invoiceShare ? d.invoiceShare(i) : (i.total || 0)},"${i.issueDate || ''}","${i.dueDate || ''}"\n`;
-      });
-    } else if (activeReport === 'job_costing') {
-      const settings = store.getSettings();
-      csv = 'Job #,Technician,Actual Hrs,Internal Labor Cost,Billable Labor,Profit,Margin %\n';
-      const costingData = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').map(j => {
-        const actualH = d.hoursByJob[j.id] || 0;
-        const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
-        
-        const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
-        const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
-        const profit = billableLabor - actualLabor;
-        const margin = billableLabor > 0 ? (profit / billableLabor * 100) : 0;
-        
-        return { num: j.number, tech: j.technicianName || '', actualH, actualLabor, billableLabor, profit, margin };
-      });
-      costingData.forEach(j => {
-        csv += `"${j.num}","${j.tech}",${j.actualH},${j.actualLabor.toFixed(2)},${j.billableLabor.toFixed(2)},${j.profit.toFixed(2)},${j.margin.toFixed(1)}%\n`;
-      });
-    } else if (activeReport === 'jobs') {
-      csv = 'Job #,Title,Customer,Technician,Status,Priority,Labor,Material\n';
-      d.jobs.forEach(j => {
-        csv += `"${j.number}","${j.title}","${j.customerName}","${j.technicianName || ''}","${j.status}","${j.priority}",${j.laborCost || 0},${j.materialCost || 0}\n`;
-      });
-    } else if (activeReport === 'technicians') {
-      csv = 'Name,Role,Total Jobs,Completed,Revenue\n';
-      d.techStats.forEach(t => {
-        csv += `"${t.name}","${t.role}",${t.totalJobs},${t.completed},${t.revenue}\n`;
-      });
-    } else if (activeReport === 'timesheets_labor') {
-      csv = 'Technician,Role,Logged Hrs,Utilization %,Total Cost\n';
-      d.technicians.forEach(t => {
-        const tSheets = d.timesheets.filter(ts => ts.technicianId === t.id);
-        const total = tSheets.reduce((s, ts) => s + (ts.hours || 0), 0);
-        const billable = tSheets.filter(ts => ts.jobId).reduce((s, ts) => s + (ts.hours || 0), 0);
-        const util = total > 0 ? (billable / total * 100) : 0;
-        
-        let payTotal = 0;
-        tSheets.forEach(ts => {
-          const rate = ts.payRate || t.payRate || 0;
-          payTotal += (ts.hours * rate);
-        });
-
-        csv += `"${t.name}","${t.role}",${total.toFixed(2)},${util.toFixed(1)}%,${payTotal.toFixed(2)}\n`;
-      });
-    } else if (activeReport === 'assets_maintenance') {
-      csv = 'Asset,Serial,Customer,Plan Name,Frequency,Next Service,Priority (1-10),Maintenance Cost\n';
-      d.maintenancePlans.forEach(p => {
-        const asset = d.assets.find(a => a.id === p.assetId);
-        let maintCost = 0;
-        if (asset && asset.logs) {
-          asset.logs.forEach(l => {
-            if (l.type === 'Service') maintCost += (l.cost || 0);
-          });
-        }
-        csv += `"${p.assetName || ''}","${asset?.serial || ''}","${p.customerName || ''}","${p.name || ''}","${p.frequency || 'Meter-Based'}","${p.nextServiceDate || p.nextDue || '—'}",${p.priority || 5},${maintCost.toFixed(2)}\n`;
-      });
-    } else if (activeReport === 'customers') {
-      csv = 'Company,First Name,Last Name,Email,Phone,Status\n';
-      d.customers.forEach(c => {
-        csv += `"${c.company}","${c.firstName}","${c.lastName}","${c.email}","${c.phone}","${c.status}"\n`;
-      });
-    } else if (activeReport === 'inventory') {
-      csv = 'Name,SKU,Category,Quantity,Cost Price,Sell Price,Location,Supplier\n';
-      d.stock.forEach(i => {
-        csv += `"${i.name}","${i.sku}","${i.category}",${i.quantity},${i.costPrice},${i.unitPrice},"${i.location}","${i.supplier}"\n`;
-      });
-    }
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `relay_${activeReport}_report.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   render();
 }
 
+function renderReport(id, r) {
+  switch (id) {
+    case 'overview': return renderOverviewReport(r);
+    case 'revenue': return renderRevenueReport(r);
+    case 'jobs': return renderJobsReport(r);
+    case 'job_costing': return renderJobCostingReport(r);
+    case 'technicians': return renderTechniciansReport(r);
+    case 'timesheets_labor': return renderTimesheetsLaborReport(r);
+    case 'assets_maintenance': return renderAssetsMaintenanceReport(r);
+    case 'customers': return renderCustomersReport(r);
+    case 'inventory': return renderInventoryReport(r);
+    default: return '<div class="text-secondary">Select a report to view</div>';
+  }
+}
+
+// ── Export ──────────────────────────────────────────────────────────────────
+
+const jobLabel = (job, id) => (job && job.number) || id;
+
+function csvFor(id, r) {
+  const d = r.scoped;
+  switch (id) {
+    case 'overview':
+    case 'revenue':
+      return toCsv(['Invoice #', 'Customer', 'Status', 'Subtotal (ex GST)', 'Total', 'Issue date', 'Due date'],
+        r.money.issued.map(i => [i.number, i.customerName, i.status, Number(i.subtotal) || 0, Number(i.total) || 0, i.issueDate || '', i.dueDate || '']));
+    case 'jobs':
+      return toCsv(['Job #', 'Title', 'Customer', 'Technician', 'Status', 'Completed', 'Hours logged'],
+        r.jobs.completed.map(j => {
+          const done = toDate(r.jobs.completedAt(j));
+          return [j.number, j.title, j.customerName, j.technicianName || '', j.status, done ? isoDay(done) : '', r.jobs.hoursByJob.get(String(j.id)) || 0];
+        }));
+    case 'job_costing':
+      return toCsv(['Job #', 'Customer', 'Hours', 'Revenue (ex GST)', 'Labour', 'Materials', 'Purchases', 'Cost', 'Profit', 'Margin %'],
+        r.profit.jobs.map(j => [jobLabel(j.job, j.jobId), j.job?.customerName || '', j.hours, j.revenue,
+          j.known ? j.labour : '', j.known ? j.materials : '', j.known ? j.purchases : '', j.known ? j.cost : '',
+          j.known ? j.profit : '', j.margin != null ? j.margin * 100 : 'Not costed']));
+    case 'technicians':
+      return toCsv(['Name', 'Role', 'Jobs completed', 'Hours logged', 'Invoiced (shared)'],
+        r.team.map(t => [t.name, t.role, t.jobsCompleted, t.hours, t.invoiced]));
+    case 'timesheets_labor':
+      return toCsv(['Technician', 'Role', 'Hours logged', 'Hours on jobs', 'Share on jobs %', 'Labour cost', 'Hours with no pay rate'],
+        r.team.map(t => [t.name, t.role, t.hours, t.billableHours, t.billableShare != null ? t.billableShare * 100 : '', t.labourCost, t.unratedHours]));
+    case 'assets_maintenance':
+      return toCsv(['Asset', 'Serial', 'Customer', 'Plan', 'Frequency', 'Next service', 'Priority (1-10)', 'Service cost'],
+        d.maintenancePlans.map(p => {
+          const asset = d.assets.find(a => a.id === p.assetId);
+          return [p.assetName || '', asset?.serial || '', p.customerName || '', p.name || '', p.frequency || 'Meter-Based', p.nextServiceDate || p.nextDue || '', p.priority || 5, assetServiceCost(asset)];
+        }));
+    case 'customers':
+      return toCsv(['Company', 'First name', 'Last name', 'Email', 'Phone', 'Status', 'Invoiced in range (ex GST)'],
+        d.customers.map(c => [c.company, c.firstName, c.lastName, c.email, c.phone, c.status, r.customers.revenueById.get(String(c.id)) || 0]));
+    case 'inventory':
+      return toCsv(['Name', 'SKU', 'Category', 'Quantity', 'Cost price', 'Sell price', 'Location', 'Supplier'],
+        d.stock.map(i => [i.name, i.sku, i.category, Number(i.quantity) || 0, Number(i.costPrice) || 0, Number(i.unitPrice) || 0, i.location, i.supplier]));
+    default:
+      return '';
+  }
+}
+
+function exportCSV(id, r) {
+  const csv = csvFor(id, r);
+  if (!csv) return;
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relay_${id}_report.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── PDF export ──────────────────────────────────────────────────────────────
+
+const rangeText = (range) => {
+  const f = (d) => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${f(range.start)} – ${f(new Date(range.end - 1))}`;
+};
+
+// For the Period button: "1 Sep – 28 Oct 2026", with the first year only when it differs.
+const shortRangeText = (range) => {
+  const a = range.start, b = new Date(range.end - 1);
+  const day = (d, year) => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}) });
+  return `${day(a, a.getFullYear() !== b.getFullYear())} – ${day(b, true)}`;
+};
+
+// Pick reports and the blocks inside each, then download them as one PDF. The
+// open report starts fully ticked; the others start unticked.
+function openPdfDialog(activeId, r, lines) {
+  const companyName = store.getSettings().name || '';
+  const specs = REPORTS.map(rep => reportSpec(rep.id, r, { insights: insightsFor(rep.id, r), companyName }));
+
+  const content = document.createElement('div');
+  content.className = 'report-pdf-picker';
+  content.innerHTML = `
+    <p class="text-secondary" style="margin:0 0 12px;font-size:13px">
+      Uses the filters on screen: ${escapeHTML(rangeText(r.range))}${lines.length ? `, ${escapeHTML(lines.join(', '))}` : ''}.
+    </p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button type="button" class="btn btn-secondary btn-sm" data-pick="all">Select everything</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-pick="none">Clear</button>
+    </div>
+    ${specs.map(s => `
+      <details class="report-pdf-report" ${s.id === activeId ? 'open' : ''}>
+        <summary>
+          <label><input type="checkbox" data-report="${escapeHTML(s.id)}" ${s.id === activeId ? 'checked' : ''} /> ${escapeHTML(s.title)}</label>
+        </summary>
+        <div class="report-pdf-blocks">
+          ${s.blocks.map(b => `
+            <label><input type="checkbox" data-block="${escapeHTML(s.id)}" value="${escapeHTML(b.key)}" ${s.id === activeId ? 'checked' : ''} />
+              ${escapeHTML(b.title)}${b.kind === 'table' ? ` <span class="text-tertiary">(${b.rows.length} rows)</span>` : ''}</label>
+          `).join('')}
+        </div>
+      </details>
+    `).join('')}
+    <div class="report-pdf-error" role="alert" style="display:none;color:var(--color-danger);font-size:13px;margin-top:8px">Choose at least one thing to include.</div>
+  `;
+
+  const error = content.querySelector('.report-pdf-error');
+  const blocksOf = (id) => [...content.querySelectorAll(`[data-block="${CSS.escape(id)}"]`)];
+  const syncReport = (id) => {
+    const box = content.querySelector(`[data-report="${CSS.escape(id)}"]`);
+    const ticked = blocksOf(id).filter(b => b.checked).length;
+    box.checked = ticked > 0;
+    box.indeterminate = ticked > 0 && ticked < blocksOf(id).length;
+  };
+  content.querySelectorAll('[data-report]').forEach(box => box.addEventListener('change', () => {
+    blocksOf(box.dataset.report).forEach(b => { b.checked = box.checked; });
+    box.indeterminate = false;
+    error.style.display = 'none';
+  }));
+  content.querySelectorAll('[data-block]').forEach(b => b.addEventListener('change', () => {
+    syncReport(b.dataset.block);
+    error.style.display = 'none';
+  }));
+  content.querySelectorAll('[data-pick]').forEach(btn => btn.addEventListener('click', () => {
+    const on = btn.dataset.pick === 'all';
+    content.querySelectorAll('[data-block]').forEach(b => { b.checked = on; });
+    specs.forEach(s => syncReport(s.id));
+    error.style.display = 'none';
+  }));
+  // A click on the checkbox inside <summary> shouldn't also fold the section.
+  content.querySelectorAll('summary label').forEach(l => l.addEventListener('click', e => e.stopPropagation()));
+
+  showModal({
+    title: 'Export PDF',
+    content,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      { label: 'Download PDF', className: 'btn-primary', onClick: async (close) => {
+        const selection = {};
+        content.querySelectorAll('[data-block]:checked').forEach(b => {
+          (selection[b.dataset.block] = selection[b.dataset.block] || new Set()).add(b.value);
+        });
+        const sections = selectBlocks(specs, selection);
+        if (!sections.length) { error.style.display = ''; return; }
+        try {
+          const { buildReportPdf } = await import('../../utils/reportPdf.js');
+          const { doc, filename } = await buildReportPdf({ company: companyName, rangeLabel: rangeText(r.range), filterLines: lines, sections });
+          doc.save(filename);
+          close();
+        } catch (err) {
+          console.error('Report PDF failed:', err);
+          showToast("Couldn't build the PDF. Try again.", 'error');
+        }
+      } },
+    ],
+  });
+}
+
 // ── Cache & Insights Engine ────────────────────────────────────────────────
+// Keyed by report and the figures it was given, so a change of filters asks again.
 const cachedAIInsights = {};
+
+// The insights a report's panel last showed for these figures, for the PDF.
+function insightsFor(reportId, r) {
+  const hit = cachedAIInsights[`${reportId}_${getStatsSummaryText(reportId, r)}`];
+  return hit ? { items: hit.items, source: hit.source } : null;
+}
 
 // Insights have four possible sources: the Cloud AI ('live'), the on-device
 // rule engine in a local workspace ('local'), that same rule engine standing
@@ -479,16 +425,17 @@ export function insightsUseAI() {
   return isCloudUser() && !store.demoMode;
 }
 
-function renderAIInsightsPanel(reportId, filteredData) {
+function renderAIInsightsPanel(reportId, r) {
   const containerId = `ai-insights-${reportId}`;
-  const cacheKey = `${reportId}_${filteredData.timesheets.length}_${filteredData.jobs.length}_${filteredData.invoices.length}_${reportViewMode}`;
-  
+  const statsSummary = getStatsSummaryText(reportId, r);
+  const cacheKey = `${reportId}_${statsSummary}`;
+
   if (cachedAIInsights[cacheKey]) {
-    return cachedAIInsights[cacheKey];
+    return `<div class="card" id="${containerId}" style="margin-bottom:var(--space-lg);">${cachedAIInsights[cacheKey].html}</div>`;
   }
 
   setTimeout(() => {
-    fetchAIInsights(reportId, filteredData, cacheKey);
+    fetchAIInsights(reportId, r, statsSummary, cacheKey);
   }, 100);
 
   // Only a Cloud workspace makes a real AI call, so only Cloud gets the
@@ -521,45 +468,13 @@ function renderAIInsightsPanel(reportId, filteredData) {
   `;
 }
 
-async function fetchAIInsights(reportId, d, cacheKey) {
-  const panel = document.getElementById(`ai-insights-${reportId}`);
-  if (!panel) return;
-
-  const isSimpleMode = cacheKey.endsWith('_simple');
-  const mode = isSimpleMode ? 'simple' : 'detailed';
-
-  const s = store.getSettings();
-  // Deputy's hosted AI is part of a paid Cloud workspace — no per-account switch.
-  const canUseAI = insightsUseAI();
-
-  let insightsHTML = '';
-
-  if (canUseAI) {
-    try {
-      const statsSummary = getStatsSummaryText(reportId, d);
-      let messages = [];
-
-      if (isSimpleMode) {
-        messages = [
-          {
-            role: 'system',
-            content: 'You are a friendly, encouraging operational co-pilot for a field service company. Analyze the provided metrics and write exactly 3 to 5 simple, friendly, easy-to-understand operational tips or encouraging updates in a JSON array of strings. The output MUST be a valid JSON array of strings, e.g., ["Tip 1", "Tip 2", "Tip 3"]. Avoid complex business jargon or threatening financial metrics. Focus on team efforts, customer service, or helpful reminders (e.g., "Keep up the great work on service schedules!", "Order parts soon to keep jobs running smoothly"). Do not output any markdown formatting, asterisks (*), code blocks (like ```json), or explanatory text. Return ONLY the raw JSON string.'
-          },
-          {
-            role: 'user',
-            content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}`
-          }
-        ];
-      } else {
-        messages = [
-          {
-            role: 'system',
-            content: `You are an expert business analyst and operational co-pilot for a field service management agency.
+const INSIGHTS_PROMPT = `You are an expert business analyst and operational co-pilot for a field service management agency.
 Analyze the provided summary report metrics and generate exactly 3 to 5 grounded, specific, non-generic observations tied to real numbers in the dataset.
 Never write generic platitudes ("business is doing well!"), never fabricate benchmarks, and never present advice as certain facts.
+All money figures are GST-exclusive. Revenue is what was invoiced in the date range; profit is invoiced revenue less actual job cost (labour, materials and purchase orders) on the jobs that could be costed.
 
 Follow these Global Rules:
-1. Every insight format: headline (short, specific, numbers-first), detail (pattern pattern and why it matters -> what -> so what), action (one concrete next step -> now what).
+1. Every insight format: headline (short, specific, numbers-first), detail (pattern and why it matters -> what -> so what), action (one concrete next step -> now what).
 2. Ground in real data only. Never invent benchmarks, percentages, or comparisons. If there is not enough historical job data (e.g. <5 jobs), do NOT output generic placeholders like "not enough data". Instead, celebrate their early setup progress (e.g. company profile creation, first technician registrations, customers added, or first quote/job logs), highlight what they have accomplished so far, and give positive, encouraging operational guidance to help them build business momentum!
 3. Confidence scales with sample size. Set confidence to "high", "medium", or "low" based on data density.
 4. No individual blame. Frame staffing/productivity at a team/role level or growth-framed, never negative individual callouts.
@@ -569,163 +484,110 @@ Follow these Global Rules:
 8. Use plain, specific, non-corporate language.
 
 Per-Report Specifications:
-- overview: Flag the single biggest positive/negative movement vs last period. Limit to 3-4 insights.
-- revenue: Analyze margin trend by job type/service, pricing consistency, seasonal patterns, upsell opportunities. Never suggest a specific price increase number.
-- jobs: On-time start/completion rate trend, first-time fix rate, actual vs estimated duration, cancellation rate. Distinguish estimate vs mismanagement.
-- job_costing: Est vs actual cost variance (split materials vs labor), consistently over-budget job types, markup effectiveness, quote-to-invoice drift.
-- technicians: Jobs completed, utilization rate, travel-to-job ratio. Team/role aggregates. Coach, don't blame or rank.
-- timesheets_labor: Overtime trend, labor cost as % of revenue, rostering mismatches, soft disclaimers.
-- assets_maintenance: Overdue maintenance ranked by downtime cost risk, assets approaching replace-vs-repair, warranty expiry, utilization.
-- customers: Customer lifetime value distribution, behavior-only churn risk, repeat business rate correlation.
-- inventory: Stock turnover rate, reorder points showing math (usage * lead time + buffer) inline, stockouts, supplier cost trend.
+- overview: The single biggest positive and negative signal in the figures. Limit to 3-4 insights.
+- revenue: Margin, the split of cost between labour and materials, monthly pattern. Never suggest a specific price increase number.
+- jobs: Completion volume, time logged per job, jobs waiting to be invoiced.
+- job_costing: Jobs with thin or negative margins, jobs that could not be costed and why, labour vs materials cost.
+- technicians: Jobs completed and time on jobs at team/role level. Coach, don't blame or rank.
+- timesheets_labor: Share of hours on jobs, labour cost, hours missing a pay rate, soft disclaimers.
+- assets_maintenance: Overdue maintenance, assets with the highest service cost, active agreements.
+- customers: Revenue concentration, repeat customers, new customers.
+- inventory: Low stock, capital tied up in stock.
 
 Output Format:
 You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks). Each object has exactly these keys:
 - "headline" (string, short, specific, numbers-first)
 - "detail" (string, what -> so what)
 - "action" (string, now what - one concrete next step)
-- "confidence" (string, "high" | "medium" | "low")`
-          },
-          {
-            role: 'user',
-            content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}`
-          }
-        ];
-      }
+- "confidence" (string, "high" | "medium" | "low")`;
 
-      let reply = await dispatchChat(messages);
+async function fetchAIInsights(reportId, r, statsSummary, cacheKey) {
+  const panel = document.getElementById(`ai-insights-${reportId}`);
+  if (!panel) return;
 
+  const companyName = store.getSettings().name || 'your company';
+  let items, source;
+
+  if (insightsUseAI()) {
+    try {
+      let reply = await dispatchChat([
+        { role: 'system', content: INSIGHTS_PROMPT },
+        { role: 'user', content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}` },
+      ]);
       if (reply.includes('```')) {
         reply = reply.replace(/```json/g, '').replace(/```/g, '').trim();
       }
-
-      const insights = JSON.parse(reply);
-      insightsHTML = renderInsightsListHTML(reportId, insights, 'live', mode);
+      items = JSON.parse(reply);
+      if (!Array.isArray(items)) throw new Error('Insights reply is not a list');
+      source = 'live';
     } catch (err) {
       console.error('AI Insights parsing or fetch error:', err);
-      const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-      insightsHTML = renderInsightsListHTML(reportId, localInsights, 'offline', mode);
+      items = localInsights(reportId, r, companyName);
+      source = 'offline';
     }
   } else {
-    const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-    insightsHTML = renderInsightsListHTML(reportId, localInsights, store.demoMode ? 'demo' : 'local', mode);
+    items = localInsights(reportId, r, companyName);
+    source = store.demoMode ? 'demo' : 'local';
   }
 
-  cachedAIInsights[cacheKey] = insightsHTML;
-  panel.innerHTML = insightsHTML;
+  const html = renderInsightsListHTML(items, source);
+  cachedAIInsights[cacheKey] = { html, items: items.slice(0, 5), source };
+  panel.style.border = '';
+  panel.innerHTML = html;
 }
 
-function getStatsSummaryText(reportId, d) {
+function getStatsSummaryText(reportId, r) {
+  const d = r.scoped;
   const settings = store.getSettings();
   let summary = `Workspace / Company Profile Name: ${settings.name || 'Company Name'}\n`;
-  summary += `Total Registered Technicians: ${d.technicians.length}\n`;
-  summary += `Total Registered Customers: ${d.customers.length}\n`;
-  summary += `Total Registered Assets: ${d.assets.length}\n`;
-  summary += `Total Registered Quotes: ${d.quotes.length}\n`;
-  summary += `Total Registered Jobs: ${d.jobs.length}\n`;
-  summary += `Total Registered Invoices: ${d.invoices.length}\n`;
-  summary += `Total Registered Leads: ${d.leads.length}\n\n`;
+  summary += `Date range: ${r.range.start.toDateString()} to ${new Date(r.range.end - 1).toDateString()}\n`;
+  summary += `Technicians: ${d.technicians.length}\nCustomers: ${d.customers.length}\nAssets: ${d.assets.length}\n`;
+  summary += `Quotes: ${d.quotes.length}\nJobs: ${d.jobs.length}\nInvoices: ${d.invoices.length}\nLeads: ${d.leads.length}\n\n`;
 
   if (reportId === 'overview' || reportId === 'revenue') {
-    summary += `Gross Revenue: $${d.totalRevenue.toFixed(2)}\n`;
-    summary += `Outstanding Bills: $${d.totalOutstanding.toFixed(2)}\n`;
-    summary += `Quote Win Rate: ${d.quoteWinRate.toFixed(1)}%\n`;
-    summary += `Lead Conversion: ${d.leadConvRate.toFixed(1)}%\n`;
-    summary += `Total Jobs: ${d.jobs.length}\n`;
-    summary += `Total Invoices: ${d.invoices.length}\n`;
-    summary += `Avg Job Value: $${d.avgJobValue.toFixed(2)}\n`;
+    summary += `Revenue invoiced: ${money(r.money.revenue)} across ${r.money.invoiceCount} invoices\n`;
+    summary += `Payments received: ${money(r.money.received)}\n`;
+    summary += `Outstanding: ${money(r.money.outstanding)} on ${r.money.outstandingCount} invoices, of which overdue ${money(r.money.overdue)}\n`;
+    summary += `Gross profit: ${money(r.profit.profit)} on ${r.profit.jobsKnown} of ${r.profit.jobsTotal} invoiced jobs costed (margin ${pct(r.profit.margin)})\n`;
+    summary += `Cost on costed jobs: labour ${money(r.profit.labour)}, materials ${money(r.profit.materials)}, purchase orders ${money(r.profit.purchases)}\n`;
+    summary += `Quote win rate: ${pct(r.sales.winRate)} of ${r.sales.quotesDecided} decided\n`;
+    summary += `Lead conversion: ${pct(r.sales.leadConversion)} of ${r.sales.leadsClosed} closed\n`;
+    if (reportId === 'revenue') {
+      summary += `Monthly revenue: ${r.monthly.map(m => `${m.label} ${wholeMoney(m.revenue)}`).join(', ')}\n`;
+    }
   } else if (reportId === 'jobs' || reportId === 'job_costing') {
-    const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-    summary += `Completed Jobs Analyzed: ${completedJobs.length}\n`;
-    const settings = store.getSettings();
-    let totalActualLabor = 0;
-    let totalBillableLabor = 0;
-    completedJobs.forEach(j => {
-      const actualH = d.hoursByJob[j.id] || 0;
-      const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
-      const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
-      const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
-      totalActualLabor += actualLabor;
-      totalBillableLabor += billableLabor;
+    summary += `Jobs completed: ${r.jobs.completed.length}\nJobs created: ${r.jobs.created.length}\nActive jobs now: ${r.jobs.active}\n`;
+    summary += `Completed jobs waiting to be invoiced: ${r.jobs.readyToInvoice}\n`;
+    summary += `Average hours logged per completed job: ${r.jobs.averageHours == null ? 'none logged' : r.jobs.averageHours.toFixed(1)}\n`;
+    summary += `Invoiced jobs: ${r.profit.jobsTotal}, costed: ${r.profit.jobsKnown}\n`;
+    summary += `Revenue on costed jobs: ${money(r.profit.revenue)}, cost ${money(r.profit.cost)}, margin ${pct(r.profit.margin)}\n`;
+    const losing = r.profit.jobs.filter(j => j.known && j.profit < 0).length;
+    summary += `Costed jobs with a loss: ${losing}\n`;
+  } else if (reportId === 'timesheets_labor' || reportId === 'technicians') {
+    summary += `Hours logged: ${r.labour.hours.toFixed(1)}\nHours on jobs: ${r.labour.billableHours.toFixed(1)} (${pct(r.labour.billableShare)})\n`;
+    summary += `Labour cost: ${money(r.labour.cost)}\nHours with no pay rate: ${r.labour.unratedHours.toFixed(1)}\n`;
+    summary += `Jobs completed: ${r.jobs.completed.length}\n`;
+    // Grouped by role to keep it aggregate (no individual blame).
+    const byRole = {};
+    r.team.forEach(t => {
+      const role = t.role || 'Field Technician';
+      const g = byRole[role] || (byRole[role] = { count: 0, completed: 0, hours: 0, invoiced: 0 });
+      g.count++; g.completed += t.jobsCompleted; g.hours += t.hours; g.invoiced += t.invoiced;
     });
-    const profit = totalBillableLabor - totalActualLabor;
-    const margin = totalBillableLabor > 0 ? (profit / totalBillableLabor * 100) : 0;
-    summary += `Total Internal Labor Cost: $${totalActualLabor.toFixed(2)}\n`;
-    summary += `Total Billable Labor Revenue: $${totalBillableLabor.toFixed(2)}\n`;
-    summary += `Labor Margin: ${margin.toFixed(1)}%\n`;
-  } else if (reportId === 'timesheets_labor') {
-    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
-    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
-    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-    summary += `Total Logged Hours: ${totalHrs.toFixed(2)} hrs\n`;
-    summary += `Billable Job Hours: ${billableHrs.toFixed(2)} hrs\n`;
-    summary += `Labor Utilization: ${utilization.toFixed(1)}%\n`;
-  } else if (reportId === 'technicians') {
-    summary += `Total Technicians: ${d.technicians.length}\n`;
-    const totalJobs = d.jobs.length;
-    const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
-    summary += `Total Filtered Jobs: ${totalJobs}\n`;
-    summary += `Completed Jobs: ${completedJobs}\n`;
-    
-    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
-    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
-    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-    summary += `Total Logged Hours: ${totalHrs.toFixed(1)} hrs\n`;
-    summary += `Total Billable Job Hours: ${billableHrs.toFixed(1)} hrs\n`;
-    summary += `Overall Utilization Rate: ${utilization.toFixed(1)}%\n`;
-    
-    // Group stats by role to keep them aggregate (avoiding individual blame)
-    const statsByRole = {};
-    d.techStats.forEach(ts => {
-      const role = ts.role || 'Field Technician';
-      if (!statsByRole[role]) {
-        statsByRole[role] = { count: 0, jobs: 0, completed: 0, revenue: 0 };
-      }
-      statsByRole[role].count++;
-      statsByRole[role].jobs += ts.totalJobs;
-      statsByRole[role].completed += ts.completed;
-      statsByRole[role].revenue += ts.revenue;
-    });
-    Object.entries(statsByRole).forEach(([role, stats]) => {
-      summary += `Role Group: ${role} (Group Size: ${stats.count}) -> Jobs Assigned: ${stats.jobs}, Completed: ${stats.completed}, Total Assigned Labor Revenue: $${stats.revenue.toFixed(2)}\n`;
+    Object.entries(byRole).forEach(([role, g]) => {
+      summary += `Role group: ${role} (${g.count} people) -> jobs completed ${g.completed}, hours ${g.hours.toFixed(1)}, invoiced ${money(g.invoiced)}\n`;
     });
   } else if (reportId === 'customers') {
-    summary += `Total Customers Registered: ${d.customers.length}\n`;
-    summary += `Active Status Customers: ${d.customers.filter(c => c.status === 'Active').length}\n`;
-    summary += `Total Leads Received: ${d.leads.length}\n`;
-    summary += `Lead Conversion Rate: ${d.leadConvRate.toFixed(1)}%\n`;
-    summary += `Quote Win Rate: ${d.quoteWinRate.toFixed(1)}%\n`;
-    
-    // Calculate repeat customer rate
-    const customerJobCounts = {};
-    d.jobs.forEach(j => {
-      if (j.customerName) {
-        customerJobCounts[j.customerName] = (customerJobCounts[j.customerName] || 0) + 1;
-      }
-    });
-    const repeatCustomers = Object.values(customerJobCounts).filter(c => c > 1).length;
-    const singleJobCustomers = Object.values(customerJobCounts).filter(c => c === 1).length;
-    summary += `Customers with Repeat Bookings: ${repeatCustomers}\n`;
-    summary += `Customers with Single Booking: ${singleJobCustomers}\n`;
+    summary += `Active customers: ${r.customers.active}\nNew customers in range: ${r.customers.new}\n`;
+    summary += `Customers invoiced in range: ${r.customers.invoiced}, of which invoiced more than once: ${r.customers.repeat}\n`;
+    const top = r.customers.top[0];
+    if (top) summary += `Largest customer share of revenue: ${pct(top.share)}\n`;
+    summary += `Lead conversion: ${pct(r.sales.leadConversion)}\nQuote win rate: ${pct(r.sales.winRate)}\n`;
   } else if (reportId === 'assets_maintenance') {
-    summary += `Total Assets Matching: ${d.assets.length}\n`;
-    summary += `Active Service Plans: ${d.maintenancePlans.filter(p => p.status === 'Active').length}\n`;
-    let totalMaintCost = 0;
-    let logCount = 0;
-    d.assets.forEach(a => {
-      (a.logs || []).forEach(l => {
-        if (l.type === 'Service') {
-          totalMaintCost += (l.cost || 0);
-          logCount++;
-        }
-      });
-    });
-    summary += `Total Servicing Actions Taken: ${logCount}\n`;
-    summary += `Cumulative Maintenance Cost: $${totalMaintCost.toFixed(2)}\n`;
+    summary += `Active service plans: ${d.maintenancePlans.filter(p => p.status === 'Active').length}\n`;
+    summary += `Total service cost logged: ${money(d.assets.reduce((s, a) => s + assetServiceCost(a), 0))}\n`;
   } else if (reportId === 'inventory') {
-    summary += `Stock Items Types: ${d.stock.length}\n`;
-    summary += `Low Stock Alert Items: ${d.lowStockItems.length}\n`;
-    summary += `Cumulative Stock Cost Value: $${d.totalStockValue.toFixed(2)}\n`;
+    summary += `Stock lines: ${d.stock.length}\nBelow reorder level: ${lowStock(d.stock).length}\nStock value at cost: ${money(stockValue(d.stock))}\n`;
   }
   return summary;
 }
@@ -737,42 +599,17 @@ function cleanString(str) {
   return formatted;
 }
 
-function renderInsightsListHTML(reportId, insights, source, mode) {
+function renderInsightsListHTML(insights, source) {
   const { title, badgeLabel, badgeClass, borderColor } = insightsCopy(source);
-  const borderStyle = `border: 1px solid ${borderColor}`;
-
   const items = (Array.isArray(insights) ? insights : []).slice(0, 5);
 
   if (items.length === 0) {
-    items.push(mode === 'simple' ? "Operational check completed: everything is running smoothly." : {
-      headline: "Operational Metrics: Stable",
-      detail: "All filtered business metrics are within normal operating parameters.",
-      action: "Continue monitoring scheduled maintenance and jobs.",
-      confidence: "high"
+    items.push({
+      headline: 'Nothing stands out',
+      detail: 'No figure in this report needs attention right now.',
+      action: 'Check back after the next batch of jobs is invoiced.',
+      confidence: 'medium',
     });
-  }
-
-  if (mode === 'simple') {
-    return `
-      <div class="card-body" style="padding:16px 20px; ${borderStyle}">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-          <span class="material-icons-outlined" style="color:var(--color-primary)">psychology</span>
-          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${title}</h5>
-          <span class="badge ${badgeClass}" style="font-size:10px; margin-left:auto;">${badgeLabel}</span>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--text-secondary); line-height:1.6; font-family:var(--font-family);">
-          ${items.map(item => {
-            const text = typeof item === 'string' ? item : (item.detail || item.headline || '');
-            return `
-              <div style="display:flex; align-items:flex-start; gap:8px;">
-                <span style="color:var(--color-primary); font-size:16px; line-height:1.2;">•</span>
-                <span>${cleanString(escapeHTML(text))}</span>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
   }
 
   const confidenceColors = {
@@ -782,21 +619,20 @@ function renderInsightsListHTML(reportId, insights, source, mode) {
   };
 
   return `
-    <div class="card-body" style="padding:16px 20px; ${borderStyle}">
+    <div class="card-body" style="padding:16px 20px; border: 1px solid ${borderColor}">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
         <span class="material-icons-outlined" style="color:var(--color-primary)">psychology</span>
         <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${title}</h5>
         <span class="badge ${badgeClass}" style="font-size:10px; margin-left:auto;">${badgeLabel}</span>
       </div>
-      
+
       <div style="display:flex; flex-direction:column; gap:16px;">
         ${items.map(item => {
-          const conf = (item.confidence || 'high').toLowerCase();
+          const conf = String(item.confidence || 'high').toLowerCase();
           const colors = confidenceColors[conf] || confidenceColors.high;
           return `
             <div style="display:flex; align-items:flex-start; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
               <span style="font-size:18px; color:var(--color-primary); line-height:1; padding-top:2px;">•</span>
-              
               <div style="flex:1;">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
                   <span style="font-weight:700; color:var(--text-primary); font-size:13px;">${cleanString(escapeHTML(item.headline))}</span>
@@ -819,357 +655,14 @@ function renderInsightsListHTML(reportId, insights, source, mode) {
   `;
 }
 
-function getLocalSimpleInsights(reportId, d) {
-  if (!d.jobs || d.jobs.length < 5) {
-    const settings = store.getSettings();
-    const companyName = settings.name || 'your company';
-    const techCount = d.technicians.length;
-    const custCount = d.customers.length;
-    const jobCount = d.jobs.length;
-    const quoteCount = d.quotes.length;
-
-    const tips = [
-      `Welcome to RELAY! We are thrilled to help support operations at ${companyName}.`,
-    ];
-    if (techCount > 0) {
-      tips.push(`Great job setting up your team! You have ${techCount} technicians ready to go.`);
-    } else {
-      tips.push("Next step: add a technician under ADMIN -> People so you can start scheduling jobs on the calendar.");
-    }
-    if (custCount > 0) {
-      tips.push(`Awesome! You have successfully registered ${custCount} customers in your database.`);
-    } else {
-      tips.push("Try adding a customer profile to start building your client base.");
-    }
-    if (quoteCount > 0) {
-      tips.push(`You have prepared your first quote! Follow up with them to win the job.`);
-    }
-    if (jobCount > 0) {
-      tips.push(`You've logged your first job! Assign it to a technician to start tracking timesheets.`);
-    }
-    return tips.slice(0, 5);
-  }
-  const tips = [];
-  if (reportId === 'overview' || reportId === 'revenue') {
-    if (d.totalOutstanding > d.totalRevenue * 0.3) {
-      tips.push("We have a few outstanding invoices. Sending a friendly follow-up note to clients will help keep our cash flow running smoothly.");
-    } else {
-      tips.push("Our collections are in great shape! Keep up the excellent work sending invoices promptly.");
-    }
-    if (d.quoteWinRate < 45) {
-      tips.push("Let's try to follow up on open quotes within 2 days. A quick check-in can make a big difference in winning more jobs.");
-    } else {
-      tips.push("Great job on proposals! Our quote acceptance rate is looking very strong.");
-    }
-    if (d.leadConvRate < 35) {
-      tips.push("We have some new leads waiting. Reaching out quickly helps build trust with new customers.");
-    }
-  } else if (reportId === 'jobs' || reportId === 'job_costing') {
-    tips.push("Keep estimating as accurately as possible so we can maintain healthy margins on completed service calls.");
-    const overrunJobs = d.jobs.filter(j => {
-      const actualH = d.hoursByJob[j.id] || 0;
-      return actualH > (j.estimatedHours || 0) * 1.1;
-    });
-    if (overrunJobs.length > 0) {
-      tips.push("A few complex jobs took a bit longer than expected. Checking in on site challenges helps us prepare better next time.");
-    }
-  } else if (reportId === 'timesheets_labor') {
-    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
-    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
-    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-    if (utilization < 70) {
-      tips.push("Let's look for ways to optimize travel and setup time, helping our team spend more of their active hours helping clients on site.");
-    } else {
-      tips.push("Awesome job on team efficiency! The crew is spending a solid amount of their logged time on actual jobs.");
-    }
-  } else if (reportId === 'assets_maintenance') {
-    tips.push("Preventative check-ups are the best way to avoid emergency breakdowns. Let's keep those scheduled visits on track!");
-    tips.push("Keep a close eye on maintenance agreements to ensure we are always meeting customer expectations.");
-  } else if (reportId === 'inventory') {
-    if (d.lowStockItems.length > 0) {
-      tips.push("We have a few items running low in the warehouse. Let's place a supplier order soon to avoid any job delays.");
-    } else {
-      tips.push("Warehouse stock is in great shape! All parts are above their minimum levels.");
-    }
-    tips.push("Reviewing slow-moving stock helps keep our warehouse organized and frees up resources for active projects.");
-  }
-
-  if (tips.length === 0) {
-    tips.push("Operational check completed: All metrics are within normal parameters. Keep up the excellent work!");
-  }
-  return tips.slice(0, 5);
-}
-
-function getLocalInsightsJSON(reportId, d) {
-  if (!d.jobs || d.jobs.length < 5) {
-    const settings = store.getSettings();
-    const companyName = settings.name || 'your company';
-    const techCount = d.technicians.length;
-    const custCount = d.customers.length;
-    const jobCount = d.jobs.length;
-    const quoteCount = d.quotes.length;
-    const invCount = d.invoices.length;
-
-    const insights = [];
-
-    // Always include a welcome setup milestone
-    insights.push({
-      headline: `Welcome to RELAY, ${companyName}!`,
-      detail: `You have successfully configured your workspace settings and are ready to run dispatch operations.`,
-      action: "Head to Settings to customize your labor rates and material markups.",
-      confidence: "high"
-    });
-
-    if (techCount > 0) {
-      insights.push({
-        headline: `${techCount} Technicians Registered`,
-        detail: `Your field team is added and ready for scheduling.`,
-        action: "Assign a job to your team from the Jobs page or calendar.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: "Add Your First Technician",
-        detail: "Having no technicians registered means you can't assign job cards or track timesheets yet.",
-        action: "Go to ADMIN -> People to register your field team.",
-        confidence: "high"
-      });
-    }
-
-    if (custCount > 0) {
-      insights.push({
-        headline: `${custCount} Customers Added`,
-        detail: `Your client database is starting to grow!`,
-        action: "Create a quote or job directly for one of your registered customers.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: "Add Your First Customer",
-        detail: "Build your customer list to start scheduling jobs and preparing bids.",
-        action: "Go to PEOPLE -> Customers -> Add Customer to register your first client.",
-        confidence: "high"
-      });
-    }
-
-    if (quoteCount > 0) {
-      insights.push({
-        headline: `${quoteCount} Quotes Prepared`,
-        detail: `Excellent progress on bidding for new work!`,
-        action: "Follow up with clients on sent quotes to win approval.",
-        confidence: "high"
-      });
-    }
-
-    if (jobCount > 0) {
-      insights.push({
-        headline: `${jobCount} Jobs Logged`,
-        detail: `You have created your first job cards in the system.`,
-        action: "Move your active jobs to 'Scheduled' or 'In Progress' as work begins.",
-        confidence: "high"
-      });
-    }
-
-    return insights;
-  }
-  const insights = [];
-
-  if (reportId === 'overview' || reportId === 'revenue') {
-    if (d.totalOutstanding > d.totalRevenue * 0.3) {
-      const pct = ((d.totalOutstanding / (d.totalRevenue + d.totalOutstanding || 1)) * 100).toFixed(0);
-      insights.push({
-        headline: `${pct}% Outstanding Billing Overload`,
-        detail: `Outstanding invoices ($${d.totalOutstanding.toLocaleString('en-AU', {maximumFractionDigits:0})}) represent a significant portion of billing → this restricts working cash flow.`,
-        action: "Trigger automated payment reminder emails to all Sent/Overdue customers.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: "A/R Aging: Stable and Healthy",
-        detail: "Outstanding customer balances are low relative to paid revenues → indicates strong collection health.",
-        action: "Maintain current invoicing payment terms and auto-reminder settings.",
-        confidence: "high"
-      });
-    }
-
-    if (d.quoteWinRate < 45) {
-      insights.push({
-        headline: `${d.quoteWinRate.toFixed(0)}% Proposal Approval Deficit`,
-        detail: "Quote acceptance win rate has dipped below target thresholds → suggests pricing friction or delayed follow-ups.",
-        action: "Audit pricing templates and follow up on sent quotes within 48 hours.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: `Proposal Wins: Strong at ${d.quoteWinRate.toFixed(0)}%`,
-        detail: "Quote win rate is exceeding standard targets → suggests healthy competitive positioning.",
-        action: "Document best-selling quote scopes for team training.",
-        confidence: "high"
-      });
-    }
-
-    if (d.leadConvRate < 35) {
-      insights.push({
-        headline: `${d.leadConvRate.toFixed(0)}% Lead Qualification Lag`,
-        detail: "Lead-to-job conversion rate is below target capacity → suggests low marketing fit or slow response times.",
-        action: "Audit sales response times and filter low-probability lead categories.",
-        confidence: "medium"
-      });
-    }
-  } else if (reportId === 'jobs' || reportId === 'job_costing') {
-    const settings = store.getSettings();
-    const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-    let totalActualLabor = 0;
-    let totalBillableLabor = 0;
-    completedJobs.forEach(j => {
-      const actualH = d.hoursByJob[j.id] || 0;
-      const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
-      const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
-      const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
-      totalActualLabor += actualLabor;
-      totalBillableLabor += billableLabor;
-    });
-    const profit = totalBillableLabor - totalActualLabor;
-    const margin = totalBillableLabor > 0 ? (profit / totalBillableLabor * 100) : 0;
-
-    if (margin < 35) {
-      insights.push({
-        headline: `${margin.toFixed(1)}% Tight Labor Gross Margin`,
-        detail: "Average labor profit margin is thin → indicates potential labor rate underpricing or worker overruns.",
-        action: "Review labor rate profiles in Settings and adjust minimum call-out fees.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: `Labor Margins: Healthy at ${margin.toFixed(1)}%`,
-        detail: "Completed job costing shows strong labor profitability margins.",
-        action: "Keep monitoring timesheet entry accuracy vs job estimates.",
-        confidence: "high"
-      });
-    }
-    
-    const overrunJobs = completedJobs.filter(j => {
-      const actualH = d.hoursByJob[j.id] || 0;
-      return actualH > (j.estimatedHours || 0) * 1.1;
-    });
-    if (overrunJobs.length > 0) {
-      insights.push({
-        headline: `${overrunJobs.length} Completed Jobs Exceeded Estimates`,
-        detail: "Technicians spent over 110% of estimated hours on site → leads to labor margin leakage.",
-        action: "Update job estimation parameters for historically complex job types.",
-        confidence: "high"
-      });
-    }
-  } else if (reportId === 'timesheets_labor') {
-    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
-    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
-    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-
-    if (utilization < 70) {
-      insights.push({
-        headline: `${utilization.toFixed(1)}% Utilization Rate Deficit`,
-        detail: "Field technicians are logging high non-billable / general hours → reduces billable revenue potential.",
-        action: "Audit administrative overhead and improve route scheduling density.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: `Field Utilization: High at ${utilization.toFixed(1)}%`,
-        detail: "Field personnel are spending the majority of their logged hours on billable site jobs.",
-        action: "Optimize scheduling slots to maintain this high-efficiency threshold.",
-        confidence: "high"
-      });
-    }
-  } else if (reportId === 'assets_maintenance') {
-    let totalMaintCost = 0;
-    let logCount = 0;
-    const assetCosts = {};
-    d.assets.forEach(a => {
-      let aCost = 0;
-      (a.logs || []).forEach(l => {
-        if (l.type === 'Service') {
-          aCost += (l.cost || 0);
-        }
-      });
-      if (aCost > 0) {
-        assetCosts[a.name] = aCost;
-        totalMaintCost += aCost;
-        logCount++;
-      }
-    });
-    const topAsset = Object.entries(assetCosts).sort((a,b) => b[1] - a[1])[0];
-
-    if (logCount > 0) {
-      insights.push({
-        headline: `$${totalMaintCost.toLocaleString('en-AU', {maximumFractionDigits:0})} Cumulative Servicing Cost`,
-        detail: "Servicing routines have accumulated substantial overhead across active service events.",
-        action: "Establish preventative maintenance schedules to reduce emergency call-outs.",
-        confidence: "high"
-      });
-    }
-    if (topAsset) {
-      insights.push({
-        headline: `Highest Asset Maintenance: "${topAsset[0]}" ($${topAsset[1].toLocaleString('en-AU', {maximumFractionDigits:0})})`,
-        detail: "This asset represents the highest individual repair overhead in your inventory.",
-        action: "Conduct replacement lifecycle audit to check if replacement is cheaper than repair.",
-        confidence: "medium"
-      });
-    }
-    const activePlans = d.maintenancePlans.filter(p => p.status === 'Active');
-    if (activePlans.length > 0) {
-      insights.push({
-        headline: `${activePlans.length} Active Asset Servicing Agreements`,
-        detail: "Routine service contracts require daily monitoring → prevents schedule defaults and client disputes.",
-        action: "Assign dedicated dispatcher to monitor asset due-date schedules weekly.",
-        confidence: "high"
-      });
-    }
-  } else if (reportId === 'inventory') {
-    if (d.lowStockItems.length > 0) {
-      insights.push({
-        headline: `${d.lowStockItems.length} Warehouse Items Below Reorder Point`,
-        detail: "Critical parts quantities are insufficient → threatens scheduling downtime for pending jobs.",
-        action: "Generate supplier purchase orders immediately for all items in low stock.",
-        confidence: "high"
-      });
-    } else {
-      insights.push({
-        headline: "Inventory Stock Levels: Optimal",
-        detail: "All warehouse parts are currently stocked above minimum reorder points.",
-        action: "Conduct routine monthly counts to verify catalog count integrity.",
-        confidence: "high"
-      });
-    }
-    insights.push({
-      headline: `$${d.totalStockValue.toLocaleString('en-AU', {maximumFractionDigits:0})} Capital Tied in Inventory`,
-      detail: "Warehouse contains significant asset value in stock cost pricing.",
-      action: "Review slow-moving categories to reduce inventory carrying cost.",
-      confidence: "high"
-    });
-  }
-
-  if (insights.length === 0) {
-    insights.push({
-      headline: "Operational Metrics: Stable",
-      detail: "Key business performance indicators show steady execution without anomalies.",
-      action: "Continue monitoring job cost margins and invoicing turnaround.",
-      confidence: "high"
-    });
-  }
-  
-  return insights.slice(0, 5);
-}
-
-
-
 // ── Helper rendering functions ──────────────────────────────────────────────
 
 // Reports' own KPI colours, mapped onto the shared stat card's chip tones so
 // every KPI in the app renders through one component.
 const KPI_TONE = { green: 'success', blue: 'primary', orange: 'warning', red: 'danger' };
 
-function kpi(label, value, icon, color) {
-  return statCard({ label, value, icon, tone: KPI_TONE[color] || 'neutral' });
+function kpi(label, value, icon, color, sub = '') {
+  return statCard({ label, value, icon, tone: KPI_TONE[color] || 'neutral', sub });
 }
 
 function miniStat(label, value, icon) {
@@ -1178,157 +671,145 @@ function miniStat(label, value, icon) {
       <div class="card-body" style="display:flex;align-items:center;gap:12px;padding:var(--space-base)">
         <span class="material-icons-outlined" style="font-size:24px;color:var(--text-tertiary)">${icon}</span>
         <div>
-          <div style="font-size:var(--font-size-xl);font-weight:700">${value}</div>
-          <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">${label}</div>
+          <div style="font-size:var(--font-size-xl);font-weight:700">${escapeHTML(String(value))}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">${escapeHTML(label)}</div>
         </div>
       </div>
     </div>
   `;
 }
 
-function barChart(data, colorMap = {}, defaultColor = '#1B6DE0') {
-  const entries = Object.entries(data);
+// Horizontal bars. `data` is [[label, value], …] in display order; `format`
+// renders the value.
+function barChart(data, colorMap = {}, defaultColor = '#1B6DE0', format = (v) => String(v)) {
+  const entries = Array.isArray(data) ? data : Object.entries(data);
   if (entries.length === 0) return '<div class="text-secondary text-sm">No data available</div>';
   const max = Math.max(...entries.map(([, v]) => v));
 
   return entries.map(([label, value]) => {
     const color = colorMap[label] || defaultColor;
-    const pct = max > 0 ? (value / max * 100) : 0;
+    const width = max > 0 ? Math.max(0, value) / max * 100 : 0;
     return `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <div style="width:100px;font-size:var(--font-size-sm);color:var(--text-secondary);text-align:right;flex-shrink:0">${escapeHTML(label)}</div>
         <div style="flex:1;height:24px;background:var(--border-color);border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s ease"></div>
+          <div style="height:100%;width:${width}%;background:${escapeHTML(color)};border-radius:4px;transition:width 0.5s ease"></div>
         </div>
-        <div style="width:50px;font-size:var(--font-size-sm);font-weight:600;text-align:right">${typeof value === 'number' && value >= 1000 ? `$${(value/1000).toFixed(1)}k` : value}</div>
+        <div style="width:64px;font-size:var(--font-size-sm);font-weight:600;text-align:right">${escapeHTML(format(value))}</div>
       </div>
     `;
   }).join('');
 }
 
 function progressBar(label, value, max, color) {
-  const pct = max > 0 ? (value / max * 100) : 0;
-  const formatted = typeof value === 'number' ? `$${value.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value;
+  const width = max > 0 ? Math.max(0, value) / max * 100 : 0;
   return `
     <div style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-size:var(--font-size-sm);font-weight:500">${label}</span>
-        <span style="font-size:var(--font-size-sm);font-weight:600">${formatted}</span>
+        <span style="font-size:var(--font-size-sm);font-weight:500">${escapeHTML(label)}</span>
+        <span style="font-size:var(--font-size-sm);font-weight:600">${money(value)}</span>
       </div>
       <div style="height:8px;background:var(--border-color);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s ease"></div>
+        <div style="height:100%;width:${width}%;background:${escapeHTML(color)};border-radius:4px;transition:width 0.5s ease"></div>
       </div>
     </div>
   `;
 }
+
+const sortedEntries = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]);
+const jobLink = (job, id) => job ? `<a href="#/jobs/${encodeURIComponent(job.id)}" class="cell-link">${escapeHTML(job.number || job.id)}</a>` : escapeHTML(String(id));
+const emptyRow = (cols, text) => `<tr><td colspan="${cols}" style="text-align:center;padding:20px" class="text-secondary">${escapeHTML(text)}</td></tr>`;
 
 // ── Report Renderers ────────────────────────────────────────────────────────
 
-function renderOverviewReport(d, mode) {
-  const showCharts = mode === 'detailed';
+function renderOverviewReport(r) {
+  const d = r.scoped;
   return `
-    ${renderAIInsightsPanel('overview', d)}
+    ${renderAIInsightsPanel('overview', r)}
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Revenue', `$${d.totalRevenue.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'account_balance', 'green')}
-      ${kpi('Outstanding', `$${d.totalOutstanding.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'pending', 'orange')}
-      ${kpi('Quote Win Rate', `${d.quoteWinRate.toFixed(0)}%`, 'emoji_events', 'blue')}
-      ${kpi('Lead Conversion', `${d.leadConvRate.toFixed(0)}%`, 'trending_up', 'green')}
+      ${kpi('Revenue (ex GST)', money(r.money.revenue), 'account_balance', 'green', `${r.money.invoiceCount} invoices issued`)}
+      ${kpi('Payments received', money(r.money.received), 'payments', 'blue')}
+      ${kpi('Outstanding', money(r.money.outstanding), 'pending', 'orange', r.money.overdue > 0 ? `${escapeHTML(money(r.money.overdue))} overdue` : '')}
+      ${kpi('Gross margin', pct(r.profit.margin), 'trending_up', 'green', escapeHTML(costedSub(r.profit)))}
     </div>
-    ${showCharts ? `
     <div class="grid-2" style="margin-bottom:var(--space-lg)">
       <div class="card">
-        <div class="card-header"><h4>Jobs by Status</h4></div>
-        <div class="card-body">${barChart(d.jobsByStatus, JOB_STATUS_COLORS)}</div>
+        <div class="card-header"><h4>New jobs by status</h4></div>
+        <div class="card-body">${barChart(sortedEntries(r.jobs.byStatus), JOB_STATUS_COLORS)}</div>
       </div>
       <div class="card">
-        <div class="card-header"><h4>Invoices by Status</h4></div>
-        <div class="card-body">${barChart(d.invByStatus, DOC_STATUS_COLORS)}</div>
+        <div class="card-header"><h4>Invoices issued by status</h4></div>
+        <div class="card-body">${barChart(sortedEntries(r.invoicesByStatus), DOC_STATUS_COLORS)}</div>
       </div>
     </div>
-    ` : ''}
     <div class="grid-3">
-      ${miniStat('Total Jobs', d.jobs.length, 'build')}
-      ${miniStat('Total Quotes', d.quotes.length, 'request_quote')}
-      ${miniStat('Total Invoices', d.invoices.length, 'receipt_long')}
-      ${miniStat('Total Customers', d.customers.length, 'people')}
-      ${miniStat('Avg Job Value', `$${d.avgJobValue.toFixed(0)}`, 'paid')}
-      ${miniStat('Stock Items', `${d.stock.length} (${d.lowStockItems.length} low)`, 'inventory_2')}
+      ${miniStat('Jobs completed', r.jobs.completed.length, 'build')}
+      ${miniStat('Quotes sent', r.sales.quotesSent, 'request_quote')}
+      ${miniStat('Quote win rate', pct(r.sales.winRate, 0), 'emoji_events')}
+      ${miniStat('Lead conversion', pct(r.sales.leadConversion, 0), 'trending_up')}
+      ${miniStat('Avg invoice value', r.money.averageInvoice == null ? '—' : wholeMoney(r.money.averageInvoice), 'paid')}
+      ${miniStat('Stock items', `${d.stock.length} (${lowStock(d.stock).length} low)`, 'inventory_2')}
     </div>
   `;
 }
 
-function renderRevenueReport(d, mode) {
-  const showCharts = mode === 'detailed';
-  const paidInvoices = d.invoices.filter(i => i.status === 'Paid');
-  const monthlyRev = {};
-  paidInvoices.forEach(i => {
-    const m = new Date(i.issueDate || i.createdAt).toLocaleDateString('en-AU', { month: 'short', year: '2-digit' });
-    monthlyRev[m] = (monthlyRev[m] || 0) + (d.invoiceShare ? d.invoiceShare(i) : (i.total || 0));
-  });
-
-  const totalCost = d.jobs.reduce((s, j) => s + (j.materialCost || 0), 0);
-  const totalLabor = d.jobs.reduce((s, j) => s + (j.laborCost || 0), 0);
-  const grossProfit = d.totalRevenue - totalCost;
-
+function renderRevenueReport(r) {
+  const p = r.profit;
+  const months = r.monthly.slice(-24);
   return `
-    ${renderAIInsightsPanel('revenue', d)}
+    ${renderAIInsightsPanel('revenue', r)}
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Gross Revenue', `$${d.totalRevenue.toFixed(0)}`, 'account_balance', 'green')}
-      ${kpi('Total Labor', `$${totalLabor.toFixed(0)}`, 'engineering', 'blue')}
-      ${kpi('Material Costs', `$${totalCost.toFixed(0)}`, 'inventory_2', 'orange')}
-      ${kpi('Gross Profit', `$${grossProfit.toFixed(0)}`, 'savings', 'green')}
+      ${kpi('Revenue (ex GST)', wholeMoney(r.money.revenue), 'account_balance', 'green', `${r.money.invoiceCount} invoices issued`)}
+      ${kpi('Labour cost', wholeMoney(p.labour), 'engineering', 'blue', 'on costed jobs')}
+      ${kpi('Materials and purchases', wholeMoney(p.materials + p.purchases), 'inventory_2', 'orange', 'on costed jobs')}
+      ${kpi('Gross profit', wholeMoney(p.profit), 'savings', p.profit >= 0 ? 'green' : 'red', escapeHTML(costedSub(p) || `${pct(p.margin)} margin`))}
     </div>
-    ${showCharts ? `
     <div class="card" style="margin-bottom:var(--space-lg)">
-      <div class="card-header"><h4>Revenue by Month</h4></div>
-      <div class="card-body">${barChart(monthlyRev, {}, '#1B6DE0')}</div>
+      <div class="card-header"><h4>Revenue by month</h4></div>
+      <div class="card-body">${barChart(months.map(m => [m.label, m.revenue]), {}, '#1B6DE0', wholeMoney)}</div>
     </div>
-    ` : ''}
     <div class="card">
-      <div class="card-header"><h4>Profit Breakdown</h4></div>
+      <div class="card-header"><h4>Profit breakdown (costed jobs)</h4></div>
       <div class="card-body">
-        ${progressBar('Revenue', d.totalRevenue, d.totalRevenue, '#10B981')}
-        ${progressBar('Labor Cost', totalLabor, d.totalRevenue, '#3B82F6')}
-        ${progressBar('Material Cost', totalCost, d.totalRevenue, '#F59E0B')}
-        ${progressBar('Gross Profit', grossProfit, d.totalRevenue, '#10B981')}
+        ${progressBar('Revenue', p.revenue, p.revenue, '#10B981')}
+        ${progressBar('Labour cost', p.labour, p.revenue, '#3B82F6')}
+        ${progressBar('Material cost', p.materials, p.revenue, '#F59E0B')}
+        ${progressBar('Purchase orders', p.purchases, p.revenue, '#8B5CF6')}
+        ${progressBar('Gross profit', p.profit, p.revenue, p.profit >= 0 ? '#10B981' : '#EF4444')}
       </div>
     </div>
   `;
 }
 
-function renderJobsReport(d, mode) {
-  const showCharts = mode === 'detailed';
-  const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-  const avgHours = completedJobs.length > 0 ? completedJobs.reduce((s, j) => s + (j.estimatedHours || 0), 0) / completedJobs.length : 0;
-
+function renderJobsReport(r) {
+  const top = r.profit.jobs.slice(0, 8);
   return `
-    ${renderAIInsightsPanel('jobs', d)}
+    ${renderAIInsightsPanel('jobs', r)}
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Jobs', d.jobs.length, 'build', 'blue')}
-      ${kpi('Completed', completedJobs.length, 'check_circle', 'green')}
-      ${kpi('In Progress', d.jobsByStatus['In Progress'] || 0, 'pending', 'orange')}
-      ${kpi('Avg Hours', avgHours.toFixed(1), 'schedule', 'blue')}
+      ${kpi('Jobs completed', r.jobs.completed.length, 'check_circle', 'green')}
+      ${kpi('New jobs', r.jobs.created.length, 'build', 'blue')}
+      ${kpi('Active now', r.jobs.active, 'pending', 'orange', 'scheduled, in progress or on hold')}
+      ${kpi('Avg hours per job', r.jobs.averageHours == null ? '—' : r.jobs.averageHours.toFixed(1), 'schedule', 'blue', 'logged on completed jobs')}
     </div>
-    ${showCharts ? `
     <div class="card" style="margin-bottom:var(--space-lg)">
-      <div class="card-header"><h4>Job Status Distribution</h4></div>
-      <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
+      <div class="card-header"><h4>New jobs by status</h4></div>
+      <div class="card-body">${barChart(sortedEntries(r.jobs.byStatus), JOB_STATUS_COLORS)}</div>
     </div>
-    ` : ''}
     <div class="card">
-      <div class="card-header"><h4>Top Jobs by Value</h4></div>
+      <div class="card-header"><h4>Top jobs by invoiced value</h4></div>
       <div class="card-body" style="padding:0">
         <table class="data-table">
-          <thead><tr><th>Job</th><th>Customer</th><th>Status</th><th style="text-align:right">Value</th></tr></thead>
+          <thead><tr><th>Job</th><th>Customer</th><th>Status</th><th style="text-align:right">Invoiced (ex GST)</th></tr></thead>
           <tbody>
-            ${d.jobs.sort((a, b) => ((b.laborCost||0)+(b.materialCost||0)) - ((a.laborCost||0)+(a.materialCost||0))).slice(0, 8).map(j => `
+            ${top.map(j => `
               <tr>
-                <td class="font-medium">${escapeHTML(j.number)}</td>
-                <td class="text-secondary">${escapeHTML(j.customerName)}</td>
-                <td><span class="badge badge-neutral">${escapeHTML(j.status)}</span></td>
-                <td style="text-align:right;font-weight:600">$${((j.laborCost||0)+(j.materialCost||0)).toFixed(0)}</td>
+                <td class="font-medium">${jobLink(j.job, j.jobId)}</td>
+                <td class="text-secondary">${escapeHTML(j.job?.customerName || '—')}</td>
+                <td><span class="badge badge-neutral">${escapeHTML(j.job?.status || '—')}</span></td>
+                <td style="text-align:right;font-weight:600">${wholeMoney(j.revenue)}</td>
               </tr>
             `).join('')}
+            ${!top.length ? emptyRow(4, 'No jobs invoiced in this range') : ''}
           </tbody>
         </table>
       </div>
@@ -1336,436 +817,306 @@ function renderJobsReport(d, mode) {
   `;
 }
 
-function renderJobCostingReport(d, mode) {
-  const showTable = mode === 'detailed';
-  const settings = store.getSettings();
-  const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-  
-  const costingData = completedJobs.map(j => {
-    const actualH = d.hoursByJob[j.id] || 0;
-    const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
-    
-    const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
-    const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
-    
-    const profit = billableLabor - actualLabor;
-    const margin = billableLabor > 0 ? (profit / billableLabor * 100) : 0;
-    
-    return {
-      ...j, actualH, actualLabor, billableLabor, profit, margin
-    };
-  });
 
-  const totalActualLabor = costingData.reduce((s, j) => s + j.actualLabor, 0);
-  const totalBillableLabor = costingData.reduce((s, j) => s + j.billableLabor, 0);
-  const totalProfit = totalBillableLabor - totalActualLabor;
-  const avgMargin = totalBillableLabor > 0 ? (totalProfit / totalBillableLabor * 100) : 0;
-
+function renderJobCostingReport(r) {
+  const p = r.profit;
   return `
-    ${renderAIInsightsPanel('job_costing', d)}
+    ${renderAIInsightsPanel('job_costing', r)}
     <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      ${kpi('Internal Labor Cost', '$' + totalActualLabor.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 'engineering', 'orange')}
-      ${kpi('Billable Labor Rev.', '$' + totalBillableLabor.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 'payments', 'green')}
-      ${kpi('Labor Profitability', (avgMargin.toFixed(1)) + '% Margin', 'trending_up', avgMargin >= 40 ? 'green' : 'orange')}
+      ${kpi('Job cost', money(p.cost), 'engineering', 'orange', 'labour, materials and purchases')}
+      ${kpi('Revenue (ex GST)', money(p.revenue), 'payments', 'green', 'on costed jobs')}
+      ${kpi('Gross margin', pct(p.margin), 'trending_up', p.margin == null || p.margin >= 0.4 ? 'green' : 'orange', escapeHTML(costedSub(p)))}
     </div>
-    ${showTable ? `
     <div class="card">
       <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-        <h4 style="margin:0">Labor Costing Analysis (Completed Jobs)</h4>
-        <div style="font-size:12px; color:var(--text-tertiary)">Actual Tech Pay vs. Profile Billable Rate</div>
+        <h4 style="margin:0">Jobs invoiced in this range</h4>
+        <div style="font-size:12px; color:var(--text-tertiary)">Invoiced revenue vs actual cost</div>
       </div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body" style="padding:0; overflow-x:auto">
         <table class="data-table">
           <thead>
             <tr>
               <th>Job</th>
-              <th>Technician</th>
               <th style="text-align:right">Hrs</th>
-              <th style="text-align:right">Internal Cost</th>
-              <th style="text-align:right">Billable</th>
+              <th style="text-align:right">Revenue</th>
+              <th style="text-align:right">Labour</th>
+              <th style="text-align:right">Materials</th>
               <th style="text-align:right">Profit</th>
               <th style="text-align:right">Margin</th>
             </tr>
           </thead>
           <tbody>
-            ${costingData.map(j => `
+            ${p.jobs.map(j => `
               <tr>
-                <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${escapeHTML(j.number)}</a></td>
-                <td>${escapeHTML(j.technicianName || '—')}</td>
-                <td style="text-align:right">${j.actualH.toFixed(2)}</td>
-                <td style="text-align:right">$${j.actualLabor.toFixed(2)}</td>
-                <td style="text-align:right">$${j.billableLabor.toFixed(2)}</td>
-                <td style="text-align:right;font-weight:600;color:${j.profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-                  $${j.profit.toFixed(2)}
-                </td>
+                <td class="font-medium">${jobLink(j.job, j.jobId)}</td>
+                <td style="text-align:right">${j.hours.toFixed(2)}</td>
+                <td style="text-align:right">${money(j.revenue)}</td>
+                ${j.known ? `
+                <td style="text-align:right">${money(j.labour)}</td>
+                <td style="text-align:right">${money(j.materials + j.purchases)}</td>
+                <td style="text-align:right;font-weight:600;color:${j.profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">${money(j.profit)}</td>
                 <td style="text-align:right">
-                   <span class="badge ${j.margin >= 40 ? 'badge-success' : j.margin >= 20 ? 'badge-warning' : 'badge-danger'}">
-                    ${j.margin.toFixed(1)}%
-                   </span>
-                </td>
+                  <span class="badge ${j.margin >= 0.4 ? 'badge-success' : j.margin >= 0.2 ? 'badge-warning' : 'badge-danger'}">${pct(j.margin)}</span>
+                </td>` : `
+                <td colspan="4" style="text-align:right" class="text-secondary">${escapeHTML(NOT_COSTED[j.reason] || 'Not costed')}</td>`}
               </tr>
             `).join('')}
-            ${!costingData.length ? '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No completed jobs to analyze</td></tr>' : ''}
+            ${!p.jobs.length ? emptyRow(7, 'No jobs invoiced in this range') : ''}
           </tbody>
         </table>
       </div>
     </div>
-    ` : ''}
   `;
 }
 
-function renderTechniciansReport(d, mode) {
-  const showBars = mode === 'detailed';
+function renderTechniciansReport(r) {
+  const team = [...r.team].sort((a, b) => b.invoiced - a.invoiced);
+  const maxInvoiced = Math.max(0, ...team.map(t => t.invoiced));
   return `
-    ${renderAIInsightsPanel('technicians', d)}
+    ${renderAIInsightsPanel('technicians', r)}
     <div class="card" style="margin-bottom:var(--space-lg)">
-      <div class="card-header"><h4>Technician Performance</h4></div>
+      <div class="card-header"><h4>Technician performance</h4></div>
       <div class="card-body" style="padding:0">
         <table class="data-table">
-          <thead><tr><th></th><th>Name</th><th>Role</th><th style="text-align:center">Total Jobs</th><th style="text-align:center">Completed</th><th style="text-align:right">Revenue</th></tr></thead>
+          <thead><tr><th></th><th>Name</th><th>Role</th><th style="text-align:center">Jobs completed</th><th style="text-align:right">Hours logged</th><th style="text-align:right">Invoiced (shared)</th></tr></thead>
           <tbody>
-            ${d.techStats.sort((a, b) => b.revenue - a.revenue).map(t => `
+            ${team.map(t => `
               <tr>
-                <td><div style="width:8px;height:8px;border-radius:50%;background:${escapeHTML(t.color)}"></div></td>
+                <td><div style="width:8px;height:8px;border-radius:50%;background:${escapeHTML(t.color || '#3B82F6')}"></div></td>
                 <td class="font-medium">${escapeHTML(t.name)}</td>
                 <td class="text-secondary">${escapeHTML(t.role)}</td>
-                <td style="text-align:center">${t.totalJobs}</td>
-                <td style="text-align:center"><span class="badge badge-success">${t.completed}</span></td>
-                <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style="text-align:center"><span class="badge badge-success">${t.jobsCompleted}</span></td>
+                <td style="text-align:right">${t.hours.toFixed(1)}</td>
+                <td style="text-align:right;font-weight:600">${money(t.invoiced)}</td>
               </tr>
             `).join('')}
+            ${!team.length ? emptyRow(6, 'No technicians') : ''}
           </tbody>
         </table>
       </div>
     </div>
-    ${showBars ? `
     <div class="card">
-      <div class="card-header"><h4>Revenue by Technician</h4></div>
+      <div class="card-header"><h4>Invoiced by technician</h4></div>
       <div class="card-body">
-        ${d.techStats.map(t => progressBar(escapeHTML(t.name), t.revenue, Math.max(...d.techStats.map(x => x.revenue)), escapeHTML(t.color))).join('')}
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">A job's invoice is split evenly between everyone on the job.</div>
+        ${team.map(t => progressBar(t.name, t.invoiced, maxInvoiced, t.color || '#3B82F6')).join('')}
       </div>
     </div>
-    ` : ''}
   `;
 }
 
-function renderTimesheetsLaborReport(d, mode) {
-  const showBars = mode === 'detailed';
-  const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
-  const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
-  const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-  
-  let totalLaborCost = 0;
-  d.timesheets.forEach(ts => {
-    const rate = ts.payRate || 0;
-    totalLaborCost += (ts.hours * rate);
-  });
-
-  const techRows = d.technicians.map(tech => {
-    const tSheets = d.timesheets.filter(ts => ts.technicianId === tech.id);
-    const techTotal = tSheets.reduce((s, ts) => s + (ts.hours || 0), 0);
-    const billable = tSheets.filter(ts => ts.jobId).reduce((s, ts) => s + (ts.hours || 0), 0);
-    const util = techTotal > 0 ? (billable / techTotal * 100) : 0;
-    
-    let techCost = 0;
-    tSheets.forEach(ts => {
-      const rate = ts.payRate || tech.payRate || 0;
-      techCost += (ts.hours * rate);
-    });
-
-    return {
-      name: tech.name,
-      role: tech.role,
-      total: techTotal,
-      util,
-      cost: techCost,
-      color: tech.color || '#3B82F6'
-    };
-  });
-
+function renderTimesheetsLaborReport(r) {
+  const team = [...r.team].sort((a, b) => (b.billableShare || 0) - (a.billableShare || 0));
+  const shareBadge = (v) => (v == null ? '—' : `<span class="badge ${v >= 0.75 ? 'badge-success' : v >= 0.5 ? 'badge-warning' : 'badge-danger'}">${pct(v)}</span>`);
   return `
-    ${renderAIInsightsPanel('timesheets_labor', d)}
+    ${renderAIInsightsPanel('timesheets_labor', r)}
 
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Logged Hours', `${totalHrs.toFixed(1)} hrs`, 'schedule', 'blue')}
-      ${kpi('Billable Job Hours', `${billableHrs.toFixed(1)} hrs`, 'work', 'green')}
-      ${kpi('Labor Utilization', `${utilization.toFixed(1)}%`, 'trending_up', utilization >= 70 ? 'green' : 'orange')}
-      ${kpi('Internal Labor Cost', `$${totalLaborCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'payments', 'orange')}
+      ${kpi('Hours logged', hrs(r.labour.hours), 'schedule', 'blue')}
+      ${kpi('Hours on jobs', hrs(r.labour.billableHours), 'work', 'green')}
+      ${kpi('Share on jobs', pct(r.labour.billableShare), 'trending_up', (r.labour.billableShare || 0) >= 0.7 ? 'green' : 'orange')}
+      ${kpi('Labour cost', money(r.labour.cost), 'payments', 'orange', r.labour.unratedHours > 0 ? `${escapeHTML(hrs(r.labour.unratedHours))} with no pay rate` : '')}
     </div>
 
     <div class="card" style="margin-bottom:var(--space-lg)">
-      <div class="card-header"><h4>Technician Hours & Cost Breakdown</h4></div>
+      <div class="card-header"><h4>Hours and cost by technician</h4></div>
       <div class="card-body" style="padding:0">
         <table class="data-table">
           <thead>
             <tr>
               <th>Technician</th>
               <th>Role</th>
-              <th style="text-align:right">Logged Hrs</th>
-              <th style="text-align:right">Utilization %</th>
-              <th style="text-align:right">Est. Cost</th>
+              <th style="text-align:right">Logged hrs</th>
+              <th style="text-align:right">On jobs</th>
+              <th style="text-align:right">Labour cost</th>
             </tr>
           </thead>
           <tbody>
-            ${techRows.map(tr => `
+            ${team.map(t => `
               <tr>
-                <td class="font-medium">${escapeHTML(tr.name)}</td>
-                <td class="text-secondary">${escapeHTML(tr.role)}</td>
-                <td style="text-align:right; font-weight:600">${tr.total.toFixed(2)}</td>
-                <td style="text-align:right">
-                  <span class="badge ${tr.util >= 75 ? 'badge-success' : tr.util >= 50 ? 'badge-warning' : 'badge-danger'}">
-                    ${tr.util.toFixed(1)}%
-                  </span>
-                </td>
-                <td style="text-align:right; font-weight:600">$${tr.cost.toFixed(2)}</td>
+                <td class="font-medium">${escapeHTML(t.name)}</td>
+                <td class="text-secondary">${escapeHTML(t.role)}</td>
+                <td style="text-align:right; font-weight:600">${t.hours.toFixed(2)}</td>
+                <td style="text-align:right">${shareBadge(t.billableShare)}</td>
+                <td style="text-align:right; font-weight:600">${money(t.labourCost)}</td>
               </tr>
             `).join('')}
-            ${!techRows.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No timesheet records logged</td></tr>' : ''}
+            ${!team.length ? emptyRow(5, 'No timesheet records logged') : ''}
           </tbody>
         </table>
       </div>
     </div>
 
-    ${showBars ? `
     <div class="card">
-      <div class="card-header"><h4>Utilization Rates comparison</h4></div>
+      <div class="card-header"><h4>Share of hours on jobs</h4></div>
       <div class="card-body">
-        ${techRows.sort((a,b) => b.util - a.util).map(tr => `
+        ${team.filter(t => t.billableShare != null).map(t => `
           <div style="margin-bottom:16px">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-              <span style="font-size:var(--font-size-sm);font-weight:500">${escapeHTML(tr.name)} <span style="font-size:var(--font-size-xs);color:var(--text-tertiary)">(${escapeHTML(tr.role)})</span></span>
-              <span style="font-size:var(--font-size-sm);font-weight:600">${tr.util.toFixed(1)}%</span>
+              <span style="font-size:var(--font-size-sm);font-weight:500">${escapeHTML(t.name)} <span style="font-size:var(--font-size-xs);color:var(--text-tertiary)">(${escapeHTML(t.role)})</span></span>
+              <span style="font-size:var(--font-size-sm);font-weight:600">${pct(t.billableShare)}</span>
             </div>
             <div style="height:8px;background:var(--border-color);border-radius:4px;overflow:hidden">
-              <div style="height:100%;width:${tr.util}%;background:${escapeHTML(tr.color)};border-radius:4px;transition:width 0.5s ease"></div>
+              <div style="height:100%;width:${t.billableShare * 100}%;background:${escapeHTML(t.color || '#3B82F6')};border-radius:4px;transition:width 0.5s ease"></div>
             </div>
           </div>
-        `).join('')}
+        `).join('') || '<div class="text-secondary text-sm">No hours logged in this range</div>'}
       </div>
     </div>
-    ` : ''}
   `;
 }
 
-function renderAssetsMaintenanceReport(d, mode) {
-  const isDetailed = mode === 'detailed';
-  let logCount = 0;
-  let totalMaintCost = 0;
-  const assetCosts = {};
+function renderAssetsMaintenanceReport(r) {
+  const d = r.scoped;
+  const assetCosts = d.assets.map(a => [a.name, assetServiceCost(a)]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  const totalMaintCost = assetCosts.reduce((s, [, c]) => s + c, 0);
 
-  d.assets.forEach(a => {
-    let aCost = 0;
-    (a.logs || []).forEach(l => {
-      if (l.type === 'Service') {
-        aCost += (l.cost || 0);
-        logCount++;
-      }
-    });
-    if (aCost > 0) {
-      assetCosts[a.name] = aCost;
-      totalMaintCost += aCost;
-    }
-  });
-
-  const recentLogs = [];
+  const serviceLogs = [];
   d.assets.forEach(a => {
     (a.logs || []).forEach(l => {
-      if (l.type === 'Service') {
-        recentLogs.push({
-          ...l,
-          assetName: a.name,
-          serial: a.serial
-        });
-      }
+      if (l.type === 'Service') serviceLogs.push({ ...l, asset: a });
     });
   });
-  recentLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-  const displayLogs = recentLogs.slice(0, 8);
-
+  serviceLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+  const displayLogs = serviceLogs.slice(0, 8);
   const activePlans = d.maintenancePlans.filter(p => p.status === 'Active');
+  const assetLink = (id, name) => id ? `<a href="#/assets/${encodeURIComponent(id)}" class="cell-link">${escapeHTML(name || '—')}</a>` : escapeHTML(name || '—');
 
   return `
-    ${renderAIInsightsPanel('assets_maintenance', d)}
+    ${renderAIInsightsPanel('assets_maintenance', r)}
 
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Assets', d.assets.length, 'inventory_2', 'blue')}
-      ${kpi('Active Agreements', activePlans.length, 'history_edu', 'green')}
-      ${kpi('Service Actions Logged', logCount, 'engineering', 'orange')}
-      ${kpi('Cumulative Servicing Cost', `$${totalMaintCost.toLocaleString('en-AU', { maximumFractionDigits: 0 })}`, 'savings', 'green')}
+      ${kpi('Total assets', d.assets.length, 'inventory_2', 'blue')}
+      ${kpi('Active agreements', activePlans.length, 'history_edu', 'green')}
+      ${kpi('Service actions logged', serviceLogs.length, 'engineering', 'orange')}
+      ${kpi('Total service cost', wholeMoney(totalMaintCost), 'savings', 'green')}
     </div>
 
-    ${isDetailed ? `
     <div class="grid-2" style="margin-bottom:var(--space-lg);">
       <div class="card">
-        <div class="card-header"><h4>Active Maintenance Agreements</h4></div>
+        <div class="card-header"><h4>Maintenance agreements</h4></div>
         <div class="card-body" style="padding:0; overflow-y:auto; max-height:400px;">
           <table class="data-table">
-            <thead>
-              <tr>
-                <th>Agreement Plan</th>
-                <th>Asset Name</th>
-                <th>Priority</th>
-                <th>Next Due</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Agreement plan</th><th>Asset</th><th>Priority</th><th>Next due</th></tr></thead>
             <tbody>
               ${d.maintenancePlans.map(p => `
                 <tr>
                   <td class="font-medium">${escapeHTML(p.name)}</td>
-                  <td class="text-secondary">${escapeHTML(p.assetName)}</td>
+                  <td class="text-secondary">${assetLink(p.assetId, p.assetName)}</td>
                   <td>
-                    <span class="badge ${p.priority >= 8 ? 'badge-danger' : p.priority >= 4 ? 'badge-warning' : 'badge-success'}">
-                      Priority ${p.priority || 5}
-                    </span>
+                    <span class="badge ${p.priority >= 8 ? 'badge-danger' : p.priority >= 4 ? 'badge-warning' : 'badge-success'}">Priority ${escapeHTML(String(p.priority || 5))}</span>
                   </td>
                   <td class="text-secondary" style="font-size:12px">${escapeHTML(p.nextServiceDate || p.nextDue || '—')}</td>
                 </tr>
               `).join('')}
-              ${!d.maintenancePlans.length ? '<tr><td colspan="4" style="text-align:center;padding:20px" class="text-secondary">No maintenance plans active</td></tr>' : ''}
+              ${!d.maintenancePlans.length ? emptyRow(4, 'No maintenance plans active') : ''}
             </tbody>
           </table>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><h4>Maintenance Cost by Asset</h4></div>
+        <div class="card-header"><h4>Service cost by asset</h4></div>
         <div class="card-body">
-          ${barChart(assetCosts, {}, '#EF4444')}
+          ${barChart(assetCosts.slice(0, 10), {}, '#EF4444', wholeMoney)}
         </div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-header"><h4>Recent Servicing Actions History</h4></div>
-      <div class="card-body" style="padding:0">
+      <div class="card-header"><h4>Recent service history</h4></div>
+      <div class="card-body" style="padding:0; overflow-x:auto">
         <table class="data-table">
           <thead>
-            <tr>
-              <th>Date</th>
-              <th>Asset Name</th>
-              <th>Serial Number</th>
-              <th>Technician</th>
-              <th>Job #</th>
-              <th style="text-align:right">Service Cost</th>
-              <th>Observations</th>
-            </tr>
+            <tr><th>Date</th><th>Asset</th><th>Serial number</th><th>Technician</th><th>Job #</th><th style="text-align:right">Service cost</th><th>Observations</th></tr>
           </thead>
           <tbody>
             ${displayLogs.map(l => `
               <tr>
-                <td class="text-secondary" style="font-size:12px">${new Date(l.date).toLocaleDateString()}</td>
-                <td class="font-medium">${escapeHTML(l.assetName)}</td>
-                <td class="text-secondary" style="font-family:var(--font-mono); font-size:12px">${escapeHTML(l.serial || '—')}</td>
+                <td class="text-secondary" style="font-size:12px">${escapeHTML(new Date(l.date).toLocaleDateString())}</td>
+                <td class="font-medium">${assetLink(l.asset.id, l.asset.name)}</td>
+                <td class="text-secondary" style="font-family:var(--font-mono); font-size:12px">${escapeHTML(l.asset.serial || '—')}</td>
                 <td>${escapeHTML(l.technicianName || 'Unassigned')}</td>
-                <td><span class="badge badge-neutral">${escapeHTML(l.jobNumber || '—')}</span></td>
-                <td style="text-align:right; font-weight:600; color:var(--color-danger)">$${(l.cost || 0).toFixed(2)}</td>
+                <td>${l.jobId ? `<a href="#/jobs/${encodeURIComponent(l.jobId)}" class="cell-link">${escapeHTML(l.jobNumber || 'Job')}</a>` : `<span class="badge badge-neutral">${escapeHTML(l.jobNumber || '—')}</span>`}</td>
+                <td style="text-align:right; font-weight:600; color:var(--color-danger)">${money(l.cost)}</td>
                 <td class="text-secondary truncate" style="max-width:250px;">${escapeHTML(l.notes || '—')}</td>
               </tr>
             `).join('')}
-            ${!displayLogs.length ? '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No service logs registered yet</td></tr>' : ''}
+            ${!displayLogs.length ? emptyRow(7, 'No service logs registered yet') : ''}
           </tbody>
         </table>
       </div>
     </div>
-    ` : `
-    <div class="card">
-      <div class="card-header"><h4>Active Maintenance Agreements</h4></div>
-      <div class="card-body" style="padding:0; overflow-y:auto; max-height:400px;">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Agreement Plan</th>
-              <th>Asset Name</th>
-              <th>Priority</th>
-              <th>Next Due</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${d.maintenancePlans.map(p => `
-              <tr>
-                <td class="font-medium">${escapeHTML(p.name)}</td>
-                <td class="text-secondary">${escapeHTML(p.assetName)}</td>
-                <td>
-                  <span class="badge ${p.priority >= 8 ? 'badge-danger' : p.priority >= 4 ? 'badge-warning' : 'badge-success'}">
-                    Priority ${p.priority || 5}
-                  </span>
-                </td>
-                <td class="text-secondary" style="font-size:12px">${escapeHTML(p.nextServiceDate || p.nextDue || '—')}</td>
-              </tr>
-            `).join('')}
-            ${!d.maintenancePlans.length ? '<tr><td colspan="4" style="text-align:center;padding:20px" class="text-secondary">No maintenance plans active</td></tr>' : ''}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    `}
   `;
 }
 
-function renderCustomersReport(d, mode) {
-  const isDetailed = mode === 'detailed';
+function renderCustomersReport(r) {
+  const c = r.customers;
   return `
-    ${renderAIInsightsPanel('customers', d)}
-    <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Customers', d.customers.length, 'people', 'blue')}
-      ${kpi('Active Customers', d.customers.filter(c => c.status === 'Active').length, 'check_circle', 'green')}
-      ${kpi('Total Leads', d.leads.length, 'trending_up', 'orange')}
+    ${renderAIInsightsPanel('customers', r)}
+    <div class="grid-4" style="margin-bottom:var(--space-lg)">
+      ${kpi('Active customers', c.active, 'people', 'blue', `${c.total} in total`)}
+      ${kpi('New customers', c.new, 'person_add', 'green', 'added in this range')}
+      ${kpi('Invoiced', c.invoiced, 'receipt_long', 'blue', 'customers invoiced in this range')}
+      ${kpi('Repeat', c.repeat, 'repeat', 'green', 'invoiced more than once')}
     </div>
-    ${isDetailed ? `
     <div class="card">
-      <div class="card-header"><h4>Top Customers by Revenue</h4></div>
+      <div class="card-header"><h4>Top customers by revenue</h4></div>
       <div class="card-body" style="padding:0">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Customer</th><th style="text-align:right">Revenue</th><th>Share</th></tr></thead>
+          <thead><tr><th>#</th><th>Customer</th><th style="text-align:right">Revenue (ex GST)</th><th>Share</th></tr></thead>
           <tbody>
-            ${d.topCustomers.map(([name, rev], i) => `
+            ${c.top.map((t, i) => `
               <tr>
                 <td class="text-secondary">${i + 1}</td>
-                <td class="font-medium">${escapeHTML(name)}</td>
-                <td style="text-align:right;font-weight:600">$${rev.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="font-medium">${r.scoped.customers.some(x => String(x.id) === t.id) ? `<a href="#/people/${encodeURIComponent(t.id)}" class="cell-link">${escapeHTML(t.name || 'Customer')}</a>` : escapeHTML(t.name || 'Customer')}</td>
+                <td style="text-align:right;font-weight:600">${money(t.revenue)}</td>
                 <td>
                   <div style="display:flex;align-items:center;gap:8px">
                     <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px;overflow:hidden">
-                      <div style="height:100%;width:${d.totalRevenue > 0 ? (rev/d.totalRevenue*100) : 0}%;background:var(--color-primary);border-radius:3px"></div>
+                      <div style="height:100%;width:${t.share * 100}%;background:var(--color-primary);border-radius:3px"></div>
                     </div>
-                    <span class="text-secondary" style="font-size:var(--font-size-xs)">${d.totalRevenue > 0 ? (rev/d.totalRevenue*100).toFixed(2) : '0.00'}%</span>
+                    <span class="text-secondary" style="font-size:var(--font-size-xs)">${pct(t.share)}</span>
                   </div>
                 </td>
               </tr>
             `).join('')}
+            ${!c.top.length ? emptyRow(4, 'No customers invoiced in this range') : ''}
           </tbody>
         </table>
       </div>
     </div>
-    ` : ''}
   `;
 }
 
-function renderInventoryReport(d, mode) {
-  const isDetailed = mode === 'detailed';
-  const sellValue = d.stock.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
+function renderInventoryReport(r) {
+  const stock = r.scoped.stock;
+  const low = lowStock(stock);
+  const sellValue = stock.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+  const byCategory = {};
+  stock.forEach(i => { const k = i.category || 'Uncategorised'; byCategory[k] = (byCategory[k] || 0) + (Number(i.quantity) || 0); });
   return `
-    ${renderAIInsightsPanel('inventory', d)}
+    ${renderAIInsightsPanel('inventory', r)}
     <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Items', d.stock.length, 'inventory_2', 'blue')}
-      ${kpi('Stock Value (Cost)', `$${d.totalStockValue.toFixed(0)}`, 'account_balance', 'orange')}
-      ${kpi('Stock Value (Sell)', `$${sellValue.toFixed(0)}`, 'paid', 'green')}
+      ${kpi('Total items', stock.length, 'inventory_2', 'blue')}
+      ${kpi('Stock value (cost)', wholeMoney(stockValue(stock)), 'account_balance', 'orange')}
+      ${kpi('Stock value (sell)', wholeMoney(sellValue), 'paid', 'green')}
     </div>
-    ${d.lowStockItems.length > 0 ? `
+    ${low.length > 0 ? `
       <div class="card" style="margin-bottom:var(--space-lg);border-color:var(--color-danger)">
         <div class="card-header" style="background:var(--color-danger-bg)">
-          <h4 style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">warning</span> Low Stock Alert (${d.lowStockItems.length} items)</h4>
+          <h4 style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">warning</span> Low stock (${low.length} items)</h4>
         </div>
         <div class="card-body" style="padding:0">
           <table class="data-table">
-            <thead><tr><th>Item</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:center">Reorder Level</th><th>Supplier</th></tr></thead>
+            <thead><tr><th>Item</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:center">Reorder level</th><th>Supplier</th></tr></thead>
             <tbody>
-              ${d.lowStockItems.map(i => `
+              ${low.map(i => `
                 <tr>
-                  <td class="font-medium">${escapeHTML(i.name)}</td>
+                  <td class="font-medium"><a href="#/stock/${encodeURIComponent(i.id)}" class="cell-link">${escapeHTML(i.name)}</a></td>
                   <td class="text-secondary" style="font-family:var(--font-mono)">${escapeHTML(i.sku)}</td>
-                  <td style="text-align:center;color:var(--color-danger);font-weight:600">${i.quantity}</td>
-                  <td style="text-align:center">${i.reorderLevel}</td>
+                  <td style="text-align:center;color:var(--color-danger);font-weight:600">${escapeHTML(String(i.quantity))}</td>
+                  <td style="text-align:center">${escapeHTML(String(i.reorderLevel))}</td>
                   <td class="text-secondary">${escapeHTML(i.supplier)}</td>
                 </tr>
               `).join('')}
@@ -1774,13 +1125,11 @@ function renderInventoryReport(d, mode) {
         </div>
       </div>
     ` : ''}
-    ${isDetailed ? `
     <div class="card">
-      <div class="card-header"><h4>Stock by Category</h4></div>
+      <div class="card-header"><h4>Stock by category</h4></div>
       <div class="card-body">
-        ${barChart(d.stock.reduce((acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.quantity; return acc; }, {}), {}, '#1B6DE0')}
+        ${barChart(sortedEntries(byCategory), {}, '#1B6DE0')}
       </div>
     </div>
-    ` : ''}
   `;
 }

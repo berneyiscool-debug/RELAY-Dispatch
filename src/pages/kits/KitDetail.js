@@ -10,7 +10,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { escapeHTML } from '../../utils/security.js';
-import { getActiveKitTypes } from '../../utils/kitTypes.js';
+import { kitTypeLabel, kitTypeOptionsHtml, createKitType, NEW_KIT_TYPE_OPTION } from '../../utils/kitTypes.js';
 
 export function renderKitForm(container, { id }) {
   const isNew = id === 'new';
@@ -20,7 +20,7 @@ export function renderKitForm(container, { id }) {
     kit = {
       name: '',
       description: '',
-      category: 'General',
+      category: '',
       active: true,
       items: [],
       totalCost: 0,
@@ -48,8 +48,6 @@ export function renderKitForm(container, { id }) {
   }
 
   const stockItems = store.getAll('stock') || [];
-  const kitTypeNames = getActiveKitTypes().map(t => t.name);
-  const categories = [...new Set([...(kit.category ? [kit.category] : []), ...kitTypeNames])];
 
   function render() {
     recalculate();
@@ -64,7 +62,7 @@ export function renderKitForm(container, { id }) {
         iconBgColor: 'var(--color-primary-light)',
         iconTextColor: 'var(--color-primary)',
         metaHtml: isNew ? '' : `
-          <span class="badge badge-neutral">${escapeHTML(kit.category || 'General')}</span>
+          <span class="badge badge-neutral">${escapeHTML(kitTypeLabel(kit))}</span>
           <span class="badge ${kit.active ? 'badge-success' : 'badge-neutral'}">${kit.active ? 'Active' : 'Inactive'}</span>
         `,
         actionsHtml: `
@@ -87,9 +85,12 @@ export function renderKitForm(container, { id }) {
                   <input class="form-input" id="kit-name" value="${escapeHTML(kit.name || '')}" placeholder="e.g. Hot Water Service Kit" required />
                 </div>
                 <div class="form-group" style="flex:1">
-                  <label class="form-label">Kit Type</label>
+                  <label class="form-label" style="display:flex; justify-content:space-between; align-items:baseline; gap:8px">
+                    Kit Type
+                    <a href="#/settings?tab=materials" style="font-size:11px; font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-primary)">Manage types</a>
+                  </label>
                   <select class="form-select" id="kit-category">
-                    ${categories.map(c => `<option value="${escapeHTML(c)}" ${kit.category === c ? 'selected' : ''}>${escapeHTML(c)}</option>`).join('')}
+                    ${kitTypeOptionsHtml(kit.category, { allowNew: true })}
                   </select>
                 </div>
               </div>
@@ -385,7 +386,17 @@ export function renderKitForm(container, { id }) {
     });
 
     container.querySelector('#kit-category')?.addEventListener('change', (e) => {
-      kit.category = e.target.value;
+      const select = e.target;
+      if (select.value !== NEW_KIT_TYPE_OPTION) {
+        kit.category = select.value;
+        return;
+      }
+      // Put the old choice back while asking, so cancelling leaves it as it was.
+      select.value = kit.category || '';
+      promptNewKitType((type) => {
+        kit.category = type.name;
+        select.innerHTML = kitTypeOptionsHtml(kit.category, { allowNew: true });
+      });
     });
 
     container.querySelector('#kit-description')?.addEventListener('change', (e) => {
@@ -547,6 +558,41 @@ export function renderKitForm(container, { id }) {
 // KIT DETAIL (READ-ONLY VIEW)
 // ============================================
 
+// Ask for a kit type name and create it (or reuse one with the same name),
+// so a type can be added without leaving the kit being built.
+function promptNewKitType(onCreated) {
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Kit Type Name</label>
+      <input type="text" class="form-input" id="new-kit-type-name" placeholder="e.g. Service Kits" maxlength="80" />
+    </div>
+  `;
+  const input = content.querySelector('#new-kit-type-name');
+  const create = (close) => {
+    const type = createKitType(input.value);
+    if (!type) {
+      showToast('Enter a name for the kit type', 'error');
+      input.focus();
+      return;
+    }
+    onCreated(type);
+    close();
+  };
+  const modal = showModal({
+    title: 'New Kit Type',
+    content,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      { label: 'Create', className: 'btn-primary', onClick: c => create(c) },
+    ]
+  });
+  setTimeout(() => input.focus(), 0);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); create(modal.close); }
+  });
+}
+
 export function renderKitDetail(container, { id }) {
   const kit = store.getById('kits', id);
   if (!kit) {
@@ -602,7 +648,7 @@ export function renderKitDetail(container, { id }) {
       iconBgColor: 'var(--color-primary-light)',
       iconTextColor: 'var(--color-primary)',
       metaHtml: `
-        <span class="badge badge-neutral">${escapeHTML(kit.category || 'General')}</span>
+        <span class="badge badge-neutral">${escapeHTML(kitTypeLabel(kit))}</span>
         <span class="badge ${kit.active ? 'badge-success' : 'badge-neutral'}">${kit.active ? 'Active' : 'Inactive'}</span>
       `,
       actionsHtml: `
@@ -619,7 +665,7 @@ export function renderKitDetail(container, { id }) {
           <div class="card-body">
             <div style="display:flex; flex-direction:column; gap:12px">
               ${r('Name', kit.name)}
-              ${r('Kit Type', kit.category || 'General')}
+              ${r('Kit Type', kitTypeLabel(kit))}
               ${r('Description', kit.description)}
               ${r('Status', kit.active ? 'Active' : 'Inactive')}
             </div>
