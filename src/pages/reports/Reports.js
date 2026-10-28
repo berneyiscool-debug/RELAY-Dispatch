@@ -28,8 +28,8 @@ const COLLECTIONS = [
 const PRESETS = [
   { id: 'all', label: 'All time' },
   { id: 'month', label: 'This month' },
-  { id: '30', label: '30 days' },
-  { id: '90', label: '90 days' },
+  { id: '30', label: 'Last 30 days' },
+  { id: '90', label: 'Last 90 days' },
   { id: 'fy', label: 'Financial year' },
 ];
 
@@ -64,6 +64,8 @@ export function renderReports(container, params) {
   const activeReport = (params && params.tab) || 'overview';
   const filters = emptyFilters();
   let activePreset = 'all';
+  let openMenu = null;       // 'period' | 'filters' while one is being used, so a re-render keeps it open
+  let onDocClick = () => {};
 
   function render() {
     const data = loadData();
@@ -72,40 +74,65 @@ export function renderReports(container, params) {
     const staff = data.technicians.filter(t => !t.deactivated && t.role !== 'customer');
     const option = (value, label, selected) => `<option value="${escapeHTML(String(value))}" ${String(selected) === String(value) ? 'selected' : ''}>${escapeHTML(label)}</option>`;
 
+    const lines = filterLines(data);
+    const preset = PRESETS.find(p => p.id === activePreset);
+    const periodLabel = preset ? preset.label : shortRangeText(r.range);
+    const isOpen = (id) => openMenu === id;
+
+    // Everything in .page-header-actions is moved into the breadcrumb bar by
+    // main.js, so the controls are kept to three compact menus: Period (presets
+    // and a custom range), Filters (who and what), and Export.
     container.innerHTML = `
       <div class="page-header">
         <h1>Reports & Analytics</h1>
         <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-export-csv" data-tooltip="Export this report's table to CSV" data-tooltip-pos="left"><span class="material-icons-outlined">download</span> Export CSV</button>
-          <button class="btn btn-secondary" id="btn-export-pdf" data-tooltip="Choose what to include and download a PDF" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> Export PDF</button>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:var(--space-md);">
-        <div class="card-body report-filters">
-          <div class="report-filter-group">
-            <span class="report-filter-label">Date range</span>
-            <input type="date" class="form-input report-filter-input" id="global-filter-start" value="${escapeHTML(filters.start)}" aria-label="From" />
-            <span class="report-filter-sep">to</span>
-            <input type="date" class="form-input report-filter-input" id="global-filter-end" value="${escapeHTML(filters.end)}" aria-label="To" />
+          <div class="dropdown report-menu" data-menu="period">
+            <button class="btn btn-secondary" id="btn-report-period" aria-haspopup="true" aria-expanded="${isOpen('period')}">
+              <span class="material-icons-outlined">calendar_today</span> ${escapeHTML(periodLabel)}
+            </button>
+            <div class="dropdown-menu report-period-pop" style="display:${isOpen('period') ? 'block' : 'none'}">
+              ${PRESETS.map(p => `<button type="button" class="dropdown-item${activePreset === p.id ? ' selected' : ''}" data-preset="${p.id}">${p.label}</button>`).join('')}
+              <div class="dropdown-divider"></div>
+              <div class="report-pop-custom">
+                <span class="report-pop-heading">Custom range</span>
+                <label class="report-pop-field"><span>From</span><input type="date" class="form-input" id="report-from" value="${escapeHTML(filters.start)}" /></label>
+                <label class="report-pop-field"><span>To</span><input type="date" class="form-input" id="report-to" value="${escapeHTML(filters.end)}" /></label>
+              </div>
+            </div>
           </div>
-          <div class="report-filter-group">
-            ${PRESETS.map(p => `<button class="btn btn-preset ${activePreset === p.id ? 'active' : ''}" data-preset="${p.id}">${p.label}</button>`).join('')}
+          <div class="dropdown report-menu" data-menu="filters">
+            <button class="btn btn-secondary" id="btn-report-filters" aria-haspopup="true" aria-expanded="${isOpen('filters')}" data-tooltip="${escapeHTML(lines.join(' · ') || 'Filter by technician, customer or asset type')}" data-tooltip-pos="bottom">
+              <span class="material-icons-outlined">filter_list</span> Filters${lines.length ? `<span class="report-filter-count">${lines.length}</span>` : ''}
+            </button>
+            <div class="dropdown-menu report-filter-pop" style="display:${isOpen('filters') ? 'block' : 'none'}">
+              <label class="report-pop-field"><span>Technician</span>
+                <select class="form-select" data-filter="technicianId">
+                  ${option('All', 'All technicians', filters.technicianId)}
+                  ${staff.map(t => option(t.id, t.name, filters.technicianId)).join('')}
+                </select>
+              </label>
+              <label class="report-pop-field"><span>Customer</span>
+                <select class="form-select" data-filter="customerId">
+                  ${option('All', 'All customers', filters.customerId)}
+                  ${data.customers.map(c => option(c.id, c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Customer', filters.customerId)).join('')}
+                </select>
+              </label>
+              ${assetTypes.length ? `
+              <label class="report-pop-field"><span>Asset type</span>
+                <select class="form-select" data-filter="assetType">
+                  ${option('All', 'All asset types', filters.assetType)}
+                  ${assetTypes.map(t => option(t, t, filters.assetType)).join('')}
+                </select>
+              </label>` : ''}
+              ${lines.length ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-clear-filters">Clear filters</button>' : ''}
+            </div>
           </div>
-          <div class="report-filter-group">
-            <select class="form-input report-filter-input" data-filter="technicianId" aria-label="Technician">
-              ${option('All', 'All technicians', filters.technicianId)}
-              ${staff.map(t => option(t.id, t.name, filters.technicianId)).join('')}
-            </select>
-            <select class="form-input report-filter-input" data-filter="customerId" aria-label="Customer">
-              ${option('All', 'All customers', filters.customerId)}
-              ${data.customers.map(c => option(c.id, c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Customer', filters.customerId)).join('')}
-            </select>
-            ${assetTypes.length ? `
-            <select class="form-input report-filter-input" data-filter="assetType" aria-label="Asset type">
-              ${option('All', 'All asset types', filters.assetType)}
-              ${assetTypes.map(t => option(t, t, filters.assetType)).join('')}
-            </select>` : ''}
+          <div class="dropdown report-menu" data-menu="export">
+            <button class="btn btn-secondary" id="btn-report-export" aria-haspopup="true"><span class="material-icons-outlined">download</span> Export</button>
+            <div class="dropdown-menu" style="display:none">
+              <button type="button" class="dropdown-item" id="btn-export-csv"><span class="material-icons-outlined">table_view</span> CSV of this report</button>
+              <button type="button" class="dropdown-item" id="btn-export-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF, choose what's in it</button>
+            </div>
           </div>
         </div>
       </div>
@@ -114,7 +141,7 @@ export function renderReports(container, params) {
     `;
 
     container.querySelector('#report-content').innerHTML = renderReport(activeReport, r);
-    bindEvents(r, filterLines(data));
+    bindEvents(r, lines);
   }
 
   // The filters in use, in words, for the PDF header.
@@ -128,32 +155,65 @@ export function renderReports(container, params) {
     return lines;
   }
 
+  // Bound while the controls are still inside `container`; main.js moves them
+  // into the breadcrumb bar afterwards and the listeners go with them.
   function bindEvents(r, lines) {
-    container.querySelector('#btn-export-csv')?.addEventListener('click', () => exportCSV(activeReport, r));
-    container.querySelector('#btn-export-pdf')?.addEventListener('click', () => openPdfDialog(activeReport, r, lines));
+    const q = (sel) => container.querySelector(sel);
+    const menus = [...container.querySelectorAll('.report-menu')];
+    const closeMenus = () => {
+      menus.forEach(m => {
+        m.querySelector('.dropdown-menu').style.display = 'none';
+        m.querySelector('.btn').setAttribute('aria-expanded', 'false');
+      });
+      openMenu = null;
+    };
+    menus.forEach(m => {
+      const btn = m.querySelector('.btn');
+      const pop = m.querySelector('.dropdown-menu');
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = pop.style.display === 'none';
+        closeMenus();
+        pop.style.display = open ? 'block' : 'none';
+        btn.setAttribute('aria-expanded', String(open));
+        openMenu = open ? m.dataset.menu : null;
+      });
+      pop.addEventListener('click', (e) => e.stopPropagation());
+    });
+    document.removeEventListener('click', onDocClick);
+    onDocClick = closeMenus;
+    document.addEventListener('click', onDocClick);
 
-    container.querySelector('#global-filter-start')?.addEventListener('change', (e) => {
-      filters.start = e.target.value;
-      activePreset = null;
+    q('#btn-export-csv')?.addEventListener('click', () => { closeMenus(); exportCSV(activeReport, r); });
+    q('#btn-export-pdf')?.addEventListener('click', () => { closeMenus(); openPdfDialog(activeReport, r, lines); });
+
+    container.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => {
+      activePreset = btn.dataset.preset;
+      Object.assign(filters, presetDates(activePreset));
+      openMenu = null;
       render();
-    });
-    container.querySelector('#global-filter-end')?.addEventListener('change', (e) => {
-      filters.end = e.target.value;
-      activePreset = null;
+    }));
+    // Typing a date makes it a custom range; the menu stays open for the other end.
+    const setDate = (key) => (e) => {
+      filters[key] = e.target.value;
+      activePreset = 'custom';
+      openMenu = 'period';
       render();
-    });
+    };
+    q('#report-from')?.addEventListener('change', setDate('start'));
+    q('#report-to')?.addEventListener('change', setDate('end'));
+
     container.querySelectorAll('[data-filter]').forEach(sel => {
       sel.addEventListener('change', (e) => {
         filters[e.target.dataset.filter] = e.target.value;
+        openMenu = 'filters';
         render();
       });
     });
-    container.querySelectorAll('.btn-preset').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        activePreset = e.currentTarget.dataset.preset;
-        Object.assign(filters, presetDates(activePreset));
-        render();
-      });
+    q('#btn-clear-filters')?.addEventListener('click', () => {
+      Object.assign(filters, { technicianId: 'All', customerId: 'All', assetType: 'All' });
+      openMenu = 'filters';
+      render();
     });
   }
 
@@ -237,6 +297,13 @@ function exportCSV(id, r) {
 const rangeText = (range) => {
   const f = (d) => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
   return `${f(range.start)} – ${f(new Date(range.end - 1))}`;
+};
+
+// For the Period button: "1 Sep – 28 Oct 2026", with the first year only when it differs.
+const shortRangeText = (range) => {
+  const a = range.start, b = new Date(range.end - 1);
+  const day = (d, year) => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}) });
+  return `${day(a, a.getFullYear() !== b.getFullYear())} – ${day(b, true)}`;
 };
 
 // Pick reports and the blocks inside each, then download them as one PDF. The
