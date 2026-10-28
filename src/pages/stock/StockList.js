@@ -15,7 +15,7 @@ import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
 import { getActiveKitTypes } from '../../utils/kitTypes.js';
-import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml } from '../../utils/stockLabels.js';
+import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml, fitLabelNames } from '../../utils/stockLabels.js';
 import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
 import { xeroEnabled, getXeroStatusCached, cachedXeroStatus, fetchStockSyncJobs, cachedStockSyncJobs, xeroStockBadgeHtml, pushStockToXero } from '../../utils/xero.js';
@@ -585,6 +585,7 @@ export function renderStockList(container, params) {
           // fires its own load event before the written document renders.
           printWindow.document.write(html);
           printWindow.document.close();
+          fitLabelNames(printWindow.document);
           printWindow.focus();
           printWindow.print();
         }}

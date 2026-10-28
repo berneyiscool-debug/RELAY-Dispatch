@@ -51,6 +51,25 @@ export function saveLabelOptions(options) {
   } catch { /* the choice just isn't remembered */ }
 }
 
+/**
+ * Shrink each sticker's item name until everything on the sticker fits, so
+ * the whole name always prints. Runs against the rendered print document
+ * (it measures layout), from the opener because the sheet can't carry a
+ * script of its own under the Content-Security-Policy.
+ */
+export function fitLabelNames(doc) {
+  doc.querySelectorAll('.label .body').forEach(body => {
+    const name = body.querySelector('.name');
+    if (!name) return;
+    let px = parseFloat(doc.defaultView.getComputedStyle(name).fontSize);
+    const min = px * 0.35;
+    while (body.scrollHeight > body.clientHeight + 0.5 && px > min) {
+      px *= 0.93;
+      name.style.fontSize = `${px}px`;
+    }
+  });
+}
+
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
 /**
@@ -107,8 +126,9 @@ export function buildLabelSheetHtml(items, options, codes = {}) {
     .top { flex: 1 1 0; min-height: 0; display: flex; justify-content: center; gap: ${pad}mm; }
     .qr { flex: 0 0 auto; height: 100%; aspect-ratio: 1; }
     .qr svg { width: 100%; height: 100%; display: block; }
-    .body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: ${font * 0.25}mm; text-align: center; }
-    .name { font-weight: 600; font-size: ${font}mm; line-height: 1.15; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .body { flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: safe center; gap: ${font * 0.25}mm; text-align: center; }
+    /* Never truncated: fitLabelNames() shrinks the font until the whole name fits. */
+    .name { font-weight: 600; font-size: ${font}mm; line-height: 1.15; overflow-wrap: anywhere; }
     .sku { font-family: monospace; font-size: ${font * 0.85}mm; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .meta { font-size: ${font * 0.8}mm; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* Full label width along the bottom, so the bars stay wide enough to scan. */
