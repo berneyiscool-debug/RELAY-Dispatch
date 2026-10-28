@@ -14,7 +14,10 @@ import { getToolbarFilterTags, toolbarFilterMatches } from '../../components/Too
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
-import { getActiveKitTypes } from '../../utils/kitTypes.js';
+import { kitTypeLabel, kitTypeOptionsHtml, kitTypeGrouping, NO_KIT_TYPE_LABEL } from '../../utils/kitTypes.js';
+import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml, fitLabelNames } from '../../utils/stockLabels.js';
+import JsBarcode from 'jsbarcode';
+import QRCode from 'qrcode';
 import { xeroEnabled, getXeroStatusCached, cachedXeroStatus, fetchStockSyncJobs, cachedStockSyncJobs, xeroStockBadgeHtml, pushStockToXero } from '../../utils/xero.js';
 
 export function renderStockList(container, params) {
@@ -25,6 +28,8 @@ export function renderStockList(container, params) {
   let activeKitFilter = 'all';
   let itemTableInstance = null;
   let kitTableInstance = null;
+  const KIT_GROUP_KEY = 'relay.kitsGroupByType';
+  let groupKitsByType = (() => { try { return localStorage.getItem(KIT_GROUP_KEY) !== 'off'; } catch { return true; } })();
   let xeroChecked = false;
   const xeroStockSignature = () => `${!!cachedXeroStatus()?.connected}|${[...cachedStockSyncJobs().entries()].map(([k, v]) => `${k}:${v.pending}:${v.failed.length}`).join(',')}`;
 
@@ -101,6 +106,7 @@ export function renderStockList(container, params) {
         actionsContainer.innerHTML = `
           <div id="filter-mount" style="display:inline-flex; align-items:center;"></div>
           <div id="sort-mount" style="display:inline-flex; align-items:center;"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-group-kits" aria-pressed="${groupKitsByType}" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Show kits in sections by kit type"><span class="material-icons-outlined" style="font-size:13px;">view_list</span> <span class="btn-label" id="btn-group-kits-label">${groupKitsByType ? 'Grouped by Type' : 'Group by Type'}</span></button>
           <button class="btn btn-primary btn-sm" id="btn-new-kit" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Bundle multiple parts and labor items into a single pre-packaged kit for quick quoting"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Kit Bundle</span></button>
         `;
       }
@@ -177,55 +183,7 @@ export function renderStockList(container, params) {
               icon: 'qr_code_2',
               onClick: (ids) => {
                 const items = ids.map(id => store.getById('stock', id)).filter(Boolean);
-                const printWindow = window.open('', '_blank');
-                if (!printWindow) return;
-                // The Content-Security-Policy no longer allows inline scripts, so the
-                // print dialog is triggered from here rather than from a <script> tag
-                // inside the document written below. The sheet has no external
-                // resources, so printing straight after close() is deterministic —
-                // waiting on the popup's `load` is not, because an about:blank popup
-                // fires its own load event before the written document renders.
-                let html = `
-                  <html>
-                  <head>
-                    <title>Barcode Print Sheet</title>
-                    <style>
-                      body { font-family: 'Inter', sans-serif; padding: 20px; }
-                      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-                      .barcode-card { border: 1px solid #ddd; padding: 12px; border-radius: 6px; text-align: center; background: #fff; }
-                      .item-name { font-weight: 600; font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                      .sku { font-family: monospace; font-size: 11px; color: #666; margin-bottom: 8px; }
-                      .barcode-placeholder { border-top: 2px solid #000; border-bottom: 2px solid #000; height: 35px; display: flex; align-items: center; justify-content: center; font-size: 8px; letter-spacing: 3px; font-weight: bold; background: repeating-linear-gradient(90deg, #000, #000 2px, transparent 2px, transparent 4px); margin-bottom: 4px; }
-                      .price { font-weight: 700; font-size: 12px; color: #111; }
-                      @media print {
-                        body { padding: 0; }
-                        .barcode-card { page-break-inside: avoid; }
-                      }
-                    </style>
-                  </head>
-                  <body>
-                    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:8px">Inventory Barcode Labels (${items.length} Items)</h3>
-                    <div class="grid">
-                `;
-                items.forEach(item => {
-                  html += `
-                    <div class="barcode-card">
-                      <div class="item-name">${escapeHTML(item.name)}</div>
-                      <div class="sku">${escapeHTML(item.sku)}</div>
-                      <div class="barcode-placeholder">||||| | ||| || |||</div>
-                      <div class="price">$${item.unitPrice.toFixed(2)}</div>
-                    </div>
-                  `;
-                });
-                html += `
-                    </div>
-                  </body>
-                  </html>
-                `;
-                printWindow.document.write(html);
-                printWindow.document.close();
-                printWindow.focus();
-                printWindow.print();
+                openLabelPrintModal(items);
               }
             },
             {
@@ -430,7 +388,7 @@ export function renderStockList(container, params) {
 
     const columns = [
       { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}`, width: '26%' },
-      { key: 'category', label: 'Kit Type', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
+      { key: 'category', label: 'Kit Type', render: (r) => r.category ? `<span class="badge badge-neutral">${escapeHTML(r.category)}</span>` : `<span class="text-tertiary">${NO_KIT_TYPE_LABEL}</span>`, getValue: (r) => kitTypeLabel(r).toLowerCase(), width: '14%' },
       { key: 'items', label: 'Items Included', render: (r) => {
         const mCount = (r.items || []).filter(i => i.type !== 'labor').length;
         const lCount = (r.items || []).filter(i => i.type === 'labor').length;
@@ -448,6 +406,7 @@ export function renderStockList(container, params) {
     const table = createDataTable({
       columns,
       data: kits,
+      groupBy: groupKitsByType ? kitTypeGrouping(kits, 'kits-collapsed-by-type') : null,
       onRowClick: (id) => router.navigate(`/kits/${id}`),
       emptyMessage: 'No kits configured',
       emptyIcon: 'widgets',
@@ -459,17 +418,17 @@ export function renderStockList(container, params) {
           onClear: () => table.clearSelection(),
           actions: [
             {
-              label: 'Change Category',
+              label: 'Change Kit Type',
               icon: 'category',
               onClick: (ids) => {
-                const categories = getActiveKitTypes().map(t => t.name);
                 const content = document.createElement('div');
                 content.innerHTML = `
                   <div class="form-group">
                     <label class="form-label">Select Kit Type</label>
                     <select class="form-select" id="bulk-kit-category">
-                      ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
+                      ${kitTypeOptionsHtml('')}
                     </select>
+                    <small class="text-tertiary" style="display:block; margin-top:6px;">Add or rename kit types in <a href="#/settings?tab=materials" style="color:var(--color-primary)">Settings → Materials &amp; Catalog</a>.</small>
                   </div>
                 `;
                 showModal({
@@ -482,7 +441,7 @@ export function renderStockList(container, params) {
                       ids.forEach(id => store.update('kits', id, { category: newCat }));
                       table.clearSelection();
                       renderActiveTabContent();
-                      showToast(`Updated ${ids.length} kits to kit type: ${newCat}`, 'success');
+                      showToast(`Updated ${ids.length} kits to kit type: ${newCat || NO_KIT_TYPE_LABEL}`, 'success');
                       c();
                     }}
                   ]
@@ -560,6 +519,7 @@ export function renderStockList(container, params) {
         { value: 'totalPrice_desc', label: 'Sort: Sell (High-Low)' },
         { value: 'totalCost_desc', label: 'Sort: Cost (High-Low)' },
         { value: 'margin_desc', label: 'Sort: Margin (High-Low)' },
+        { value: 'category_asc', label: 'Sort: Kit Type' },
       ],
       onChange: (val) => {
         const [key, dir] = val.split('_');
@@ -567,10 +527,113 @@ export function renderStockList(container, params) {
       }
     });
 
+    findEl('#btn-group-kits')?.addEventListener('click', (e) => {
+      groupKitsByType = !groupKitsByType;
+      try { localStorage.setItem(KIT_GROUP_KEY, groupKitsByType ? 'on' : 'off'); } catch { /* not remembered */ }
+      const btn = e.currentTarget;
+      btn.setAttribute('aria-pressed', String(groupKitsByType));
+      btn.querySelector('#btn-group-kits-label').textContent = groupKitsByType ? 'Grouped by Type' : 'Group by Type';
+      renderKitsTable(container.querySelector('#stock-table-container'));
+    });
+
     // New Kit button
     findEl('#btn-new-kit')?.addEventListener('click', () => {
       router.navigate('/kits/new');
     });
+  }
+
+  // --- LABEL PRINTING ---
+
+  function openLabelPrintModal(items) {
+    const saved = loadLabelOptions();
+    const noSku = items.filter(i => !String(i.sku || '').trim()).length;
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Sticker size</label>
+        <select class="form-select" id="label-size">
+          ${LABEL_SIZES.map(s => `<option value="${s.key}"${s.key === saved.size ? ' selected' : ''}>${escapeHTML(s.label)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Show on each sticker</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
+          ${LABEL_FIELDS.map(f => `
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+              <input type="checkbox" value="${f.key}"${saved.fields.includes(f.key) ? ' checked' : ''} /> ${escapeHTML(f.label)}
+            </label>`).join('')}
+        </div>
+        ${noSku ? `<small class="text-tertiary" style="display:block; margin-top:8px;">${noSku} item${noSku === 1 ? ' has' : 's have'} no SKU, so no barcode or QR code is printed for ${noSku === 1 ? 'it' : 'them'}.</small>` : ''}
+      </div>
+    `;
+
+    showModal({
+      title: `Print Labels (${items.length} item${items.length === 1 ? '' : 's'})`,
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        { label: 'Print', className: 'btn-primary', onClick: async c => {
+          const options = {
+            size: content.querySelector('#label-size').value,
+            fields: [...content.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value),
+          };
+          if (!options.fields.length) {
+            showToast('Choose at least one thing to show on the stickers', 'error');
+            return;
+          }
+          saveLabelOptions(options);
+          // Opened before the codes render so the popup still counts as
+          // coming from this click.
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) {
+            showToast('Allow pop-ups to print labels', 'error');
+            return;
+          }
+          c();
+          const html = buildLabelSheetHtml(items, options, await renderLabelCodes(items, options.fields));
+          // The Content-Security-Policy no longer allows inline scripts, so the
+          // print dialog is triggered from here rather than from a <script> tag
+          // inside the document written below. The sheet has no external
+          // resources, so printing straight after close() is deterministic —
+          // waiting on the popup's `load` is not, because an about:blank popup
+          // fires its own load event before the written document renders.
+          printWindow.document.write(html);
+          printWindow.document.close();
+          fitLabelNames(printWindow.document);
+          printWindow.focus();
+          printWindow.print();
+        }}
+      ]
+    });
+  }
+
+  // SVG markup per SKU for the codes the sheet shows. QR rendering is async,
+  // so it's done up front and handed to the (synchronous) sheet builder.
+  async function renderLabelCodes(items, fields) {
+    const skus = [...new Set(items.map(i => String(i.sku || '').trim()).filter(Boolean))];
+    const barcodes = new Map();
+    const qrs = new Map();
+    if (fields.includes('barcode')) {
+      for (const sku of skus) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        try {
+          JsBarcode(svg, sku, { format: 'CODE128', displayValue: false, margin: 0, height: 60, width: 2 });
+        } catch { continue; /* SKU has characters CODE128 can't carry */ }
+        // Scale to the label rather than keep JsBarcode's fixed pixel size.
+        svg.setAttribute('viewBox', `0 0 ${parseFloat(svg.getAttribute('width'))} ${parseFloat(svg.getAttribute('height'))}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.removeAttribute('style');
+        barcodes.set(sku, svg.outerHTML);
+      }
+    }
+    if (fields.includes('qr')) {
+      await Promise.all(skus.map(async sku => {
+        qrs.set(sku, await QRCode.toString(sku, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' }));
+      }));
+    }
+    return { barcode: sku => barcodes.get(sku) || '', qr: sku => qrs.get(sku) || '' };
   }
 
   // --- DRAWERS & MODALS BACKPORT ---

@@ -94,7 +94,7 @@ export function renderStockDetail(container, { id }) {
                       <div style="display:flex; align-items:center; gap:12px">
                         <span class="material-icons-outlined kit-icon" style="font-size:20px; color:var(--text-tertiary); transition:color var(--transition-fast)">widgets</span>
                         <span class="kit-name font-medium" style="font-weight:400; color:var(--color-primary); transition:text-decoration var(--transition-fast)">${escapeHTML(k.name)}</span>
-                        <span class="badge badge-neutral" style="font-size:10px">${escapeHTML(k.category || 'General')}</span>
+                        <span class="badge badge-neutral" style="font-size:10px">${escapeHTML(k.category || 'No type')}</span>
                       </div>
                       <span class="material-icons-outlined chevron-icon" style="font-size:18px; color:var(--text-tertiary); transition:transform var(--transition-fast), color var(--transition-fast)">chevron_right</span>
                     </div>

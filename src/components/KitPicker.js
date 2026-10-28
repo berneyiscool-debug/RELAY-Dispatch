@@ -55,7 +55,7 @@ export function showKitPicker({ onSelect, context = 'quote' }) {
               <div style="flex:1; min-width:0">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
                   <span style="font-weight:600; font-size:var(--font-size-base)">${escapeHTML(kit.name)}</span>
-                  <span class="badge badge-neutral" style="font-size:10px">${escapeHTML(kit.category)}</span>
+                  ${kit.category ? `<span class="badge badge-neutral" style="font-size:10px">${escapeHTML(kit.category)}</span>` : ''}
                 </div>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px">${escapeHTML(kit.description || '')}</div>
                 <div style="display:flex; gap:12px; font-size:11px; color:var(--text-tertiary)">

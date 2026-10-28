@@ -387,25 +387,21 @@ no Supabase auth link.
 #### Password reset links
 
 The reset email redirects to `https://relaydispatch.com.au/app/` with the
-recovery token in the fragment (`#access_token=…&type=recovery`). Supabase's
-client parses that fragment, **saves a recovery session and then clears the whole
-hash** (`_getSessionFromURL` ends with `window.location.hash = ''`), firing a
-`PASSWORD_RECOVERY` event. What that means for the app:
+recovery token in the fragment (`#access_token=…&type=recovery`), or an error
+fragment (`#error_code=otp_expired&…`) when the link is stale.
 
-- A hash **route** can never be the reset target — the token *is* the fragment,
-  and it is wiped once read. Hence the bare `webAppBaseUrl()` above.
-- The client reads the fragment only after acquiring its navigator lock, which
-  is async, so boot must not touch the hash first. `src/main.js` classifies it
-  up front with `readAuthLinkHash` ([recoveryLink.js](./src/pages/auth/recoveryLink.js)),
-  skips the usual `#/login` rewrite, waits for `supabase.auth.initialize()`
-  and then routes to the public `#/reset-password` page, without waiting on the
-  data store.
-- `renderPasswordRecovery` in [Login.js](./src/pages/login/Login.js) shows the
-  shared "choose a new password" card, then signs the person in through
-  `handleCloudLoginSuccess`. It trusts only the session that came from the
-  link (`initialize()` returned no error): a rejected token leaves any existing
-  session in place, which must not be offered a password change. An expired or
-  reused link (`#error_code=otp_expired…`) gets a "Link Expired" card instead.
+- A hash **route** can never be the reset target — the token *is* the fragment.
+  Hence the bare `webAppBaseUrl()` above.
+- [passwordRecovery.js](./src/utils/passwordRecovery.js) is the first script
+  `src/main.js` imports. On load it takes the token out of the address bar and
+  swaps the hash for `#/reset-password`, before the router (which rewrites any
+  unknown hash to `#/login`) or Supabase's own URL detection can see it. Keep it
+  ahead of `router.js` and anything that creates the Supabase client.
+- `#/reset-password` (`renderPasswordReset` in
+  [Login.js](./src/pages/login/Login.js)) opens the session with `setSession`,
+  shows the same new-password card as an admin-forced change, then signs in as
+  usual. A stale link, or a reload after the token was used, gets a "reset link
+  not valid" card pointing back to "Forgot password".
 
 ### The Marketing Site
 
