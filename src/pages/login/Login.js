@@ -133,6 +133,32 @@ export async function handleCloudLoginSuccess(container, authUser) {
 }
 
 function renderForcePasswordChange(container, authUser, profile) {
+  renderPasswordChangeForm(container, {
+    subtitle: 'An administrator has reset your password. You must choose a new password to log in.',
+    onSubmit: async (newPassword) => {
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ force_password_change: false })
+        .eq('id', authUser.id);
+      if (profileError) throw profileError;
+
+      const user = sessionUserFromProfile(profile);
+
+      setSessionUser(user);
+      await completeLogin(user);
+    },
+  });
+}
+
+/**
+ * The "choose a new password" card, shared by an admin-forced change and an
+ * emailed reset link. `onSubmit(newPassword)` does the work and throws to show
+ * an error on the card.
+ */
+export function renderPasswordChangeForm(container, { subtitle, onSubmit }) {
   container.innerHTML = `
     <div class="auth-container">
       <div class="auth-card">
@@ -141,7 +167,7 @@ function renderForcePasswordChange(container, authUser, profile) {
             <span class="material-icons-outlined text-warning" style="font-size: 28px;">lock_reset</span>
           </div>
           <h1 class="auth-title" style="margin-top:12px;">Change Password</h1>
-          <p class="auth-subtitle">An administrator has reset your password. You must choose a new password to log in.</p>
+          <p class="auth-subtitle">${subtitle}</p>
         </div>
 
         <div id="pwd-change-error" class="auth-error" style="display: none;">
@@ -228,19 +254,7 @@ function renderForcePasswordChange(container, authUser, profile) {
     submitBtn.innerText = 'Updating...';
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-      if (updateError) throw updateError;
-
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ force_password_change: false })
-        .eq('id', authUser.id);
-      if (profileError) throw profileError;
-
-      const user = sessionUserFromProfile(profile);
-
-      setSessionUser(user);
-      await completeLogin(user);
+      await onSubmit(newPassword);
     } catch (err) {
       console.error('Password change error:', err);
       errorTextEl.innerText = err.message || 'An error occurred during password change.';
@@ -291,4 +305,68 @@ export async function completeLogin(user) {
   applyTheme();
 
   router.navigate(landingRoute);
+}
+
+/**
+ * Where a password reset email lands (`#/reset-password`). Boot hands over what
+ * it read from the link (see auth/recoveryLink.js); by then the Supabase client
+ * has turned a good link into a recovery session, so the person only has to
+ * choose a new password, after which they are signed in as normal.
+ */
+export async function renderPasswordRecovery(container, link) {
+  let session = null;
+  if (link && link.ok) {
+    // initialize() reports how reading the link went. A rejected token leaves
+    // any session already in this browser in place, and that must not be
+    // mistaken for the account the link was sent to.
+    const { error } = await supabase.auth.initialize();
+    if (!error) ({ data: { session } } = await supabase.auth.getSession());
+  }
+
+  if (!session) {
+    renderRecoveryLinkFailed(container, (link && link.message) || 'This password reset link is invalid or has expired.');
+    return;
+  }
+
+  const authUser = session.user;
+  renderPasswordChangeForm(container, {
+    subtitle: 'Choose a new password for your account.',
+    onSubmit: async (newPassword) => {
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+
+      // The new password replaces any change an administrator was forcing.
+      // Best-effort: the password is already saved either way.
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ force_password_change: false })
+        .eq('id', authUser.id);
+      if (profileError) console.warn('Could not clear force_password_change:', profileError);
+
+      await handleCloudLoginSuccess(container, authUser);
+    },
+  });
+}
+
+function renderRecoveryLinkFailed(container, message) {
+  container.innerHTML = `
+    <div class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="auth-logo-icon" style="background:var(--color-warning-bg); border-radius:50%; width:48px; height:48px;">
+            <span class="material-icons-outlined text-warning" style="font-size: 28px;">link_off</span>
+          </div>
+          <h1 class="auth-title" style="margin-top:12px;">Link Expired</h1>
+          <p class="auth-subtitle" id="recovery-failed-message"></p>
+          <p class="auth-subtitle">Reset links work only once and expire. Request a new one from the sign-in screen.</p>
+        </div>
+        <button type="button" id="btn-recovery-back" class="btn btn-primary" style="width:100%; padding:12px; font-size:15px; justify-content:center; margin-top:8px;">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  `;
+  // The message comes from the URL, so it is set as text, never as markup.
+  container.querySelector('#recovery-failed-message').textContent = message;
+  container.querySelector('#btn-recovery-back').addEventListener('click', () => router.navigate('/login'));
 }

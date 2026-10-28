@@ -42,6 +42,7 @@ import { setSessionUser, clearSessionUser, getSessionUser } from './pages/auth/s
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
 import { isGuestDemo, exitDemoMode, takeDemoStartSource } from './utils/demoSession.js';
 import { trackDemoEvent } from './utils/demoTracking.js';
+import { readAuthLinkHash } from './pages/auth/recoveryLink.js';
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
@@ -784,6 +785,11 @@ router.register('/subscribe', renderPage(lazy(() => import('./pages/billing/Subs
 // Finish setting up (verified cloud user whose company was never provisioned)
 router.register('/setup', renderPage(lazy(() => import('./pages/auth/FinishSetup.js'), 'renderFinishSetup')));
 
+// Password reset email link. Read before boot touches the hash: the token *is*
+// the fragment, and boot would otherwise rewrite it to #/login (see Boot below).
+const authLink = readAuthLinkHash(window.location.hash);
+router.register('/reset-password', renderPage(lazy(() => import('./pages/login/Login.js'), 'renderPasswordRecovery', () => authLink)));
+
 // Legal documents (content in pages/legal/content.js), linked from the cloud
 // signup form. They are public because a visitor reads them before they have an account.
 router.register('/terms', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderTerms')));
@@ -803,7 +809,7 @@ const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
 // demo (the pill menu) is how they reach the launch screen.
 const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
-const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
+const PUBLIC_PATHS = new Set(['/login', '/reset-password', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 // Set by the guard below; see the portal-scope note there.
 let portalRouteActive = false;
@@ -1046,7 +1052,7 @@ const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || 
 const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
 const isSetupHash = window.location.hash.startsWith('#/setup');
 const isLegalHash = ['#/terms', '#/privacy', '#/refunds', '#/acceptable-use'].some((h) => window.location.hash.startsWith(h));
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash) {
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !authLink) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.
@@ -1068,8 +1074,24 @@ function repairMailerSettings() {
 
 // The document viewer tab shows a page handed over by the tab that opened it,
 // so it is drawn at once and waits for the store itself only where it needs to.
-const resolvesEarly = window.location.hash.startsWith('#/document/view');
-if (resolvesEarly) router.resolve();
+// A reset link needs nothing from the store either, so a signed-in tab does not
+// sit through a full cloud sync before showing it.
+const resolvesEarly = window.location.hash.startsWith('#/document/view') || !!authLink;
+if (resolvesEarly) resolveFirstRoute();
+
+// A reset link waits for the Supabase client to consume the token fragment
+// (it clears the hash when done) before moving to its own route; navigating
+// first would wipe the token before the client reads it.
+function resolveFirstRoute() {
+  if (!authLink) {
+    router.resolve();
+    return;
+  }
+  import('./utils/supabase.js')
+    .then(({ supabase }) => supabase.auth.initialize())
+    .catch((err) => console.error('Could not read the password reset link:', err))
+    .finally(() => router.navigate('/reset-password'));
+}
 
 if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
@@ -1088,7 +1110,7 @@ if (store.initPromise && typeof store.initPromise.then === 'function') {
       console.error('Failed to initialize data store:', err);
       if (!resolvesEarly) router.resolve();
     });
-} else {
+} else if (!resolvesEarly) {
   router.resolve();
 }
 
