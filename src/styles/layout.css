@@ -3179,8 +3179,11 @@ body.relay-assistant-open .relay-topbar-actions {
 /* Getting Started hub, rendered into the empty .dash-topbar-left slot.
    .dash-topbar is pointer-events: none so the canvas stays draggable, and only
    its buttons re-enable events — the hub opts back in so clicking anywhere on
-   it doesn't pan the canvas underneath. */
-.setup-hub { position: relative; pointer-events: auto; }
+   it doesn't pan the canvas underneath.
+   Deliberately not positioned: that leaves the topbar (which spans the whole
+   canvas) as the panel's containing block, so the panel sizes against the
+   canvas instead of the pill or the window. */
+.setup-hub { pointer-events: auto; }
 /* The open panel drops over the views dock (z 75), which outranks the topbar. */
 .dash-topbar:has(.setup-hub.is-open) { z-index: 80; }
 
@@ -3213,13 +3216,27 @@ body.relay-assistant-open .relay-topbar-actions {
 
 .setup-hub-panel {
   position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+  /* Pill top (the topbar's 10px padding) + pill height + 8px gap. Measured from
+     the topbar, not the pill, so it stays put when the topbar's right-hand
+     cluster wraps onto a second line. */
+  top: 50px;
+  left: 12px; /* the topbar's own padding, so the panel lines up under the pill */
   z-index: var(--z-dropdown);
   width: 360px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 140px);
+  /* Widths are capped against the canvas, not the window: the canvas is what
+     clips the panel (overflow: hidden), and a 100vw cap used to ignore the
+     sidebar rail and topbar padding the panel starts after, pushing its right
+     edge — close button and row actions — out of sight. The height cap is
+     viewport-based because the canvas bottom is the window bottom: 152 = shell
+     above the canvas (topbar 45 + breadcrumb 45) + the 50px above + a 12px
+     bottom gutter, and dvh so mobile browser chrome counts. */
+  max-width: calc(100% - 24px);
+  max-height: calc(100dvh - 152px);
   overflow-y: auto;
+  /* The panel can be narrower than a single word, and the hero/step rows are
+     flex items with min-width: 0 — without this their text would push past the
+     panel's right edge instead of wrapping. */
+  overflow-wrap: anywhere;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--card-bg);
@@ -3329,11 +3346,24 @@ body.relay-assistant-open .relay-topbar-actions {
 .setup-hub-cta { width: 100%; justify-content: center; margin-top: 14px; gap: 6px; }
 
 .setup-hub-extras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.setup-hub-extra { display: flex; align-items: center; gap: 10px; }
-.setup-hub-extra .setup-hub-step-text { padding-top: 0; }
+/* The panel can be much narrower than the window (sidebar rail + gutters), so the
+   row wraps on its own content width: the action drops under its label instead of
+   squeezing the label down to one word per line. */
+.setup-hub-extra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 6px; }
+.setup-hub-extra .setup-hub-step-text { padding-top: 0; min-width: min(140px, 100%); }
 .setup-hub-extra-icon { flex: none; font-size: 20px; color: var(--text-secondary); }
 .setup-hub-extra.is-done .setup-hub-extra-icon { color: var(--color-success); }
 .setup-hub-extra .btn { flex: none; }
+/* Very narrow windows leave the panel a fraction of its 360px width (the sidebar
+   rail alone is 200px), so drop the decorative hero icon and let the call to
+   action wrap instead of pushing the content past the panel's edge. */
+@media (max-width: 480px) {
+  .setup-hub-panel .setup-hub-hero-icon { display: none; }
+  .setup-hub-hero { padding: 12px 12px 10px; gap: 8px; }
+  .setup-hub-section { padding: 10px 12px; }
+  .setup-hub-cta { white-space: normal; }
+  .setup-hub-panel .setup-checklist-note-text .btn { white-space: normal; }
+}
 
 .setup-hub .setup-checklist-note { margin: 0 14px; padding: 12px 0 0; }
 
