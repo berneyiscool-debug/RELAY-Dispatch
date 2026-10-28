@@ -6,13 +6,70 @@
 // storage locations helper (name-referenced, company-scoped collection).
 
 import { store } from '../data/store.js';
+import { escapeHTML } from './security.js';
+
+// A kit doesn't need a type: an empty `category` reads as this everywhere.
+export const NO_KIT_TYPE_LABEL = 'No type';
+export const NEW_KIT_TYPE_OPTION = '__new_kit_type__';
+
+const byName = (a, b) => a.name.localeCompare(b.name);
 
 export function getKitTypes() {
   return store.getAll('kitTypes') || [];
 }
 
 export function getActiveKitTypes() {
-  return getKitTypes().filter(t => t.active !== false);
+  return getKitTypes().filter(t => t.active !== false).sort(byName);
+}
+
+export function kitTypeLabel(kit) {
+  return kit?.category || NO_KIT_TYPE_LABEL;
+}
+
+/**
+ * <option>s for picking a kit's type: "No type", the active types, the
+ * current value even if it's since been retired (so saving doesn't silently
+ * change it), and optionally a "New kit type…" entry.
+ */
+export function kitTypeOptionsHtml(selected = '', { allowNew = false } = {}) {
+  const names = getActiveKitTypes().map(t => t.name);
+  if (selected && !names.includes(selected)) names.unshift(selected);
+  return [
+    `<option value=""${selected ? '' : ' selected'}>${NO_KIT_TYPE_LABEL}</option>`,
+    ...names.map(n => `<option value="${escapeHTML(n)}"${n === selected ? ' selected' : ''}>${escapeHTML(n)}</option>`),
+    ...(allowNew ? [`<option value="${NEW_KIT_TYPE_OPTION}">+ New kit type…</option>`] : []),
+  ].join('');
+}
+
+/**
+ * Create a kit type, or reuse one with the same name (ignoring case),
+ * reactivating it if it had been retired. Returns the type, or null for a
+ * blank name.
+ */
+export function createKitType(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return null;
+  const existing = getKitTypes().find(t => t.name.toLowerCase() === clean.toLowerCase());
+  if (existing) {
+    if (existing.active === false) store.update('kitTypes', existing.id, { active: true });
+    return store.getById('kitTypes', existing.id) || existing;
+  }
+  return store.create('kitTypes', { name: clean, active: true });
+}
+
+/**
+ * DataTable `groupBy` for a kit list: one group per type that has kits, in
+ * name order, with "No type" last.
+ */
+export function kitTypeGrouping(kits, persistKey) {
+  const used = new Set(kits.map(k => k.category || ''));
+  const named = [...used].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  return {
+    getKey: (k) => k.category || '',
+    order: [...named, ...(used.has('') ? [''] : [])],
+    labelFor: (key) => key || NO_KIT_TYPE_LABEL,
+    persistKey,
+  };
 }
 
 export function getKitTypeByName(name) {

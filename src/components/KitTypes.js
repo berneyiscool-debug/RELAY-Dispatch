@@ -11,7 +11,7 @@ import { showDrawer } from './Drawer.js';
 import { showModal } from './Modal.js';
 import { showToast } from './Notifications.js';
 import { escapeHTML } from '../utils/security.js';
-import { getActiveKitTypes, renameKitType } from '../utils/kitTypes.js';
+import { getKitTypes, renameKitType, createKitType } from '../utils/kitTypes.js';
 
 export function renderKitTypes(container) {
   function refresh() {
@@ -26,6 +26,7 @@ export function renderKitTypes(container) {
             <h4 style="margin:0">Kit Types</h4>
             <button class="btn btn-primary btn-sm" id="btn-new-kit-type" data-tooltip="Create a kit type that kits are categorised under" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> New Kit Type</button>
           </div>
+          <p class="text-secondary" style="margin:0 0 12px">Group kits so they're quicker to find. The kits list can be grouped and filtered by type, and the kit picker on quotes filters by it too. A kit doesn't need a type.</p>
           <div id="kit-types-table-container"></div>
         </div>
       </div>
@@ -37,7 +38,8 @@ export function renderKitTypes(container) {
   }
 
   function renderKitTypesTable(tableContainer) {
-    const kitTypes = getActiveKitTypes();
+    const kitTypes = [...getKitTypes()].sort((a, b) =>
+      (a.active === false) - (b.active === false) || a.name.localeCompare(b.name));
     const kits = store.getAll('kits') || [];
     const data = kitTypes.map(t => ({
       ...t,
@@ -54,7 +56,7 @@ export function renderKitTypes(container) {
       columns,
       data,
       onRowClick: (id) => openKitTypeDrawer(id),
-      emptyMessage: 'No kit types',
+      emptyMessage: 'No kit types yet. Add one to start grouping kits.',
       emptyIcon: 'category',
     });
 
@@ -85,7 +87,7 @@ export function renderKitTypes(container) {
 
       if (!name) { showToast('Kit type name is required', 'error'); return; }
 
-      const dup = getActiveKitTypes().find(t =>
+      const dup = getKitTypes().find(t =>
         t.name.toLowerCase() === name.toLowerCase() && t.id !== kitTypeId
       );
       if (dup) { showToast(`A kit type named "${name}" already exists`, 'error'); return; }
@@ -101,7 +103,8 @@ export function renderKitTypes(container) {
         store.update('kitTypes', kitTypeId, { name, active });
         showToast('Kit type updated', 'success');
       } else {
-        store.create('kitTypes', { name, active });
+        const created = createKitType(name);
+        if (!active) store.update('kitTypes', created.id, { active: false });
         showToast('Kit type created', 'success');
       }
 
