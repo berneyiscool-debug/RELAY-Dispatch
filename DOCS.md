@@ -387,20 +387,21 @@ no Supabase auth link.
 #### Password reset links
 
 The reset email redirects to `https://relaydispatch.com.au/app/` with the
-recovery token in the fragment (`#access_token=…&type=recovery`). Supabase's
-client parses that fragment, **saves a recovery session and then clears the whole
-hash** (`_getSessionFromURL` ends with `window.location.hash = ''`), firing a
-`PASSWORD_RECOVERY` event. Two consequences worth knowing before you touch this
-area:
+recovery token in the fragment (`#access_token=…&type=recovery`), or an error
+fragment (`#error_code=otp_expired&…`) when the link is stale.
 
-- A hash **route** can never be the reset target — the token *is* the fragment,
-  and it is wiped once read. Hence the bare `webAppBaseUrl()` above.
-- Nothing in the app currently reacts to `PASSWORD_RECOVERY`, and `src/main.js`
-  rewrites an unknown hash to `#/login`, so a reset link today lands on the
-  launch screen with a recovery session in storage but no "choose a new
-  password" form. Wiring that up is tracked separately; the password-change UI
-  that would be reused is `renderForcePasswordChange` in
-  [Login.js](./src/pages/login/Login.js).
+- A hash **route** can never be the reset target — the token *is* the fragment.
+  Hence the bare `webAppBaseUrl()` above.
+- [passwordRecovery.js](./src/utils/passwordRecovery.js) is the first script
+  `src/main.js` imports. On load it takes the token out of the address bar and
+  swaps the hash for `#/reset-password`, before the router (which rewrites any
+  unknown hash to `#/login`) or Supabase's own URL detection can see it. Keep it
+  ahead of `router.js` and anything that creates the Supabase client.
+- `#/reset-password` (`renderPasswordReset` in
+  [Login.js](./src/pages/login/Login.js)) opens the session with `setSession`,
+  shows the same new-password card as an admin-forced change, then signs in as
+  usual. A stale link, or a reload after the token was used, gets a "reset link
+  not valid" card pointing back to "Forgot password".
 
 ### The Marketing Site
 
