@@ -11,8 +11,14 @@ import { isCloudUser } from '../../utils/aiTier.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 import { statCard } from '../../components/StatCard.js';
+import { showModal } from '../../components/Modal.js';
+import { showToast } from '../../components/Notifications.js';
 import { buildReport, emptyFilters, toCsv } from '../../utils/reportMetrics.js';
 import { toDate } from '../../utils/kpis.js';
+import {
+  REPORTS, reportSpec, selectBlocks, localInsights,
+  money, wholeMoney, pct, hrs, assetServiceCost, lowStock, stockValue, costedSub, NOT_COSTED,
+} from './reportSpec.js';
 
 const COLLECTIONS = [
   'jobs', 'quotes', 'invoices', 'customers', 'stock', 'technicians', 'leads', 'timesheets',
@@ -71,6 +77,7 @@ export function renderReports(container, params) {
         <h1>Reports & Analytics</h1>
         <div class="page-header-actions">
           <button class="btn btn-secondary" id="btn-export-csv" data-tooltip="Export this report's table to CSV" data-tooltip-pos="left"><span class="material-icons-outlined">download</span> Export CSV</button>
+          <button class="btn btn-secondary" id="btn-export-pdf" data-tooltip="Choose what to include and download a PDF" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> Export PDF</button>
         </div>
       </div>
 
@@ -107,11 +114,23 @@ export function renderReports(container, params) {
     `;
 
     container.querySelector('#report-content').innerHTML = renderReport(activeReport, r);
-    bindEvents(r);
+    bindEvents(r, filterLines(data));
   }
 
-  function bindEvents(r) {
+  // The filters in use, in words, for the PDF header.
+  function filterLines(data) {
+    const lines = [];
+    const tech = data.technicians.find(t => String(t.id) === String(filters.technicianId));
+    const cust = data.customers.find(c => String(c.id) === String(filters.customerId));
+    if (tech) lines.push(`Technician: ${tech.name}`);
+    if (cust) lines.push(`Customer: ${cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()}`);
+    if (filters.assetType && filters.assetType !== 'All') lines.push(`Asset type: ${filters.assetType}`);
+    return lines;
+  }
+
+  function bindEvents(r, lines) {
     container.querySelector('#btn-export-csv')?.addEventListener('click', () => exportCSV(activeReport, r));
+    container.querySelector('#btn-export-pdf')?.addEventListener('click', () => openPdfDialog(activeReport, r, lines));
 
     container.querySelector('#global-filter-start')?.addEventListener('change', (e) => {
       filters.start = e.target.value;
@@ -213,8 +232,106 @@ function exportCSV(id, r) {
   URL.revokeObjectURL(url);
 }
 
+// ── PDF export ──────────────────────────────────────────────────────────────
+
+const rangeText = (range) => {
+  const f = (d) => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${f(range.start)} – ${f(new Date(range.end - 1))}`;
+};
+
+// Pick reports and the blocks inside each, then download them as one PDF. The
+// open report starts fully ticked; the others start unticked.
+function openPdfDialog(activeId, r, lines) {
+  const companyName = store.getSettings().name || '';
+  const specs = REPORTS.map(rep => reportSpec(rep.id, r, { insights: insightsFor(rep.id, r), companyName }));
+
+  const content = document.createElement('div');
+  content.className = 'report-pdf-picker';
+  content.innerHTML = `
+    <p class="text-secondary" style="margin:0 0 12px;font-size:13px">
+      Uses the filters on screen: ${escapeHTML(rangeText(r.range))}${lines.length ? `, ${escapeHTML(lines.join(', '))}` : ''}.
+    </p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button type="button" class="btn btn-secondary btn-sm" data-pick="all">Select everything</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-pick="none">Clear</button>
+    </div>
+    ${specs.map(s => `
+      <details class="report-pdf-report" ${s.id === activeId ? 'open' : ''}>
+        <summary>
+          <label><input type="checkbox" data-report="${escapeHTML(s.id)}" ${s.id === activeId ? 'checked' : ''} /> ${escapeHTML(s.title)}</label>
+        </summary>
+        <div class="report-pdf-blocks">
+          ${s.blocks.map(b => `
+            <label><input type="checkbox" data-block="${escapeHTML(s.id)}" value="${escapeHTML(b.key)}" ${s.id === activeId ? 'checked' : ''} />
+              ${escapeHTML(b.title)}${b.kind === 'table' ? ` <span class="text-tertiary">(${b.rows.length} rows)</span>` : ''}</label>
+          `).join('')}
+        </div>
+      </details>
+    `).join('')}
+    <div class="report-pdf-error" role="alert" style="display:none;color:var(--color-danger);font-size:13px;margin-top:8px">Choose at least one thing to include.</div>
+  `;
+
+  const error = content.querySelector('.report-pdf-error');
+  const blocksOf = (id) => [...content.querySelectorAll(`[data-block="${CSS.escape(id)}"]`)];
+  const syncReport = (id) => {
+    const box = content.querySelector(`[data-report="${CSS.escape(id)}"]`);
+    const ticked = blocksOf(id).filter(b => b.checked).length;
+    box.checked = ticked > 0;
+    box.indeterminate = ticked > 0 && ticked < blocksOf(id).length;
+  };
+  content.querySelectorAll('[data-report]').forEach(box => box.addEventListener('change', () => {
+    blocksOf(box.dataset.report).forEach(b => { b.checked = box.checked; });
+    box.indeterminate = false;
+    error.style.display = 'none';
+  }));
+  content.querySelectorAll('[data-block]').forEach(b => b.addEventListener('change', () => {
+    syncReport(b.dataset.block);
+    error.style.display = 'none';
+  }));
+  content.querySelectorAll('[data-pick]').forEach(btn => btn.addEventListener('click', () => {
+    const on = btn.dataset.pick === 'all';
+    content.querySelectorAll('[data-block]').forEach(b => { b.checked = on; });
+    specs.forEach(s => syncReport(s.id));
+    error.style.display = 'none';
+  }));
+  // A click on the checkbox inside <summary> shouldn't also fold the section.
+  content.querySelectorAll('summary label').forEach(l => l.addEventListener('click', e => e.stopPropagation()));
+
+  showModal({
+    title: 'Export PDF',
+    content,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      { label: 'Download PDF', className: 'btn-primary', onClick: async (close) => {
+        const selection = {};
+        content.querySelectorAll('[data-block]:checked').forEach(b => {
+          (selection[b.dataset.block] = selection[b.dataset.block] || new Set()).add(b.value);
+        });
+        const sections = selectBlocks(specs, selection);
+        if (!sections.length) { error.style.display = ''; return; }
+        try {
+          const { buildReportPdf } = await import('../../utils/reportPdf.js');
+          const { doc, filename } = await buildReportPdf({ company: companyName, rangeLabel: rangeText(r.range), filterLines: lines, sections });
+          doc.save(filename);
+          close();
+        } catch (err) {
+          console.error('Report PDF failed:', err);
+          showToast("Couldn't build the PDF. Try again.", 'error');
+        }
+      } },
+    ],
+  });
+}
+
 // ── Cache & Insights Engine ────────────────────────────────────────────────
+// Keyed by report and the figures it was given, so a change of filters asks again.
 const cachedAIInsights = {};
+
+// The insights a report's panel last showed for these figures, for the PDF.
+function insightsFor(reportId, r) {
+  const hit = cachedAIInsights[`${reportId}_${getStatsSummaryText(reportId, r)}`];
+  return hit ? { items: hit.items, source: hit.source } : null;
+}
 
 // Insights have four possible sources: the Cloud AI ('live'), the on-device
 // rule engine in a local workspace ('local'), that same rule engine standing
@@ -247,7 +364,7 @@ function renderAIInsightsPanel(reportId, r) {
   const cacheKey = `${reportId}_${statsSummary}`;
 
   if (cachedAIInsights[cacheKey]) {
-    return `<div class="card" id="${containerId}" style="margin-bottom:var(--space-lg);">${cachedAIInsights[cacheKey]}</div>`;
+    return `<div class="card" id="${containerId}" style="margin-bottom:var(--space-lg);">${cachedAIInsights[cacheKey].html}</div>`;
   }
 
   setTimeout(() => {
@@ -321,7 +438,8 @@ async function fetchAIInsights(reportId, r, statsSummary, cacheKey) {
   const panel = document.getElementById(`ai-insights-${reportId}`);
   if (!panel) return;
 
-  let insightsHTML = '';
+  const companyName = store.getSettings().name || 'your company';
+  let items, source;
 
   if (insightsUseAI()) {
     try {
@@ -332,24 +450,24 @@ async function fetchAIInsights(reportId, r, statsSummary, cacheKey) {
       if (reply.includes('```')) {
         reply = reply.replace(/```json/g, '').replace(/```/g, '').trim();
       }
-      insightsHTML = renderInsightsListHTML(JSON.parse(reply), 'live');
+      items = JSON.parse(reply);
+      if (!Array.isArray(items)) throw new Error('Insights reply is not a list');
+      source = 'live';
     } catch (err) {
       console.error('AI Insights parsing or fetch error:', err);
-      insightsHTML = renderInsightsListHTML(getLocalInsights(reportId, r), 'offline');
+      items = localInsights(reportId, r, companyName);
+      source = 'offline';
     }
   } else {
-    insightsHTML = renderInsightsListHTML(getLocalInsights(reportId, r), store.demoMode ? 'demo' : 'local');
+    items = localInsights(reportId, r, companyName);
+    source = store.demoMode ? 'demo' : 'local';
   }
 
-  cachedAIInsights[cacheKey] = insightsHTML;
+  const html = renderInsightsListHTML(items, source);
+  cachedAIInsights[cacheKey] = { html, items: items.slice(0, 5), source };
   panel.style.border = '';
-  panel.innerHTML = insightsHTML;
+  panel.innerHTML = html;
 }
-
-const money = (n) => `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const wholeMoney = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
-const pct = (v, digits = 1) => (v == null ? '—' : `${(v * 100).toFixed(digits)}%`);
-const hrs = (n, digits = 1) => `${(Number(n) || 0).toFixed(digits)} hrs`;
 
 function getStatsSummaryText(reportId, r) {
   const d = r.scoped;
@@ -470,180 +588,6 @@ function renderInsightsListHTML(insights, source) {
   `;
 }
 
-// On-device insights. They state what the figures show; they don't measure the
-// business against targets nobody set.
-function getLocalInsights(reportId, r) {
-  const d = r.scoped;
-  if (d.jobs.length < 5) {
-    const settings = store.getSettings();
-    const insights = [{
-      headline: `Welcome to RELAY, ${settings.name || 'your company'}!`,
-      detail: 'Your workspace is set up and ready to run dispatch.',
-      action: 'Head to Settings to set your labour rates and material markups.',
-      confidence: 'high',
-    }];
-    insights.push(d.technicians.length > 0 ? {
-      headline: `${d.technicians.length} people on the team`,
-      detail: 'Your field team is added and ready for scheduling.',
-      action: 'Assign a job to your team from the Jobs page or the calendar.',
-      confidence: 'high',
-    } : {
-      headline: 'Add your first technician',
-      detail: "With nobody on the team you can't assign jobs or track timesheets yet.",
-      action: 'Go to Admin -> People to add your field team.',
-      confidence: 'high',
-    });
-    insights.push(d.customers.length > 0 ? {
-      headline: `${d.customers.length} customers added`,
-      detail: 'Your customer list is starting to grow.',
-      action: 'Create a quote or job for one of your customers.',
-      confidence: 'high',
-    } : {
-      headline: 'Add your first customer',
-      detail: 'Customers are where quotes and jobs start.',
-      action: 'Go to People -> Customers -> Add Customer.',
-      confidence: 'high',
-    });
-    if (d.quotes.length > 0) insights.push({ headline: `${d.quotes.length} quotes prepared`, detail: 'Good progress bidding for new work.', action: 'Follow up on sent quotes to win approval.', confidence: 'high' });
-    if (d.jobs.length > 0) insights.push({ headline: `${d.jobs.length} jobs logged`, detail: 'Your first jobs are in the system.', action: "Move active jobs to 'Scheduled' or 'In Progress' as work begins.", confidence: 'high' });
-    return insights;
-  }
-
-  const insights = [];
-  if (reportId === 'overview' || reportId === 'revenue') {
-    if (r.money.overdue > 0) {
-      insights.push({
-        headline: `${wholeMoney(r.money.overdue)} overdue on ${r.money.overdueCount} invoices`,
-        detail: `Of ${wholeMoney(r.money.outstanding)} still owed, this part is past its due date.`,
-        action: 'Open the overdue invoices and send reminders.',
-        confidence: 'high',
-      });
-    }
-    if (r.profit.margin != null) {
-      insights.push({
-        headline: `${pct(r.profit.margin)} gross margin on ${r.profit.jobsKnown} costed jobs`,
-        detail: `${wholeMoney(r.profit.revenue)} invoiced against ${wholeMoney(r.profit.cost)} of labour, materials and purchases.`,
-        action: 'Check Job Costing for the jobs pulling the margin down.',
-        confidence: r.profit.jobsKnown >= 10 ? 'high' : 'medium',
-      });
-    }
-    if (r.profit.jobsTotal > r.profit.jobsKnown) {
-      insights.push({
-        headline: `${r.profit.jobsTotal - r.profit.jobsKnown} invoiced jobs couldn't be costed`,
-        detail: "They have no logged time or materials, or time logged by someone with no pay rate, so they're left out of profit.",
-        action: 'Add pay rates in People and log time against jobs.',
-        confidence: 'high',
-      });
-    }
-    if (r.sales.winRate != null) {
-      insights.push({
-        headline: `${pct(r.sales.winRate, 0)} of ${r.sales.quotesDecided} decided quotes won`,
-        detail: 'Won quotes include those already converted to jobs.',
-        action: 'Follow up on quotes still awaiting an answer.',
-        confidence: r.sales.quotesDecided >= 10 ? 'high' : 'low',
-      });
-    }
-  } else if (reportId === 'jobs' || reportId === 'job_costing') {
-    const losing = r.profit.jobs.filter(j => j.known && j.profit < 0);
-    if (losing.length) {
-      insights.push({
-        headline: `${losing.length} costed jobs lost money`,
-        detail: `Together they cost ${wholeMoney(-losing.reduce((s, j) => s + j.profit, 0))} more than they invoiced.`,
-        action: 'Open the red rows in Job Costing to see whether labour or materials ran over.',
-        confidence: 'high',
-      });
-    }
-    const overrun = r.jobs.completed.filter(j => (j.estimatedHours || 0) > 0 && (r.jobs.hoursByJob.get(String(j.id)) || 0) > j.estimatedHours * 1.1);
-    if (overrun.length) {
-      insights.push({
-        headline: `${overrun.length} completed jobs ran over their estimated hours`,
-        detail: 'Time logged was more than 10% above the estimate.',
-        action: 'Compare these jobs with their quotes before the next similar job.',
-        confidence: 'medium',
-      });
-    }
-    if (r.jobs.readyToInvoice > 0) {
-      insights.push({
-        headline: `${r.jobs.readyToInvoice} completed jobs not invoiced yet`,
-        detail: "Finished work that hasn't been billed.",
-        action: 'Invoice them from the Jobs list.',
-        confidence: 'high',
-      });
-    }
-  } else if (reportId === 'timesheets_labor' || reportId === 'technicians') {
-    if (r.labour.hours > 0 && r.labour.billableHours >= r.labour.hours) {
-      insights.push({
-        headline: `All ${r.labour.hours.toFixed(0)} logged hours were on jobs`,
-        detail: 'Every timesheet in this range is logged against a job, so job costs include all of it.',
-        action: 'Keep logging time to jobs as it happens.',
-        confidence: 'high',
-      });
-    } else if (r.labour.hours > 0) {
-      insights.push({
-        headline: `${pct(r.labour.billableShare)} of ${r.labour.hours.toFixed(0)} logged hours were on jobs`,
-        detail: `${(r.labour.hours - r.labour.billableHours).toFixed(1)} hours weren't logged against a job.`,
-        action: 'Check whether that time was travel, yard or admin, and log it to jobs where it belongs.',
-        confidence: 'high',
-      });
-    }
-    if (r.labour.unratedHours > 0) {
-      insights.push({
-        headline: `${r.labour.unratedHours.toFixed(1)} hours have no pay rate`,
-        detail: "These hours aren't in labour cost, so cost and margins read low.",
-        action: 'Add pay rates in People.',
-        confidence: 'high',
-      });
-    }
-  } else if (reportId === 'customers') {
-    const top = r.customers.top[0];
-    if (top) {
-      insights.push({
-        headline: `Largest customer is ${pct(top.share, 0)} of revenue`,
-        detail: `${top.name || 'One customer'} invoiced ${wholeMoney(top.revenue)} in this range.`,
-        action: 'Keep an eye on how much the business depends on one account.',
-        confidence: r.customers.invoiced >= 5 ? 'high' : 'low',
-      });
-    }
-    if (r.customers.invoiced > 0) {
-      insights.push({
-        headline: `${r.customers.repeat} of ${r.customers.invoiced} invoiced customers are repeat`,
-        detail: 'Repeat customers have been invoiced more than once.',
-        action: 'Offer maintenance agreements to one-off customers.',
-        confidence: 'medium',
-      });
-    }
-  } else if (reportId === 'assets_maintenance') {
-    const costs = d.assets.map(a => [a.name, assetServiceCost(a)]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
-    if (costs.length) {
-      insights.push({
-        headline: `Highest service cost: ${costs[0][0]} (${wholeMoney(costs[0][1])})`,
-        detail: 'This asset has the most service cost logged against it.',
-        action: 'Check whether replacing it would cost less than repairing it.',
-        confidence: 'medium',
-      });
-    }
-    const active = d.maintenancePlans.filter(p => p.status === 'Active').length;
-    if (active) {
-      insights.push({ headline: `${active} active service agreements`, detail: 'Each has a next-service date to keep.', action: 'Review the due dates weekly.', confidence: 'high' });
-    }
-  } else if (reportId === 'inventory') {
-    const low = lowStock(d.stock);
-    insights.push(low.length ? {
-      headline: `${low.length} stock items at or below reorder level`,
-      detail: 'Jobs that need these parts could be held up.',
-      action: 'Raise purchase orders for the low items.',
-      confidence: 'high',
-    } : {
-      headline: 'All stock above reorder levels',
-      detail: 'Nothing needs reordering right now.',
-      action: 'Do a routine count to confirm the numbers.',
-      confidence: 'high',
-    });
-    insights.push({ headline: `${wholeMoney(stockValue(d.stock))} held in stock at cost`, detail: 'Money tied up on the shelf.', action: 'Look for slow-moving lines to run down.', confidence: 'high' });
-  }
-  return insights.slice(0, 5);
-}
-
 // ── Helper rendering functions ──────────────────────────────────────────────
 
 // Reports' own KPI colours, mapped onto the shared stat card's chip tones so
@@ -706,15 +650,8 @@ function progressBar(label, value, max, color) {
 }
 
 const sortedEntries = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]);
-const costedSub = (p) => (p.jobsTotal > p.jobsKnown ? `${p.jobsKnown} of ${p.jobsTotal} invoiced jobs costed` : '');
 const jobLink = (job, id) => job ? `<a href="#/jobs/${encodeURIComponent(job.id)}" class="cell-link">${escapeHTML(job.number || job.id)}</a>` : escapeHTML(String(id));
 const emptyRow = (cols, text) => `<tr><td colspan="${cols}" style="text-align:center;padding:20px" class="text-secondary">${escapeHTML(text)}</td></tr>`;
-
-function assetServiceCost(asset) {
-  return ((asset && asset.logs) || []).filter(l => l.type === 'Service').reduce((s, l) => s + (Number(l.cost) || 0), 0);
-}
-const lowStock = (stock) => stock.filter(i => (Number(i.quantity) || 0) <= (Number(i.reorderLevel) || 0));
-const stockValue = (stock) => stock.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.costPrice) || 0), 0);
 
 // ── Report Renderers ────────────────────────────────────────────────────────
 
@@ -813,7 +750,6 @@ function renderJobsReport(r) {
   `;
 }
 
-const NOT_COSTED = { 'no-pay-rate': 'Time logged with no pay rate', 'no-costs': 'No time or materials logged' };
 
 function renderJobCostingReport(r) {
   const p = r.profit;

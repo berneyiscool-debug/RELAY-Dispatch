@@ -5043,3 +5043,26 @@ button.widget-picker-card {
   .report-filter-group,
   .report-filters .report-filter-input { width: 100%; }
 }
+
+/* ── Reports PDF picker ── */
+.report-pdf-picker { max-height: 60vh; overflow-y: auto; }
+.report-pdf-report {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  margin-bottom: 8px;
+}
+.report-pdf-report > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.report-pdf-report > summary label { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.report-pdf-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 12px 36px;
+  font-size: 13px;
+}
+.report-pdf-blocks label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
