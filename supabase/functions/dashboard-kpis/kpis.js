@@ -41,7 +41,7 @@ const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-function inRange(v, r) {
+export function inRange(v, r) {
   const d = toDate(v);
   return !!d && d >= r.start && d < r.end;
 }
@@ -107,14 +107,14 @@ export function periodRanges(periodId, now = new Date()) {
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
 
-const OPEN_JOB = ['Pending', 'Scheduled', 'In Progress', 'On Hold'];
+export const OPEN_JOB = ['Pending', 'Scheduled', 'In Progress', 'On Hold'];
 const ACTIVE_JOB = ['Scheduled', 'In Progress', 'On Hold'];
-const DONE_JOB = ['Completed', 'Invoiced'];
-const isTemplate = (j) => j.isRecurring === true || j.status === 'Recurring Template';
+export const DONE_JOB = ['Completed', 'Invoiced'];
+export const isTemplate = (j) => j.isRecurring === true || j.status === 'Recurring Template';
 
 // Draft and void invoices are not revenue and nobody owes them.
 export const isLiveInvoice = (i) => i.status !== 'Draft' && i.status !== 'Void';
-const invoiceIssued = (i) => i.issueDate || i.sentAt || i.createdAt;
+export const invoiceIssued = (i) => i.issueDate || i.sentAt || i.createdAt;
 
 // Payments recorded against an invoice. Invoices marked Paid without a payment
 // record (older data, Stripe webhook, cloud rows) count as one full payment on
@@ -141,7 +141,7 @@ export function exGst(inv, amount) {
 
 // Every job an invoice bills, with the ex-GST amount billed to each. Combined
 // invoices split by jobAmounts when present, otherwise evenly.
-function invoiceJobShares(inv) {
+export function invoiceJobShares(inv) {
   const ids = [inv.jobId, ...(inv.jobIds || [])].filter(Boolean).map(String);
   const unique = [...new Set(ids)];
   if (!unique.length) return [];
@@ -219,41 +219,44 @@ function weekdaysIn(r) {
 
 // Job cost = timesheet hours × pay rate + materials at cost + purchase orders.
 // A job is "unknown" when nothing was costed, or when someone logged time on it
-// without a pay rate: guessing would report a margin we don't have.
-function jobCosts({ timesheets = [], technicians = [], jobMaterials = [], purchaseOrders = [], jobs = [] }) {
+// without a pay rate: guessing would report a margin we don't have. A timesheet's
+// own pay rate (stamped when it was logged) wins over the person's current rate.
+// Each job's cost is also split into labour, materials and purchases.
+export function jobCosts({ timesheets = [], technicians = [], jobMaterials = [], purchaseOrders = [], jobs = [] }) {
   const rate = new Map(technicians.map(t => [String(t.id), num(t.payRate)]));
   const costs = new Map();
   const entry = (id) => {
     const k = String(id);
-    if (!costs.has(k)) costs.set(k, { cost: 0, inputs: 0, missingRate: false });
+    if (!costs.has(k)) costs.set(k, { cost: 0, labour: 0, materials: 0, purchases: 0, hours: 0, inputs: 0, missingRate: false });
     return costs.get(k);
   };
   timesheets.forEach(t => {
     if (!t.jobId) return;
     const e = entry(t.jobId);
-    const r = rate.get(String(t.technicianId)) || 0;
-    const h = num(t.hours != null ? t.hours : t.durationHours);
+    const r = num(t.payRate) || rate.get(String(t.technicianId)) || 0;
+    const h = timesheetHours(t);
     if (h <= 0) return;
+    e.hours += h;
     if (r <= 0) { e.missingRate = true; return; }
-    e.cost += h * r; e.inputs++;
+    e.cost += h * r; e.labour += h * r; e.inputs++;
   });
   jobMaterials.forEach(m => {
     if (!m.jobId) return;
     const c = num(m.totalCost) || num(m.unitCost) * num(m.quantity);
     if (c <= 0) return;
-    const e = entry(m.jobId); e.cost += c; e.inputs++;
+    const e = entry(m.jobId); e.cost += c; e.materials += c; e.inputs++;
   });
   purchaseOrders.forEach(po => {
     if (!po.jobId || po.status === 'Draft' || po.status === 'Cancelled') return;
     const c = num(po.total);
     if (c <= 0) return;
-    const e = entry(po.jobId); e.cost += c; e.inputs++;
+    const e = entry(po.jobId); e.cost += c; e.purchases += c; e.inputs++;
   });
   // Jobs whose material cost is kept on the job itself rather than as line records.
   jobs.forEach(j => {
     const mc = num(j.materialCost);
     if (mc > 0 && !jobMaterials.some(m => String(m.jobId) === String(j.id))) {
-      const e = entry(j.id); e.cost += mc; e.inputs++;
+      const e = entry(j.id); e.cost += mc; e.materials += mc; e.inputs++;
     }
   });
   return costs;
@@ -261,27 +264,41 @@ function jobCosts({ timesheets = [], technicians = [], jobMaterials = [], purcha
 
 // Revenue and cost of jobs invoiced in a range. Each invoice carries its share of
 // the job's cost (share = invoice amount ÷ everything billed to the job), so a job
-// invoiced in two parts isn't costed twice.
-function invoicedJobProfit(data, r) {
+// invoiced in two parts isn't costed twice. `jobs` lists every job invoiced in the
+// range: its revenue, its share of cost, and why it couldn't be costed if it wasn't.
+export function invoicedJobProfit(data, r) {
   const live = (data.invoices || []).filter(isLiveInvoice);
   const billedToJob = new Map();
   live.forEach(inv => invoiceJobShares(inv).forEach(s => billedToJob.set(s.jobId, (billedToJob.get(s.jobId) || 0) + s.amount)));
   const costs = jobCosts(data);
-  let revenue = 0, cost = 0;
+  let revenue = 0, cost = 0, labour = 0, materials = 0, purchases = 0;
   const known = new Set(), all = new Set();
+  const byJob = new Map();
   live.filter(inv => inRange(invoiceIssued(inv), r)).forEach(inv => {
     invoiceJobShares(inv).forEach(s => {
       all.add(s.jobId);
       const c = costs.get(s.jobId);
-      if (!c || c.inputs === 0 || c.missingRate) return;
+      const row = byJob.get(s.jobId) || { jobId: s.jobId, revenue: 0, cost: 0, labour: 0, materials: 0, purchases: 0, hours: c ? c.hours : 0, known: false, reason: null };
+      byJob.set(s.jobId, row);
+      row.revenue += s.amount;
+      if (!c || c.inputs === 0) { row.reason = c && c.missingRate ? 'no-pay-rate' : 'no-costs'; return; }
+      if (c.missingRate) { row.reason = 'no-pay-rate'; return; }
       const billed = billedToJob.get(s.jobId) || 0;
       if (billed <= 0) return;
+      const share = s.amount / billed;
       known.add(s.jobId);
+      row.known = true;
+      row.cost += c.cost * share; row.labour += c.labour * share;
+      row.materials += c.materials * share; row.purchases += c.purchases * share;
       revenue += s.amount;
-      cost += c.cost * (s.amount / billed);
+      cost += c.cost * share; labour += c.labour * share;
+      materials += c.materials * share; purchases += c.purchases * share;
     });
   });
-  return { revenue, cost, profit: revenue - cost, jobsKnown: known.size, jobsTotal: all.size };
+  return {
+    revenue, cost, profit: revenue - cost, labour, materials, purchases,
+    jobsKnown: known.size, jobsTotal: all.size, jobs: [...byJob.values()],
+  };
 }
 
 // ── List filters ─────────────────────────────────────────────────────────────
@@ -290,7 +307,7 @@ function invoicedJobProfit(data, r) {
 // built on that filter too, so the list always holds exactly the records behind
 // the number. build(data, ctx) returns a predicate for one record of `collection`.
 
-const lastBookingByJob = (schedule = []) => {
+export const lastBookingByJob = (schedule = []) => {
   const m = new Map();
   schedule.forEach(s => {
     if (!s.jobId || !s.date) return;
@@ -353,14 +370,14 @@ export function leadClosedAt(lead) {
   return hit ? hit.timestamp : (lead.closedAt || lead.updatedAt || null);
 }
 
-const timesheetHours = (t) => num(t.hours != null ? t.hours : t.durationHours);
+export const timesheetHours = (t) => num(t.hours != null ? t.hours : t.durationHours);
 
 // Ex-GST amount of one invoice line.
 const lineAmount = (l) => num(l.total) || num(l.qty) * num(l.rate != null ? l.rate : l.unitPrice);
 const invoiceLines = (inv) => (inv.sections || []).flatMap(s => s.lineItems || []).concat(inv.lineItems || []);
 
 // Revenue by customer for invoices issued in a range.
-function revenueByCustomer(invoices, r) {
+export function revenueByCustomer(invoices, r) {
   const m = new Map();
   invoices.filter(i => isLiveInvoice(i) && inRange(invoiceIssued(i), r)).forEach(i => {
     const k = String(i.customerId || i.customerName || '');
@@ -545,7 +562,7 @@ export function linkFilter(link) {
 }
 
 // Records of `collection` matching the named filter.
-function rows(collection, name, data, ctx) {
+export function rows(collection, name, data, ctx) {
   return (data[collection] || []).filter(KPI_FILTERS[collection][name].build(data, ctx));
 }
 
