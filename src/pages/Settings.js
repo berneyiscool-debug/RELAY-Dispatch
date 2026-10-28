@@ -2428,7 +2428,7 @@ export function renderSettings(container) {
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:40px"></th>
+                <th style="width:52px"></th>
                 <th>Name</th>
                 <th>Role</th>
                 <th>User Type</th>
@@ -2441,8 +2441,8 @@ export function renderSettings(container) {
               ${techs.filter(t => !t.deactivated).map(t => {
                 const ut = userTypes.find(ut => ut.id === t.userTypeId);
                 const avatarCell = t.avatarUrl
-                  ? `<img src="${escapeHTML(t.avatarUrl)}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" />`
-                  : `<div style="width:32px; height:32px; border-radius:50%; background:${escapeHTML(t.color)}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600;">${escapeHTML((t.name || 'U').trim().charAt(0).toUpperCase())}</div>`;
+                  ? `<img src="${escapeHTML(t.avatarUrl)}" alt="" style="width:32px; height:32px; max-width:none; flex-shrink:0; border-radius:50%; object-fit:cover; display:block;" />`
+                  : `<div style="width:32px; height:32px; flex-shrink:0; border-radius:50%; background:${escapeHTML(t.color)}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600;">${escapeHTML((t.name || 'U').trim().charAt(0).toUpperCase())}</div>`;
                 return `
                   <tr>
                     <td>${avatarCell}</td>
