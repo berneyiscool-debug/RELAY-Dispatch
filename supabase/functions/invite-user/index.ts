@@ -6,6 +6,7 @@ import {
   findAuthUserByEmail,
   isCompanyStaffEmail,
   isDuplicateAuthUserError,
+  normalizeBackupEmail,
   readProfileForUser,
   staffProfileValues
 } from './provision.js'
@@ -77,7 +78,7 @@ serve(async (req) => {
 
     // 3. Extract payload
     const body = await req.json()
-    const { action, userId, email, username, password, name, role, userTypeId, color, payRate, deactivated } = body
+    const { action, userId, email, username, password, name, role, userTypeId, color, payRate, deactivated, backupEmail } = body
 
     if (action === 'update') {
       if (!userId) {
@@ -128,6 +129,16 @@ serve(async (req) => {
         )
       }
 
+      // Optional on an edit (accounts added before it was required have none),
+      // but anything sent must be a real inbox.
+      const normalizedBackupEmail = backupEmail === undefined ? undefined : normalizeBackupEmail(backupEmail)
+      if (backupEmail !== undefined && !normalizedBackupEmail) {
+        return new Response(
+          JSON.stringify({ error: 'Bad Request: Enter a valid backup email address.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       // Update Auth record
       const authUpdates: any = {}
       if (email) authUpdates.email = email
@@ -164,6 +175,8 @@ serve(async (req) => {
         pay_rate: payRate || 0
       }
 
+      if (normalizedBackupEmail) profileUpdates.backup_email = normalizedBackupEmail
+
       if (deactivated !== undefined) {
         profileUpdates.deactivated = !!deactivated
         profileUpdates.deactivated_at = deactivated ? new Date().toISOString() : null
@@ -195,6 +208,16 @@ serve(async (req) => {
       if (!email || !name || !password) {
         return new Response(
           JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // The sign-in address is a relay.internal one no mailbox receives, so a
+      // new team member is not created without a real inbox on file.
+      const normalizedBackupEmail = normalizeBackupEmail(backupEmail)
+      if (!normalizedBackupEmail) {
+        return new Response(
+          JSON.stringify({ error: 'Bad Request: A valid backup email is required to add a user.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -332,6 +355,7 @@ serve(async (req) => {
         userTypeId,
         color,
         payRate,
+        backupEmail: normalizedBackupEmail,
         // Whoever just had a password set for them by someone else changes it on
         // first sign-in, whether the account is new or was repaired.
         forcePasswordChange: repaired

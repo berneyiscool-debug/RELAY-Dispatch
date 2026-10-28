@@ -19,6 +19,7 @@ import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptio
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan, fetchStockSyncJobs, xeroStockAttention, pushStockToXero, importXeroItems, retryStockSync } from '../utils/xero.js';
 import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
+import { normalizeBackupEmail } from '../../supabase/functions/invite-user/provision.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
@@ -1383,6 +1384,13 @@ export function renderSettings(container) {
         ` : ''}
       </div>
       <div class="form-group">
+        <label class="form-label">Backup Email${editId ? '' : ' <span style="color:var(--color-danger)">*</span>'}</label>
+        <input class="form-input" id="u-backup-email" type="email" value="${escapeHTML(t.backupEmail || '')}" placeholder="e.g. joshua@gmail.com" />
+        <div style="color: var(--text-tertiary); margin-top: 4px;">
+          A real inbox for this user. Their sign-in address above does not receive email.
+        </div>
+      </div>
+      <div class="form-group">
         <label class="form-label">${editId ? 'Reset Password (leave blank to keep current)' : 'Temporary Password (assigned for worker login)'}</label>
         <input class="form-input" id="u-password" type="password" placeholder="${editId ? '••••••••' : 'Min. 6 characters'}" />
       </div>
@@ -1453,7 +1461,9 @@ export function renderSettings(container) {
           const color = document.getElementById('u-color').value;
           const payRate = parseFloat(document.getElementById('u-payrate').value) || null;
           const password = document.getElementById('u-password')?.value || '';
-          
+          const backupEmailInput = document.getElementById('u-backup-email').value.trim();
+          const backupEmail = normalizeBackupEmail(backupEmailInput);
+
           if (!name) { showToast('Name required', 'error'); return; }
           // profiles.name is rendered across the tenant, so 038 rejects
           // markup and quotes at the database. Catching it here reports the
@@ -1461,7 +1471,11 @@ export function renderSettings(container) {
           if (/[<>"]/.test(name)) { showToast('Name cannot contain <, > or ".', 'error'); return; }
           if (!username) { showToast('Username required', 'error'); return; }
           if (username.includes('@')) { showToast('Username cannot contain @ symbol', 'error'); return; }
-          
+          // Required for a new user; an existing one added before it was
+          // required may stay without, but anything typed must be a real inbox.
+          if (!editId && !backupEmailInput) { showToast('Backup email required', 'error'); return; }
+          if (backupEmailInput && !backupEmail) { showToast('Enter a valid backup email address', 'error'); return; }
+
           if (!editId && !password) { showToast('Password required', 'error'); return; }
           if (password && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
           
@@ -1473,6 +1487,7 @@ export function renderSettings(container) {
 
           try {
             const updates = { name, username, role, userTypeId, color, payRate };
+            if (backupEmail) updates.backupEmail = backupEmail;
             if (password) {
               // Cloud accounts hand the raw password to Supabase Auth (the
               // invite-user function hashes it server-side); local accounts

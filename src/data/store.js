@@ -105,6 +105,7 @@ const TABLE_COLUMNS = {
     "color",
     "avatar_url",
     "pay_rate",
+    "backup_email",
     "force_password_change",
     "deactivated",
     "deactivated_at",
@@ -1900,6 +1901,10 @@ class DataStore {
       record.payRate = parseFloat(record.pay_rate);
       delete record.pay_rate;
     }
+    if (record.backup_email !== undefined) {
+      record.backupEmail = record.backup_email;
+      delete record.backup_email;
+    }
     if (record.avatar_url !== undefined) {
       record.avatarUrl = record.avatar_url;
       delete record.avatar_url;
@@ -2629,6 +2634,10 @@ class DataStore {
     if (record.payRate !== undefined) {
       record.pay_rate = record.payRate;
       delete record.payRate;
+    }
+    if (record.backupEmail !== undefined) {
+      record.backup_email = record.backupEmail;
+      delete record.backupEmail;
     }
     if (record.avatarUrl !== undefined) {
       record.avatar_url = record.avatarUrl;
@@ -3522,7 +3531,8 @@ class DataStore {
               role: item.role,
               userTypeId: item.userTypeId,
               color: item.color,
-              payRate: item.payRate
+              payRate: item.payRate,
+              backupEmail: item.backupEmail
             }
           });
 
@@ -3644,6 +3654,7 @@ class DataStore {
                                updates.userTypeId !== undefined ||
                                updates.color !== undefined ||
                                updates.payRate !== undefined ||
+                               updates.backupEmail !== undefined ||
                                updates.deactivated !== undefined;
 
           if (isAuthUpdate) {
@@ -3659,6 +3670,7 @@ class DataStore {
                 color: updates.color || previous.color,
                 payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
                 password: updates.password,
+                backupEmail: updates.backupEmail,
                 deactivated: updates.deactivated
               }
             });
