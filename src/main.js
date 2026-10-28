@@ -9,6 +9,9 @@ import './styles/settings.css';
 import './styles/docEditor.css';
 import './styles/documents.css';
 
+// First: lifts a password-reset token out of the URL before the router or the
+// Supabase client can see (and lose) it.
+import { RESET_ROUTE } from './utils/passwordRecovery.js';
 import { router } from './router.js';
 import { store } from './data/store.js';
 import { applyTheme, watchSystemTheme } from './utils/theme.js';
@@ -607,6 +610,9 @@ function lazy(load, name, mapParams) {
     load().then((mod) => mod[name](container, mapParams ? mapParams(params) : params));
 }
 
+// Choose a new password, from the link in a reset email
+router.register(RESET_ROUTE, renderPage(lazy(() => import('./pages/login/Login.js'), 'renderPasswordReset')));
+
 // Login
 router.register('/login', renderPage(async (container) => {
   const [{ renderLaunchScreen }, { handleCloudLoginSuccess }] = await Promise.all([
@@ -803,7 +809,7 @@ const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
 // demo (the pill menu) is how they reach the launch screen.
 const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
-const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
+const PUBLIC_PATHS = new Set(['/login', RESET_ROUTE, '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 // Set by the guard below; see the portal-scope note there.
 let portalRouteActive = false;
@@ -1046,7 +1052,8 @@ const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || 
 const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
 const isSetupHash = window.location.hash.startsWith('#/setup');
 const isLegalHash = ['#/terms', '#/privacy', '#/refunds', '#/acceptable-use'].some((h) => window.location.hash.startsWith(h));
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash) {
+const isResetHash = window.location.hash === `#${RESET_ROUTE}`;
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !isResetHash) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.
