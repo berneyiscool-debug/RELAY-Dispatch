@@ -142,6 +142,29 @@ function rateRowActionsHtml(id, isDefault) {
     </button>`;
 }
 
+// Save buttons sit in the breadcrumb action bar, where they stay in view
+// instead of at the bottom of a long tab. Call once the click handler is
+// bound. `key` lets a card that re-renders replace its own button rather than
+// add a second one. Without the bar (it isn't drawn) the button stays put.
+function dockSaveButton(btn, key = btn?.id) {
+  const bar = document.getElementById('breadcrumb-actions');
+  if (!btn || !bar) return;
+  const wrapper = btn.parentElement;
+  bar.querySelector(`[data-settings-save="${key}"]`)?.remove();
+  btn.dataset.settingsSave = key;
+  btn.classList.add('btn-sm');
+  btn.style.cssText = 'height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;';
+  btn.querySelector('.material-icons-outlined')?.style.setProperty('font-size', '13px');
+  if (btn.dataset.tooltip) btn.dataset.tooltipPos = 'bottom';
+  bar.appendChild(btn);
+  // The footer row it came from is left empty; drop it rather than leave a gap.
+  if (wrapper && !wrapper.children.length && !wrapper.textContent.trim()) wrapper.remove();
+}
+
+function clearDockedSaveButtons() {
+  document.querySelectorAll('#breadcrumb-actions [data-settings-save]').forEach(b => b.remove());
+}
+
 export function renderSettings(container) {
   const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
   const tabParam = urlParams.get('tab');
@@ -221,6 +244,7 @@ export function renderSettings(container) {
 
   function renderContent() {
     const tc = container.querySelector('#settings-content');
+    clearDockedSaveButtons();
 
     // Demo mode: these tabs act on the real account (its storage, backups and
     // data management), so they stay closed until the user exits.
@@ -433,8 +457,10 @@ export function renderSettings(container) {
 
 
 
-        tc.querySelector('#btn-save-company').addEventListener('click', async () => {
-          const saveBtn = tc.querySelector('#btn-save-company');
+        const companySaveBtn = tc.querySelector('#btn-save-company');
+        dockSaveButton(companySaveBtn);
+        companySaveBtn.addEventListener('click', async () => {
+          const saveBtn = companySaveBtn;
           const originalHtml = saveBtn.innerHTML;
           saveBtn.disabled = true;
           saveBtn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving Changes...';
@@ -696,8 +722,10 @@ export function renderSettings(container) {
         </div>
       `;
 
-      tc.querySelector('#btn-save-portal-settings').addEventListener('click', async () => {
-        const btn = tc.querySelector('#btn-save-portal-settings');
+      const portalSaveBtn = tc.querySelector('#btn-save-portal-settings');
+      dockSaveButton(portalSaveBtn);
+      portalSaveBtn.addEventListener('click', async () => {
+        const btn = portalSaveBtn;
         const origHtml = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
@@ -743,8 +771,10 @@ export function renderSettings(container) {
         </div>
       `;
 
-      tc.querySelector('#btn-save-contractor-settings').addEventListener('click', async () => {
-        const btn = tc.querySelector('#btn-save-contractor-settings');
+      const contractorSaveBtn = tc.querySelector('#btn-save-contractor-settings');
+      dockSaveButton(contractorSaveBtn);
+      contractorSaveBtn.addEventListener('click', async () => {
+        const btn = contractorSaveBtn;
         const origHtml = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
@@ -2137,6 +2167,8 @@ export function renderSettings(container) {
     tc.innerHTML = `
       <!-- Cards never go narrower than 520px: the tier table below needs ~480px. -->
       <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(520px, 1fr)); gap:24px; align-items:start;">
+        <div id="kit-types-section" style="grid-column:1/-1"></div>
+
         <div class="card" style="margin-bottom:0">
           <div class="card-header"><h4 style="margin:0">Markup Configuration</h4></div>
           <div class="card-body">
@@ -2234,18 +2266,15 @@ export function renderSettings(container) {
           <button class="btn btn-primary" id="btn-save-materials" data-tooltip="Save material markup rules and categories" data-tooltip-pos="top">Save Material Settings</button>
         </div>
 
-        <div style="margin-top:40px; padding-top:24px; border-top:1px solid var(--border-color); grid-column:1/-1">
-          <div id="kit-types-section"></div>
-        </div>
-
       </div>
     `;
 
     renderKitTypes(tc.querySelector('#kit-types-section'));
+    const materialsSaveBtn = tc.querySelector('#btn-save-materials');
 
     // --- Handlers ---
     const save = async () => {
-      const btn = tc.querySelector('#btn-save-materials');
+      const btn = materialsSaveBtn;
       const origHtml = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
@@ -2333,7 +2362,8 @@ export function renderSettings(container) {
       btn.addEventListener('click', () => btn.closest('.badge').remove());
     });
 
-    tc.querySelector('#btn-save-materials').addEventListener('click', save);
+    materialsSaveBtn.addEventListener('click', save);
+    dockSaveButton(materialsSaveBtn);
   }
 
   // Stock-location registry (warehouses, vans, utes) — the name collides with file
@@ -3202,7 +3232,9 @@ export function renderSettings(container) {
       catch (err) { showToast(err.message || 'Could not refresh', 'error'); e.currentTarget.disabled = false; }
     });
 
-    tc.querySelector('#pay-save')?.addEventListener('click', async () => {
+    const paySaveBtn = tc.querySelector('#pay-save');
+    dockSaveButton(paySaveBtn);
+    paySaveBtn?.addEventListener('click', async () => {
       try {
         const s = store.getSettings() || {};
         // Currency is not editable — it follows the connected Stripe account, so the
@@ -3474,7 +3506,9 @@ export function renderSettings(container) {
 
     tc.querySelector('#open-email-studio')?.addEventListener('click', () => router.navigate('/settings/email-templates'));
 
-    tc.querySelector('#em-save')?.addEventListener('click', async () => {
+    const emailSaveBtn = tc.querySelector('#em-save');
+    dockSaveButton(emailSaveBtn);
+    emailSaveBtn?.addEventListener('click', async () => {
       try {
         await collectAndSave();
         showToast('Email settings saved', 'success');
@@ -4849,12 +4883,14 @@ export function renderSettings(container) {
               </div>
               ${warnings.length ? `<ul style="margin:16px 0 0;padding-left:18px;color:var(--color-warning);">${warnings.map(w => `<li>${escapeHTML(w)}</li>`).join('')}</ul>` : ''}
               <div style="margin-top:18px;">
-                <button class="btn btn-primary" id="xero-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save</button>
+                <button class="btn btn-primary" id="xero-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save Xero Defaults</button>
               </div>
             </div>
           </div>`;
 
-        defaultsEl.querySelector('#xero-save')?.addEventListener('click', async (e) => {
+        const xeroSaveBtn = defaultsEl.querySelector('#xero-save');
+        dockSaveButton(xeroSaveBtn);
+        xeroSaveBtn?.addEventListener('click', async (e) => {
           const btn = e.currentTarget;
           btn.disabled = true;
           try {
@@ -4964,7 +5000,7 @@ export function renderSettings(container) {
                 <a href="#/settings?tab=cost_centers" style="color:var(--color-primary);">Add a cost center</a>
               </div>`}
             <div style="padding:14px 16px;border-top:1px solid var(--border-color);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <button class="btn btn-primary" id="xero-cc-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save</button>
+              <button class="btn btn-primary" id="xero-cc-save"><span class="material-icons-outlined" aria-hidden="true">save</span> Save Tracking</button>
               ${centers.length && tagging ? `<button class="btn btn-secondary" id="xero-cc-match"><span class="material-icons-outlined" aria-hidden="true">sync</span> Match with Xero now</button>` : ''}
             </div>
           </div>`;
@@ -5001,7 +5037,9 @@ export function renderSettings(container) {
           return changed;
         };
 
-        ccEl.querySelector('#xero-cc-save')?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
+        const xeroCcSaveBtn = ccEl.querySelector('#xero-cc-save');
+        dockSaveButton(xeroCcSaveBtn);
+        xeroCcSaveBtn?.addEventListener('click', (e) => xeroBusy(e.currentTarget, async () => {
           const changed = await save();
           showToast(changed ? 'Saved. Xero picks this up on the next sync.' : 'No changes to save', changed ? 'success' : 'info');
           drawCostCenters();
@@ -5085,8 +5123,10 @@ export function renderSettings(container) {
       btn.addEventListener('click', () => btn.closest('.badge').remove());
     });
 
-    tc.querySelector('#btn-save-suppliers').addEventListener('click', async () => {
-      const btn = tc.querySelector('#btn-save-suppliers');
+    const suppliersSaveBtn = tc.querySelector('#btn-save-suppliers');
+    dockSaveButton(suppliersSaveBtn);
+    suppliersSaveBtn.addEventListener('click', async () => {
+      const btn = suppliersSaveBtn;
       const origHtml = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
