@@ -132,6 +132,32 @@ export function viewDocumentInNewTab(doc) {
   return true;
 }
 
+/**
+ * Open the print dialog for a rendered record straight from the current page,
+ * without the viewer tab. Returns false when there is nothing to print.
+ */
+export function printDocument(doc) {
+  const source = isRendered(doc) ? resolveRenderable(doc.render) : null;
+  if (!source) return false;
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
+  frame.onload = async () => {
+    const win = frame.contentWindow;
+    // The title names the file when the user picks "Save as PDF".
+    if (doc.name) win.document.title = String(doc.name).replace(/\.pdf$/i, '');
+    try { await win.document.fonts.ready; } catch { /* print with fallback fonts */ }
+    win.addEventListener('afterprint', () => frame.remove());
+    win.focus();
+    win.print();
+    // Browsers that never fire afterprint still drop the frame eventually.
+    setTimeout(() => frame.remove(), 60000);
+  };
+  frame.srcdoc = printableDocumentHtml(source);
+  document.body.appendChild(frame);
+  return true;
+}
+
 /** Open the record the entry belongs to in a new tab. */
 export function openRecordInNewTab(doc) {
   const path = recordPath(doc);

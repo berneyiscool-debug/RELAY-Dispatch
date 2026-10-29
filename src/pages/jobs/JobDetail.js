@@ -32,6 +32,7 @@ import {
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
+import { printDocument } from '../../utils/documentActions.js';
 import { quoteForJob, planQuotePurchasing, groupIntoPurchaseOrders, isActiveSupplier, LINE_ISSUES } from '../../utils/quotePurchasing.js';
 import { statCard } from '../../components/StatCard.js';
 import { entityLink } from '../../components/EntityLink.js';
@@ -4210,7 +4211,7 @@ export function renderJobDetail(container, { id, tab, form }) {
             </div>
             <div class="card-body" style="padding:0">
               <table class="data-table">
-                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
+                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th><th style="width:48px"></th></tr></thead>
                 <tbody>
                   ${pos.length ? pos.map(p => `
                     <tr>
@@ -4219,8 +4220,9 @@ export function renderJobDetail(container, { id, tab, form }) {
                       <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
                       <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
                       <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
+                      <td style="text-align:right">${p.status === 'Cancelled' ? '' : `<button class="btn btn-ghost btn-sm btn-print-job-po" data-po-id="${escapeHTML(p.id)}" data-tooltip="${p.status === 'Draft' ? 'Issue and print' : 'Print'}" data-tooltip-pos="left" aria-label="Print ${escapeHTML(p.number || 'PO')}"><span class="material-icons-outlined" style="font-size:18px">print</span></button>`}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -4666,6 +4668,33 @@ export function renderJobDetail(container, { id, tab, form }) {
           ]
         });
       });
+
+      // A printed PO is the order the supplier works from, so a draft is issued first.
+      tc.querySelectorAll('.btn-print-job-po').forEach(btn => btn.addEventListener('click', async () => {
+        const po = store.getById('purchaseOrders', btn.dataset.poId);
+        if (!po) return;
+        if (po.status === 'Draft') {
+          if (!(po.lineItems || []).length) {
+            showToast(`Add items to ${po.number} before printing it`, 'error');
+            return;
+          }
+          const ok = await showConfirm(
+            `${po.number} is still a draft. Issue it now so the printed copy is the live order? Issued POs can no longer be edited.`,
+            { title: 'Issue and print', confirmLabel: 'Issue & Print' }
+          );
+          if (!ok) return;
+          store.update('purchaseOrders', po.id, { status: 'Issued' });
+          logActivity({
+            type: 'purchase_order',
+            text: `Purchase order ${po.number} issued to ${po.supplierName} (printed)`,
+            recordType: 'purchaseOrder',
+            recordId: po.id,
+            status: 'Issued',
+          });
+          renderTabContent();
+        }
+        printDocument({ name: po.number, render: { kind: 'po', id: po.id } });
+      }));
 
       tc.querySelector('#btn-pos-from-quote')?.addEventListener('click', () => {
         const quote = quoteForJob(job, store.getAll('quotes'));
