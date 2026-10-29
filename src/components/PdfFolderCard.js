@@ -27,7 +27,10 @@ export function renderPdfFolderCard(host) {
           <span class="material-icons-outlined" style="color:var(--text-tertiary);">folder_off</span>
           <span>No folder picked. PDFs go to your Downloads folder.</span>
         </div>
-        <div><button class="btn btn-primary" id="btn-pdf-folder-pick"><span class="material-icons-outlined">folder</span> Choose PDF Folder…</button></div>`;
+        <div><button class="btn btn-primary" id="btn-pdf-folder-pick"><span class="material-icons-outlined">folder</span> Choose PDF Folder…</button></div>
+        <p class="text-tertiary" style="margin:0; font-size:12px; line-height:1.5;">
+          Pick a folder <em>inside</em> Documents, Desktop or OneDrive (for example <code>Documents\\RELAY PDFs</code>). Browsers don't let apps use Desktop, Documents, Downloads or your user folder themselves.
+        </p>`;
     } else {
       const needsAccess = status.permission !== 'granted';
       body = `
@@ -60,8 +63,13 @@ export function renderPdfFolderCard(host) {
 
     host.querySelector('#btn-pdf-folder-pick')?.addEventListener('click', async () => {
       try {
-        if (await choosePdfFolder()) showToast('PDF folder set', 'success');
+        if (await choosePdfFolder()) {
+          showToast('PDF folder set', 'success');
+        } else {
+          showToast("No folder was set. Your browser won't let apps use Desktop, Documents, Downloads or your user folder directly. Make a folder inside one of them (e.g. Documents\\RELAY PDFs) and pick that.", 'info', 9000);
+        }
       } catch (err) {
+        console.error('Choosing the PDF folder failed:', err);
         showToast(`Couldn't use that folder: ${err.message || err}`, 'error');
       }
       render();

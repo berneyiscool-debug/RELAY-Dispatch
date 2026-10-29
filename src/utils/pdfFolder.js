@@ -57,6 +57,21 @@ function request(req) {
   });
 }
 
+// Resolves true once the write is committed, so a failed save is not silent.
+function putHandle(cs, handle) {
+  return new Promise((resolve) => {
+    try {
+      const req = cs.put({ key: CONFIG_KEY, value: handle });
+      req.onerror = () => { console.warn('Saving the PDF folder failed:', req.error); resolve(false); };
+      req.transaction.oncomplete = () => resolve(true);
+      req.transaction.onabort = () => resolve(false);
+    } catch (err) {
+      console.warn('Saving the PDF folder failed:', err);
+      resolve(false);
+    }
+  });
+}
+
 export function pdfFolderSupported() {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
 }
@@ -92,13 +107,16 @@ export async function choosePdfFolder() {
   try {
     handle = await window.showDirectoryPicker({ id: 'relay-pdfs', mode: 'readwrite' });
   } catch (err) {
+    // Also what the browser reports when it refuses a protected folder.
     if (err && err.name === 'AbortError') return false;
     throw err;
   }
   folderHandle = handle;
   loaded = true;
   const cs = await configStore('readwrite');
-  if (cs) await request(cs.put({ key: CONFIG_KEY, value: handle }));
+  if (!cs || !(await putHandle(cs, handle))) {
+    throw new Error('the browser would not remember the folder, so it only lasts until the app is closed');
+  }
   return true;
 }
 
