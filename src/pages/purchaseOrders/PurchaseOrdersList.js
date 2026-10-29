@@ -10,6 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showPurchaseOrderDrawer } from '../../utils/quickModals.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { savePurchaseOrderPdfs } from '../../utils/poPdf.js';
 
 export function renderPurchaseOrdersList(container) {
   const pos = store.getAll('purchaseOrders');
@@ -61,6 +62,11 @@ export function renderPurchaseOrdersList(container) {
         selectedIds,
         onClear: () => table.clearSelection(),
         actions: [
+          {
+            label: 'Save each PO as a PDF',
+            icon: 'picture_as_pdf',
+            onClick: (ids) => savePurchaseOrderPdfs(ids)
+          },
           {
             label: 'Mark Received',
             icon: 'inventory',

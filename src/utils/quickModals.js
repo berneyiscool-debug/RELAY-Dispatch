@@ -520,40 +520,52 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
     { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }
   ];
 
+  // Saves the drawer's edits and issues the PO. Returns false when the form is incomplete.
+  function issueFromDrawer() {
+    const suppId = content.querySelector('#qa-po-supplier').value;
+    const selectedJobId = content.querySelector('#qa-po-job').value;
+
+    if (!suppId) { showToast('Supplier is required', 'error'); return false; }
+    if (poItems.length === 0) { showToast('Please add at least one item', 'error'); return false; }
+
+    const supplier = suppliers.find(s => s.id === suppId);
+    const job = jobs.find(j => j.id === selectedJobId);
+
+    const poData = {
+      number: po.number || store.getNextNumber('PO-', 'purchaseOrders'),
+      supplierId: suppId,
+      supplierName: supplier?.name || supplier?.company || 'Unknown',
+      jobId: selectedJobId || null,
+      jobNumber: job?.number || '',
+      issueDate: content.querySelector('#qa-po-date').value,
+      notes: content.querySelector('#qa-po-notes').value,
+      total: poItems.reduce((acc, cur) => acc + ((cur.qty || cur.quantity || 0) * (cur.cost || cur.unitCost || 0)), 0),
+      status: 'Issued',
+      lineItems: poItems
+    };
+
+    if (isNew) store.create('purchaseOrders', poData);
+    else store.update('purchaseOrders', id, poData);
+
+    showToast(`Purchase Order ${poData.number} issued`, 'success');
+    if (onSave) onSave();
+    return true;
+  }
+
+  if (!isNew) {
+    footerActions.push({
+      label: 'Save PDF',
+      className: 'btn-secondary',
+      // As last saved: unsaved edits in the drawer are not in the PDF.
+      onClick: () => import('./poPdf.js').then(({ savePurchaseOrderPdfs }) => savePurchaseOrderPdfs([id]))
+    });
+  }
+
   if (isNew || po.status === 'Draft') {
     footerActions.push({
       label: isNew ? 'Create & Issue PO' : 'Update & Issue PO',
       className: 'btn-primary',
-      onClick: (close) => {
-        const suppId = content.querySelector('#qa-po-supplier').value;
-        const selectedJobId = content.querySelector('#qa-po-job').value;
-        
-        if (!suppId) { showToast('Supplier is required', 'error'); return; }
-        if (poItems.length === 0) { showToast('Please add at least one item', 'error'); return; }
-
-        const supplier = suppliers.find(s => s.id === suppId);
-        const job = jobs.find(j => j.id === selectedJobId);
-
-        const poData = {
-          number: po.number || store.getNextNumber('PO-', 'purchaseOrders'),
-          supplierId: suppId,
-          supplierName: supplier?.name || supplier?.company || 'Unknown',
-          jobId: selectedJobId || null,
-          jobNumber: job?.number || '',
-          issueDate: content.querySelector('#qa-po-date').value,
-          notes: content.querySelector('#qa-po-notes').value,
-          total: poItems.reduce((acc, cur) => acc + ((cur.qty || cur.quantity || 0) * (cur.cost || cur.unitCost || 0)), 0),
-          status: 'Issued',
-          lineItems: poItems
-        };
-
-        if (isNew) store.create('purchaseOrders', poData);
-        else store.update('purchaseOrders', id, poData);
-
-        showToast(`Purchase Order ${poData.number} issued`, 'success');
-        if (onSave) onSave();
-        close();
-      }
+      onClick: (close) => { if (issueFromDrawer()) close(); }
     });
   } else if (po.status === 'Issued') {
      footerActions.push({

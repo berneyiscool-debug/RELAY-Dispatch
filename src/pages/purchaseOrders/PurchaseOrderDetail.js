@@ -6,8 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
-import { viewDocumentInNewTab, downloadDocument, printDocument } from '../../utils/documentActions.js';
-import { showConfirm } from '../../utils/confirmDialog.js';
+import { viewDocumentInNewTab, downloadDocument } from '../../utils/documentActions.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { entityLink } from '../../components/EntityLink.js';
@@ -67,7 +66,6 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
           ${!isNew ? `
-            <button class="btn btn-secondary" id="btn-print-po" data-tooltip="${po.status === 'Draft' ? 'Issue this PO and print it to take to the supplier' : 'Print the purchase order to take to the supplier'}" data-tooltip-pos="bottom"><span class="material-icons-outlined">print</span> Print</button>
             <button class="btn btn-secondary" id="btn-view-po" data-tooltip="Open the printable purchase order in a new tab (as last saved)" data-tooltip-pos="bottom"><span class="material-icons-outlined">visibility</span> View</button>
             <button class="btn btn-secondary" id="btn-download-po" data-tooltip="Download the purchase order as a PDF (as last saved)" data-tooltip-pos="bottom"><span class="material-icons-outlined">download</span> PDF</button>
           ` : ''}
@@ -215,22 +213,6 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
       savePO();
     });
 
-    // A printed PO is often the order itself (handed over the supplier's
-    // counter), so printing a draft issues it first, saving any edits on screen.
-    container.querySelector('#btn-print-po')?.addEventListener('click', async () => {
-      if (po.status === 'Draft') {
-        if (po.lineItems.length === 0) {
-          showToast('Add items before printing this PO', 'error');
-          return;
-        }
-        const ok = await showConfirm(
-          `${po.number} is still a draft. Issue it now so the printed copy is the live order? Issued POs can no longer be edited.`,
-          { title: 'Issue and print', confirmLabel: 'Issue & Print' }
-        );
-        if (!ok || !savePO('Issued')) return;
-      }
-      if (!printDocument({ ...poDoc(), name: po.number })) showToast('Save the PO before printing it.', 'error');
-    });
 
     container.querySelector('#btn-issue')?.addEventListener('click', () => {
       if (po.lineItems.length === 0) {

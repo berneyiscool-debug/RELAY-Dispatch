@@ -377,9 +377,11 @@ function openPdfDialog(activeId, r, lines) {
         const sections = selectBlocks(specs, selection);
         if (!sections.length) { error.style.display = ''; return; }
         try {
+          const { preparePdfFolder, savePdf } = await import('../../utils/pdfFolder.js');
+          await preparePdfFolder();
           const { buildReportPdf } = await import('../../utils/reportPdf.js');
           const { doc, filename } = await buildReportPdf({ company: companyName, rangeLabel: rangeText(r.range), filterLines: lines, sections });
-          doc.save(filename);
+          await savePdf(doc.output('blob'), filename, 'report');
           close();
         } catch (err) {
           console.error('Report PDF failed:', err);
