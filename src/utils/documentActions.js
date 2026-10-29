@@ -12,6 +12,7 @@ import { store } from '../data/store.js';
 import { generateDocument, getPrintStyles } from '../components/PrintPreview.js';
 import { fontFaceCss } from './fonts.js';
 import { demoTabUrl } from './demoSession.js';
+import { preparePdfFolder, savePdf } from './pdfFolder.js';
 
 // Records that the print layout can draw as a document. A browser entry opts in
 // with `render: { kind, id }`.
@@ -224,16 +225,26 @@ export async function documentFile(doc) {
   return new File([blob], filename, { type: blob.type || doc.type || 'application/octet-stream' });
 }
 
+function isPdfFile(doc) {
+  return /\.pdf$/i.test(doc.name || '') || /pdf/i.test(doc.type || '');
+}
+
 /**
  * Save the document to the computer. Invoices, quotes and forms are rendered
- * to a PDF on the spot; files are saved as they are.
+ * to a PDF on the spot; files are saved as they are. PDFs go into the PDF
+ * folder picked in Settings (sorted by kind) when there is one.
+ * @param {{ quiet?: boolean }} [opts] quiet skips the "Saved to…" toast
  * @returns {Promise<void>} rejects with a user-readable message on failure
  */
-export async function downloadDocument(doc) {
+export async function downloadDocument(doc, { quiet = false } = {}) {
   if (!canDownload(doc)) throw new Error('This item has no file to download.');
+  // Ask for folder access while the click still counts as a user gesture.
+  const pdf = isRendered(doc) || isPdfFile(doc);
+  if (pdf) await preparePdfFolder();
   try {
     const { blob, filename } = await readDocumentBlob(doc);
-    saveBlob(blob, filename);
+    if (pdf) await savePdf(blob, filename, isRendered(doc) ? doc.render.kind : 'document', { quiet });
+    else saveBlob(blob, filename);
   } catch (err) {
     if (!(err instanceof UnreadableUrlError)) throw err;
     // Hand the URL to the browser directly: it still downloads same-origin

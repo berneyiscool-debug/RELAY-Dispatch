@@ -213,6 +213,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
       savePO();
     });
 
+
     container.querySelector('#btn-issue')?.addEventListener('click', () => {
       if (po.lineItems.length === 0) {
         showToast('Cannot issue a PO with no items', 'error');
@@ -342,13 +343,13 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
   function savePO(newStatus = null) {
     if (po.status !== 'Draft') {
       showToast('Cannot modify an issued or received PO', 'error');
-      return;
+      return false;
     }
 
     const form = container.querySelector('#po-form');
     if (!form.checkValidity()) {
       form.reportValidity();
-      return;
+      return false;
     }
     const data = Object.fromEntries(new FormData(form));
     
@@ -395,8 +396,12 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     } else {
       store.update('purchaseOrders', id, poData);
       showToast(`PO ${newStatus === 'Issued' ? 'issued' : 'updated'} successfully`, 'success');
-      if (newStatus === 'Issued') render(); // Re-render to disable form
+      if (newStatus === 'Issued') {
+        po = store.getById('purchaseOrders', id) || { ...po, ...poData };
+        render(); // Re-render to disable form
+      }
     }
+    return true;
   }
 
   render();
