@@ -31,6 +31,7 @@ import {
   readProfileForUser,
   staffProfileValues,
   ensureProfileForUser,
+  normalizeBackupEmail,
 } from '../functions/invite-user/provision.js';
 
 import {
@@ -315,6 +316,7 @@ describe('the profile row an invite writes', () => {
     userTypeId: null,
     color: null,
     payRate: null,
+    backupEmail: 'ada@example.com',
     forcePasswordChange: false,
   };
 
@@ -330,6 +332,8 @@ describe('the profile row an invite writes', () => {
       user_type_id: `${COMPANY_ID}_ut_tech`,
       color: '#1B6DE0',
       pay_rate: 0,
+      backup_email: 'ada@example.com',
+      backup_email_confirmation_required: true,
       force_password_change: false,
     });
   });
@@ -363,6 +367,8 @@ describe('the profile row an invite writes', () => {
       pay_rate: 30,
       user_type_id: `${COMPANY_ID}_ut_tech`,
       username: 'ada',
+      backup_email: 'ada@example.com',
+      backup_email_confirmation_required: true,
       force_password_change: false,
     });
   });
@@ -371,6 +377,28 @@ describe('the profile row an invite writes', () => {
     assert.strictEqual(staffProfileValues(input).create.force_password_change, false);
     assert.strictEqual(staffProfileValues({ ...input, forcePasswordChange: true }).create.force_password_change, true);
     assert.strictEqual(staffProfileValues({ ...input, forcePasswordChange: true }).updates.force_password_change, true);
+  });
+});
+
+describe('the backup email an administrator records', () => {
+  // Staff sign in with a relay.internal address no mailbox receives, so the
+  // backup email is the only real inbox on file for them.
+  test('a real address is kept, trimmed and lowercased', () => {
+    assert.strictEqual(normalizeBackupEmail('  Ada.Lovelace@Example.com '), 'ada.lovelace@example.com');
+  });
+
+  test('a missing or malformed address is refused', () => {
+    for (const value of [undefined, null, '', '   ', 'ada', 'ada@example', '@example.com', 'ada @example.com', 'a@b@example.com']) {
+      assert.strictEqual(normalizeBackupEmail(value), null, String(value));
+    }
+  });
+
+  test('a staff sign-in address cannot stand in for a real inbox', () => {
+    assert.strictEqual(normalizeBackupEmail('ada@acme.relay.internal'), null);
+  });
+
+  test('an address longer than email allows is refused', () => {
+    assert.strictEqual(normalizeBackupEmail(`${'a'.repeat(250)}@example.com`), null);
   });
 });
 
