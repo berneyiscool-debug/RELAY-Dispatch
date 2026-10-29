@@ -45,6 +45,20 @@ export function isCompanyStaffEmail(email, emailSlug) {
   return address.endsWith(`@${slug}.${RELAY_STAFF_DOMAIN}`);
 }
 
+// A team member signs in with a `<username>@<slug>.relay.internal` address,
+// which no mailbox receives. The backup email is the real inbox the
+// administrator records for them when adding them, so it must be a deliverable
+// address and never another staff address. Returns the address trimmed and
+// lowercased, or null when it is not usable. The client form imports this too,
+// so both sides apply the same rule.
+export function normalizeBackupEmail(value) {
+  const address = String(value == null ? '' : value).trim().toLowerCase();
+  if (!address || address.length > 254) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return null;
+  if (address.endsWith(`.${RELAY_STAFF_DOMAIN}`)) return null;
+  return address;
+}
+
 // Mirrors the role coercion in handle_new_user_profile(): a profile written by
 // hand here must not be able to hold a role the trigger would have rejected.
 // Only an administrator (the company's single `admin` profile) may exist, so
@@ -119,6 +133,7 @@ export function staffProfileValues(input) {
     userTypeId,
     color,
     payRate,
+    backupEmail,
     forcePasswordChange,
   } = input;
 
@@ -136,6 +151,10 @@ export function staffProfileValues(input) {
       user_type_id: techTypeId,
       color: color || '#1B6DE0',
       pay_rate: payRate || 0,
+      backup_email: backupEmail || null,
+      // Every user added from here on confirms their backup email before
+      // signing in (20261028100000_backup_email_confirmation.sql).
+      backup_email_confirmation_required: true,
       force_password_change: forceChange,
     },
     updates: {
@@ -143,6 +162,8 @@ export function staffProfileValues(input) {
       pay_rate: payRate || 0,
       user_type_id: techTypeId,
       username,
+      backup_email: backupEmail || null,
+      backup_email_confirmation_required: true,
       force_password_change: forceChange,
     },
   };
