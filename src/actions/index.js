@@ -15,6 +15,7 @@ import './customers.js';
 import './leads.js';
 import './quotes.js';
 import './jobs.js';
+import './recurring.js';
 import './scheduling.js';
 import './timeMaterials.js';
 import './invoices.js';
