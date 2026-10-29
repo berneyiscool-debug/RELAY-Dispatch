@@ -32,6 +32,7 @@ import {
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { deductStockFromLocation } from '../../utils/storageLocations.js';
+import { savePurchaseOrderPdfs } from '../../utils/poPdf.js';
 import { quoteForJob, planQuotePurchasing, groupIntoPurchaseOrders, isActiveSupplier, LINE_ISSUES } from '../../utils/quotePurchasing.js';
 import { statCard } from '../../components/StatCard.js';
 import { entityLink } from '../../components/EntityLink.js';
@@ -4210,7 +4211,7 @@ export function renderJobDetail(container, { id, tab, form }) {
             </div>
             <div class="card-body" style="padding:0">
               <table class="data-table">
-                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
+                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th><th style="width:48px"></th></tr></thead>
                 <tbody>
                   ${pos.length ? pos.map(p => `
                     <tr>
@@ -4219,8 +4220,9 @@ export function renderJobDetail(container, { id, tab, form }) {
                       <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
                       <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
                       <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
+                      <td style="text-align:right"><button class="btn btn-ghost btn-sm btn-pdf-job-po" data-po-id="${escapeHTML(p.id)}" data-tooltip="Save PDF" data-tooltip-pos="left" aria-label="Save ${escapeHTML(p.number || 'PO')} as a PDF"><span class="material-icons-outlined" style="font-size:18px">picture_as_pdf</span></button></td>
                     </tr>
-                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -4666,6 +4668,10 @@ export function renderJobDetail(container, { id, tab, form }) {
           ]
         });
       });
+
+      tc.querySelectorAll('.btn-pdf-job-po').forEach(btn => btn.addEventListener('click', () => {
+        savePurchaseOrderPdfs([btn.dataset.poId]);
+      }));
 
       tc.querySelector('#btn-pos-from-quote')?.addEventListener('click', () => {
         const quote = quoteForJob(job, store.getAll('quotes'));

@@ -32,6 +32,7 @@ import { setSessionUser, clearSessionUser } from './auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
 import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_SETTINGS_TABS } from '../components/CloudUpgrade.js';
 import { getSessionUser } from './auth/session.js';
+import { renderPdfFolderCard } from '../components/PdfFolderCard.js';
 // Stripe Checkout and the billing portal run in the system browser, so the
 // desktop app sits in the background while the user pays. The company row is
 // cached at sign-in with no realtime updates, so the billing tab re-checks the
@@ -265,6 +266,12 @@ export function renderSettings(container) {
           </div>
         </div>`;
       tc.querySelector('#btn-exit-demo-settings')?.addEventListener('click', exitDemoMode);
+      // The PDF folder belongs to this computer, not the account, so it stays usable.
+      if (activeTab === 'local_storage') {
+        const pdfHost = document.createElement('div');
+        tc.prepend(pdfHost);
+        renderPdfFolderCard(pdfHost);
+      }
       return;
     }
 
@@ -3748,12 +3755,17 @@ export function renderSettings(container) {
   // a folder here, cloud accounts mirror their records here as JSON.
   // currentUser is a renderSettings local, so it is passed in (same as renderBillingTab).
   function renderLocalStorageTab(tc, currentUser) {
+    // Each card writes its own host element, so each card owns a host.
+    tc.replaceChildren();
+    const pdfHost = document.createElement('div');
+    tc.append(pdfHost);
+    renderPdfFolderCard(pdfHost);
     if (!isLocalAccount()) {
-      renderLocalBackup(tc, currentUser);
+      const backupHost = document.createElement('div');
+      tc.append(backupHost);
+      renderLocalBackup(backupHost, currentUser);
       return;
     }
-    // renderLocalFolderSync writes its host element, so each card owns a host.
-    tc.replaceChildren();
     const folderHost = document.createElement('div');
     const securityHost = document.createElement('div');
     tc.append(folderHost, securityHost);

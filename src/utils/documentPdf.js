@@ -63,7 +63,7 @@ async function waitForFrame(frame, timeoutMs = 8000) {
  * @param {'quote'|'invoice'|'po'|'form'|'tasklist'} type
  * @param {object} data  the quote/invoice record, as passed to generateDocument
  * @param {{filename?: string}} [opts]
- * @returns {Promise<{filename: string, base64: string, bytes: number}>}
+ * @returns {Promise<{filename: string, base64: string, blob: Blob, bytes: number}>}
  */
 export async function renderDocumentPdf(type, data, opts = {}) {
   if (typeof document === 'undefined') throw new Error('PDF rendering needs a browser.');
@@ -131,7 +131,7 @@ export async function renderDocumentPdf(type, data, opts = {}) {
     const filename = opts.filename
       || `${safeName(label)}_${safeName(data.number || data.id || 'document')}.pdf`;
 
-    return { filename, base64, bytes: Math.floor(base64.length * 0.75) };
+    return { filename, base64, blob: pdf.output('blob'), bytes: Math.floor(base64.length * 0.75) };
   } finally {
     frame.remove();
   }

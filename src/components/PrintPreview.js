@@ -35,8 +35,11 @@ export function showPrintPreview({ type, data }) {
     <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} Preview — ${escapeHTML(data.number)}</span>
     <div style="display:flex;gap:8px;align-items:center">
       ${exportButtonsHtml}
-      <button class="btn btn-primary btn-sm" id="btn-print-pdf" style="background:#10B981;border-color:#10B981">
-        <span class="material-icons-outlined" style="font-size:16px">print</span> Print / Save PDF
+      <button class="btn btn-secondary btn-sm" id="btn-print-pdf" style="background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.2)">
+        <span class="material-icons-outlined" style="font-size:16px">print</span> Print
+      </button>
+      <button class="btn btn-primary btn-sm" id="btn-save-pdf" style="background:#10B981;border-color:#10B981">
+        <span class="material-icons-outlined" style="font-size:16px">picture_as_pdf</span> Save PDF
       </button>
       <button class="btn btn-ghost btn-sm" id="btn-close-preview" style="color:white">
         <span class="material-icons-outlined" style="font-size:18px">close</span>
@@ -82,6 +85,26 @@ export function showPrintPreview({ type, data }) {
       exportFormAsJSON(data);
     });
   }
+
+  // Save PDF: into the PDF folder from Settings when there is one, else a download.
+  toolbar.querySelector('#btn-save-pdf').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const label = type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form';
+    try {
+      const { preparePdfFolder, savePdf } = await import('../utils/pdfFolder.js');
+      await preparePdfFolder();
+      const { renderDocumentPdf } = await import('../utils/documentPdf.js');
+      const filename = `${label} ${String(data.number || data.id || '').replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
+      const pdf = await renderDocumentPdf(type, data, { filename });
+      await savePdf(pdf.blob, pdf.filename, type);
+    } catch (err) {
+      console.error('Save PDF failed:', err);
+      import('./Notifications.js').then(({ showToast }) => showToast("Couldn't create the PDF. Try again.", 'error'));
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // Print
   toolbar.querySelector('#btn-print-pdf').addEventListener('click', () => {
