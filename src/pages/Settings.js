@@ -19,6 +19,8 @@ import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptio
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { xeroEnabled, xeroSettings, xeroDefaultsWarnings, xeroReturnMessage, saveXeroDefaults, startXeroConnect, getXeroStatus, selectXeroTenant, disconnectXero, retryXeroSync, listXeroAccounts, cachedXeroAccounts, clearXeroAccountsCache, fetchInvoiceSyncJobs, xeroAttention, pushToXero, retryInvoiceSync, syncXeroTracking, costCenterTrackingPlan, fetchStockSyncJobs, xeroStockAttention, pushStockToXero, importXeroItems, retryStockSync } from '../utils/xero.js';
 import { DEFAULT_TRACKING_CATEGORY } from '../../supabase/functions/_xero/tracking.js';
+import { normalizeBackupEmail } from '../../supabase/functions/invite-user/provision.js';
+import { backupEmailStatus, resendBackupEmailConfirmation } from '../utils/backupEmailConfirmation.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
@@ -1420,6 +1422,13 @@ export function renderSettings(container) {
         ` : ''}
       </div>
       <div class="form-group">
+        <label class="form-label">Backup Email${editId ? '' : ' <span style="color:var(--color-danger)">*</span>'}</label>
+        <input class="form-input" id="u-backup-email" type="email" value="${escapeHTML(t.backupEmail || '')}" placeholder="e.g. joshua@gmail.com" />
+        <div style="color: var(--text-tertiary); margin-top: 4px;">
+          A real inbox for this user. Their sign-in address above does not receive email.
+        </div>
+      </div>
+      <div class="form-group">
         <label class="form-label">${editId ? 'Reset Password (leave blank to keep current)' : 'Temporary Password (assigned for worker login)'}</label>
         <input class="form-input" id="u-password" type="password" placeholder="${editId ? '••••••••' : 'Min. 6 characters'}" />
       </div>
@@ -1490,7 +1499,9 @@ export function renderSettings(container) {
           const color = document.getElementById('u-color').value;
           const payRate = parseFloat(document.getElementById('u-payrate').value) || null;
           const password = document.getElementById('u-password')?.value || '';
-          
+          const backupEmailInput = document.getElementById('u-backup-email').value.trim();
+          const backupEmail = normalizeBackupEmail(backupEmailInput);
+
           if (!name) { showToast('Name required', 'error'); return; }
           // profiles.name is rendered across the tenant, so 038 rejects
           // markup and quotes at the database. Catching it here reports the
@@ -1498,7 +1509,11 @@ export function renderSettings(container) {
           if (/[<>"]/.test(name)) { showToast('Name cannot contain <, > or ".', 'error'); return; }
           if (!username) { showToast('Username required', 'error'); return; }
           if (username.includes('@')) { showToast('Username cannot contain @ symbol', 'error'); return; }
-          
+          // Required for a new user; an existing one added before it was
+          // required may stay without, but anything typed must be a real inbox.
+          if (!editId && !backupEmailInput) { showToast('Backup email required', 'error'); return; }
+          if (backupEmailInput && !backupEmail) { showToast('Enter a valid backup email address', 'error'); return; }
+
           if (!editId && !password) { showToast('Password required', 'error'); return; }
           if (password && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
           
@@ -1510,6 +1525,7 @@ export function renderSettings(container) {
 
           try {
             const updates = { name, username, role, userTypeId, color, payRate };
+            if (backupEmail) updates.backupEmail = backupEmail;
             if (password) {
               // Cloud accounts hand the raw password to Supabase Auth (the
               // invite-user function hashes it server-side); local accounts
@@ -1520,10 +1536,17 @@ export function renderSettings(container) {
 
             if (editId) {
               await store.update('technicians', editId, updates);
+              showToast('User saved successfully', 'success');
             } else {
-              await store.create('technicians', updates);
+              const created = await store.create('technicians', updates);
+              if (created && created.confirmationError) {
+                showToast(`User added, but the confirmation email was not sent: ${created.confirmationError} Use Resend in the users list.`, 'warning');
+              } else if (isCloudCompany()) {
+                showToast(`User added. They must confirm ${backupEmail} before they can sign in.`, 'success');
+              } else {
+                showToast('User saved successfully', 'success');
+              }
             }
-            showToast('User saved successfully', 'success');
             renderContent();
             c();
           } catch (err) {
@@ -2447,7 +2470,26 @@ export function renderSettings(container) {
     }
   }
 
+  // Settings -> Users "Email Confirmed" cell. Cloud only: nothing sends a
+  // confirmation for a local account. The admin signed up with their own,
+  // already-verified address, so their row has nothing to confirm.
+  function emailConfirmedCell(t, isAdminRow) {
+    if (isAdminRow) return '<span class="text-tertiary">—</span>';
+    const status = backupEmailStatus(t);
+    if (status === 'confirmed') {
+      const when = new Date(t.backupEmailConfirmedAt);
+      return `<span class="badge badge-success" title="${escapeHTML(t.backupEmail)}">Confirmed</span>
+        <div class="text-tertiary" style="font-size:12px; margin-top:2px;">${escapeHTML(when.toLocaleDateString())}</div>`;
+    }
+    if (status === 'pending') {
+      return `<span class="badge badge-warning" title="${escapeHTML(t.backupEmail)}">Pending</span>
+        <button class="btn btn-ghost btn-sm btn-resend-confirmation" data-id="${t.id}" style="padding:2px 6px; font-size:12px; margin-left:4px;">Resend</button>`;
+    }
+    return '<span class="text-tertiary" style="font-size:12px;">No backup email</span>';
+  }
+
   function renderUsersSubTab(subcontent, techs, companySlug, userTypes) {
+    const showConfirmation = isCloudCompany();
     subcontent.innerHTML = `
       <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
         <span style="display:flex; align-items:center; gap:8px;">
@@ -2471,6 +2513,7 @@ export function renderSettings(container) {
                 <th>User Type</th>
                 <th>Username</th>
                 <th>Pay Rate</th>
+                ${showConfirmation ? '<th>Email Confirmed</th>' : ''}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -2487,7 +2530,8 @@ export function renderSettings(container) {
                     <td class="text-secondary">${escapeHTML(t.role)}</td>
                     <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${escapeHTML(ut?.name || 'Unassigned')}</span></td>
                     <td class="text-tertiary">${escapeHTML(t.username || (t.email ? t.email.split('@')[0] : '') || '-')}</td>
-                    <td class="text-secondary">${t.payRate ? `$${t.payRate.toFixed(2)}/hr` : '-'}</td>
+                    <td class="text-secondary">${t.payRate ? `${t.payRate.toFixed(2)}/hr` : '-'}</td>
+                    ${showConfirmation ? `<td>${emailConfirmedCell(t, ut?.id === 'ut_admin' || (t.userTypeId && t.userTypeId.endsWith('_ut_admin')))}</td>` : ''}
                     <td>
                       <div style="display:flex; gap:8px;">
                         <button class="btn btn-icon btn-sm btn-edit-user" data-id="${t.id}"><span class="material-icons-outlined" style="font-size:18px">edit</span></button>
@@ -2558,6 +2602,21 @@ export function renderSettings(container) {
     });
     subcontent.querySelectorAll('.btn-edit-user').forEach(btn => {
       btn.addEventListener('click', (e) => openUserModal(e.currentTarget.dataset.id));
+    });
+    subcontent.querySelectorAll('.btn-resend-confirmation').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const button = e.currentTarget;
+        button.disabled = true;
+        button.textContent = 'Sending...';
+        try {
+          const { email } = await resendBackupEmailConfirmation(button.dataset.id);
+          showToast(`Confirmation email sent to ${email}`, 'success');
+        } catch (err) {
+          showToast(err.message || 'Could not send the confirmation email.', 'error');
+        }
+        button.disabled = false;
+        button.textContent = 'Resend';
+      });
     });
     subcontent.querySelectorAll('.btn-deactivate-user').forEach(btn => {
       btn.addEventListener('click', (e) => {

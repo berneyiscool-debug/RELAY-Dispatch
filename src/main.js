@@ -613,6 +613,9 @@ function lazy(load, name, mapParams) {
 // Choose a new password, from the link in a reset email
 router.register(RESET_ROUTE, renderPage(lazy(() => import('./pages/login/Login.js'), 'renderPasswordReset')));
 
+// Backup email confirmation link (sent when an admin adds a user).
+router.register('/confirm-email', renderPage(lazy(() => import('./pages/login/Login.js'), 'renderConfirmEmail')));
+
 // Login
 router.register('/login', renderPage(async (container) => {
   const [{ renderLaunchScreen }, { handleCloudLoginSuccess }] = await Promise.all([
@@ -809,7 +812,7 @@ const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
 // demo (the pill menu) is how they reach the launch screen.
 const GUEST_BLOCKED_PATHS = new Set(['/login', '/setup']);
 
-const PUBLIC_PATHS = new Set(['/login', RESET_ROUTE, '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
+const PUBLIC_PATHS = new Set(['/login', RESET_ROUTE, '/confirm-email', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 // Set by the guard below; see the portal-scope note there.
 let portalRouteActive = false;
@@ -1053,7 +1056,8 @@ const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
 const isSetupHash = window.location.hash.startsWith('#/setup');
 const isLegalHash = ['#/terms', '#/privacy', '#/refunds', '#/acceptable-use'].some((h) => window.location.hash.startsWith(h));
 const isResetHash = window.location.hash === `#${RESET_ROUTE}`;
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !isResetHash) {
+const isConfirmEmailHash = window.location.hash.startsWith('#/confirm-email');
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash && !isResetHash && !isConfirmEmailHash) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.

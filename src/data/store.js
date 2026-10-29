@@ -105,6 +105,9 @@ const TABLE_COLUMNS = {
     "color",
     "avatar_url",
     "pay_rate",
+    "backup_email",
+    "backup_email_confirmed_at",
+    "backup_email_confirmation_required",
     "force_password_change",
     "deactivated",
     "deactivated_at",
@@ -1900,6 +1903,18 @@ class DataStore {
       record.payRate = parseFloat(record.pay_rate);
       delete record.pay_rate;
     }
+    if (record.backup_email !== undefined) {
+      record.backupEmail = record.backup_email;
+      delete record.backup_email;
+    }
+    if (record.backup_email_confirmed_at !== undefined) {
+      record.backupEmailConfirmedAt = record.backup_email_confirmed_at;
+      delete record.backup_email_confirmed_at;
+    }
+    if (record.backup_email_confirmation_required !== undefined) {
+      record.backupEmailConfirmationRequired = record.backup_email_confirmation_required;
+      delete record.backup_email_confirmation_required;
+    }
     if (record.avatar_url !== undefined) {
       record.avatarUrl = record.avatar_url;
       delete record.avatar_url;
@@ -2629,6 +2644,20 @@ class DataStore {
     if (record.payRate !== undefined) {
       record.pay_rate = record.payRate;
       delete record.payRate;
+    }
+    if (record.backupEmail !== undefined) {
+      record.backup_email = record.backupEmail;
+      delete record.backupEmail;
+    }
+    // Server-managed (the profiles guard keeps the stored values on a client
+    // write), mapped only so a round-tripped record keeps its shape.
+    if (record.backupEmailConfirmedAt !== undefined) {
+      record.backup_email_confirmed_at = record.backupEmailConfirmedAt;
+      delete record.backupEmailConfirmedAt;
+    }
+    if (record.backupEmailConfirmationRequired !== undefined) {
+      record.backup_email_confirmation_required = record.backupEmailConfirmationRequired;
+      delete record.backupEmailConfirmationRequired;
     }
     if (record.avatarUrl !== undefined) {
       record.avatar_url = record.avatarUrl;
@@ -3522,7 +3551,8 @@ class DataStore {
               role: item.role,
               userTypeId: item.userTypeId,
               color: item.color,
-              payRate: item.payRate
+              payRate: item.payRate,
+              backupEmail: item.backupEmail
             }
           });
 
@@ -3535,6 +3565,11 @@ class DataStore {
 
           // Update local item ID with the real auth user UUID returned from database
           item.id = data.user.id;
+          // invite-user has emailed a confirmation link; until it is used the
+          // user cannot sign in. A send failure is reported, not fatal.
+          item.backupEmailConfirmationRequired = true;
+          item.backupEmailConfirmedAt = null;
+          Object.defineProperty(item, 'confirmationError', { value: data.confirmationError || null, enumerable: false });
           
           const cachedItems = [...this.cache.technicians];
           const idx = cachedItems.findIndex(x => x.username === item.username);
@@ -3635,6 +3670,10 @@ class DataStore {
           if (updates.password) {
             updates.forcePasswordChange = true;
           }
+          // A new backup email needs confirming again; invite-user sends the link.
+          if (updates.backupEmail !== undefined && updates.backupEmail !== previous.backupEmail) {
+            updates.backupEmailConfirmedAt = null;
+          }
 
           const isAuthUpdate = updates.username !== undefined ||
                                updates.email !== undefined ||
@@ -3644,6 +3683,7 @@ class DataStore {
                                updates.userTypeId !== undefined ||
                                updates.color !== undefined ||
                                updates.payRate !== undefined ||
+                               updates.backupEmail !== undefined ||
                                updates.deactivated !== undefined;
 
           if (isAuthUpdate) {
@@ -3659,6 +3699,7 @@ class DataStore {
                 color: updates.color || previous.color,
                 payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
                 password: updates.password,
+                backupEmail: updates.backupEmail,
                 deactivated: updates.deactivated
               }
             });
