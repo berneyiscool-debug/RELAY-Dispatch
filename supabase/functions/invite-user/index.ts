@@ -6,9 +6,25 @@ import {
   findAuthUserByEmail,
   isCompanyStaffEmail,
   isDuplicateAuthUserError,
+  normalizeBackupEmail,
   readProfileForUser,
   staffProfileValues
 } from './provision.js'
+import { startBackupEmailConfirmation } from '../_shared/backupEmailConfirmation.js'
+
+// Sends the backup email confirmation link. A failure here does not undo the
+// user: the response carries the reason so the admin can resend from the list.
+async function sendConfirmation(supabaseAdmin: any, userId: string) {
+  const result = await startBackupEmailConfirmation({
+    admin: supabaseAdmin,
+    userId,
+    resendKey: Deno.env.get('RESEND_API_KEY'),
+    domain: Deno.env.get('RELAY_EMAIL_DOMAIN') || undefined,
+    force: true
+  })
+  if (!result.sent) console.error('Backup email confirmation not sent:', result.error)
+  return result.sent ? null : result.error
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,7 +93,7 @@ serve(async (req) => {
 
     // 3. Extract payload
     const body = await req.json()
-    const { action, userId, email, username, password, name, role, userTypeId, color, payRate, deactivated } = body
+    const { action, userId, email, username, password, name, role, userTypeId, color, payRate, deactivated, backupEmail } = body
 
     if (action === 'update') {
       if (!userId) {
@@ -93,7 +109,7 @@ serve(async (req) => {
       // kind an administrator of any company must not be able to reset.
       const { data: targetProfile } = await supabaseAdmin
         .from('profiles')
-        .select('role, company_id')
+        .select('role, company_id, backup_email')
         .eq('id', userId)
         .single()
 
@@ -124,6 +140,16 @@ serve(async (req) => {
       if (user.id === userId && deactivated === true) {
         return new Response(
           JSON.stringify({ error: 'You cannot deactivate your own account.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Optional on an edit (accounts added before it was required have none),
+      // but anything sent must be a real inbox.
+      const normalizedBackupEmail = backupEmail === undefined ? undefined : normalizeBackupEmail(backupEmail)
+      if (backupEmail !== undefined && !normalizedBackupEmail) {
+        return new Response(
+          JSON.stringify({ error: 'Bad Request: Enter a valid backup email address.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -164,6 +190,8 @@ serve(async (req) => {
         pay_rate: payRate || 0
       }
 
+      if (normalizedBackupEmail) profileUpdates.backup_email = normalizedBackupEmail
+
       if (deactivated !== undefined) {
         profileUpdates.deactivated = !!deactivated
         profileUpdates.deactivated_at = deactivated ? new Date().toISOString() : null
@@ -185,8 +213,14 @@ serve(async (req) => {
         )
       }
 
+      // A new address needs confirming again (the profiles trigger has already
+      // cleared the old confirmation).
+      const confirmationError = normalizedBackupEmail && normalizedBackupEmail !== targetProfile.backup_email
+        ? await sendConfirmation(supabaseAdmin, userId)
+        : null
+
       return new Response(
-        JSON.stringify({ success: true, user: authData?.user }),
+        JSON.stringify({ success: true, user: authData?.user, confirmationError }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
 
@@ -195,6 +229,16 @@ serve(async (req) => {
       if (!email || !name || !password) {
         return new Response(
           JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // The sign-in address is a relay.internal one no mailbox receives, so a
+      // new team member is not created without a real inbox on file.
+      const normalizedBackupEmail = normalizeBackupEmail(backupEmail)
+      if (!normalizedBackupEmail) {
+        return new Response(
+          JSON.stringify({ error: 'Bad Request: A valid backup email is required to add a user.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -332,6 +376,7 @@ serve(async (req) => {
         userTypeId,
         color,
         payRate,
+        backupEmail: normalizedBackupEmail,
         // Whoever just had a password set for them by someone else changes it on
         // first sign-in, whether the account is new or was repaired.
         forcePasswordChange: repaired
@@ -359,8 +404,10 @@ serve(async (req) => {
         )
       }
 
+      const confirmationError = await sendConfirmation(supabaseAdmin, authUser.id)
+
       return new Response(
-        JSON.stringify({ success: true, user: authUser, repaired }),
+        JSON.stringify({ success: true, user: authUser, repaired, confirmationError }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
