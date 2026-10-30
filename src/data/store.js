@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
 import { activityFromRow, activityToRow } from './activityRecord.js';
+import { jobEventFromRow, jobEventToRow } from './jobEventRecord.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 import { isDemoSession } from '../utils/demoSession.js';
@@ -40,6 +41,10 @@ const TABLE_MAP = {
   taskTemplates: 'task_templates',
   quotes: 'quotes',
   jobs: 'jobs',
+  // A job's history timeline, one row per entry (jobHistory.js merges it with
+  // the legacy historyLog). Append with create(); listed after jobs so the
+  // Local -> Cloud upload sends each job before its events.
+  jobEvents: 'job_events',
   invoices: 'invoices',
   stock: 'stock',
   timesheets: 'timesheets',
@@ -75,7 +80,7 @@ const TABLE_MAP = {
 };
 
 // Permanent history: save() only appends to these and delete() refuses them.
-const APPEND_ONLY_COLLECTIONS = new Set(['activity']);
+const APPEND_ONLY_COLLECTIONS = new Set(['activity', 'jobEvents']);
 
 const TABLE_COLUMNS = {
   companies: [
@@ -652,6 +657,17 @@ const TABLE_COLUMNS = {
     "occurred_at",
     "created_at",
     "updated_at"
+  ],
+  job_events: [
+    "id",
+    "company_id",
+    "job_id",
+    "kind",
+    "action",
+    "content",
+    "payload",
+    "actor_name",
+    "occurred_at"
   ]
 };
 
@@ -926,7 +942,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 10);
+      const request = window.indexedDB.open(dbName, 11);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1869,6 +1885,7 @@ class DataStore {
   normalizeRecord(item, collection) {
     if (!item) return null;
     if (collection === 'activity') return activityFromRow(item);
+    if (collection === 'jobEvents') return jobEventFromRow(item);
     const record = { ...item };
 
     if (collection === 'formTemplates') {
@@ -2572,6 +2589,7 @@ class DataStore {
   // De-normalize camelCase fields -> snake_case schema columns for database updates
   denormalizeRecord(item, collection) {
     if (collection === 'activity') return activityToRow(item);
+    if (collection === 'jobEvents') return jobEventToRow(item);
     const record = { ...item };
 
     if (collection === 'formTemplates') {
