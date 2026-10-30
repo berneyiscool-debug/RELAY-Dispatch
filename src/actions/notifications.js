@@ -161,4 +161,29 @@ defineAction({
   },
 });
 
+defineAction({
+  name: 'delete_notification',
+  title: 'Delete a notification',
+  description: 'Permanently remove a notification from the list. This is housekeeping — dismiss_notification is enough when it should simply stop asking for attention.',
+  inputSchema: objectSchema(
+    {
+      notification: str('The notification to delete, e.g. "NT-00012".'),
+    },
+    ['notification']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ notification }) => {
+    const entry = resolveNotification(notification);
+    const snapshot = { id: entry.id, number: entry.number || null, title: entry.title || null, status: entry.status || null };
+    await store.delete('notifications', entry.id);
+    logActivity({
+      type: 'notification',
+      text: `Notification ${snapshot.number || snapshot.id} deleted.`,
+      recordType: 'notification',
+      recordId: snapshot.id,
+    });
+    return { summary: `Deleted notification ${snapshot.number || snapshot.id}${snapshot.title ? ` (${snapshot.title})` : ''}.`, notification: snapshot };
+  },
+});
+
 export { NOTIFICATION_TYPES, NOTIFICATION_PRIORITIES, NOTIFICATION_STATUSES };

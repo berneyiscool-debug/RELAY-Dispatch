@@ -290,3 +290,46 @@ defineAction({
     };
   },
 });
+
+defineAction({
+  name: 'delete_lead',
+  title: 'Delete lead',
+  description:
+    'Permanently delete a lead from the pipeline. This cannot be undone, and it is the wrong tool for a lead that was lost — move it to Lost with move_lead_stage instead. Any quote already converted from it stays on file.',
+  permission: { module: 'Leads', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      lead: str('Lead number, title, customer or id.'),
+      reason: str('Why the lead is being deleted.'),
+    },
+    ['lead']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ lead: reference, reason }) => {
+    const lead = resolveLead(reference);
+    const snapshot = {
+      id: lead.id,
+      number: lead.number || null,
+      title: lead.title || null,
+      customerName: lead.customerName || null,
+      status: lead.status || null,
+    };
+    const quotes = (store.getAll('quotes') || []).filter((quote) => quote.leadId === lead.id).length;
+
+    await store.delete('leads', lead.id);
+    await logActivity({
+      type: 'lead_deleted',
+      text: `Lead ${leadLabel(lead)} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'lead',
+      recordId: lead.id,
+    });
+
+    return {
+      summary: `Deleted lead ${snapshot.number || snapshot.title || snapshot.customerName}${quotes ? `; ${quotes} converted quote${quotes === 1 ? '' : 's'} kept` : ''}.`,
+      lead: snapshot,
+      keptQuotes: quotes,
+      reason: reason || null,
+    };
+  },
+});

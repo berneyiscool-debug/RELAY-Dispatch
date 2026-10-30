@@ -33,6 +33,12 @@ import './routines.js';
 import './reads.js';
 import './forms.js';
 import './conversation.js';
+import './settings.js';
+import './users.js';
+import './catalogs.js';
+import './activities.js';
+import './reports.js';
+import './proposals.js';
 
 export { executeAction, toToolResult, getAction, hasAction, listActions, listAvailableActions, toToolDefinitions } from './registry.js';
 export { ActionError, ERROR_CODES, isActionError } from './errors.js';

@@ -233,4 +233,73 @@ describe('the assistant can list, add and change a customer\'s sites', () => {
 
     assert.deepStrictEqual(calls, [], 'the demo business must not reach Supabase or IndexedDB');
   });
+
+  test('delete_site takes one site off the list and leaves the rest', async () => {
+    store.update('customers', customer.id, { sites: [{ ...DEPOT }, { ...HOME }] });
+
+    const outcome = await executeAction('delete_site', { customer: CUSTOMER, site: '4 Wattle', reason: 'Lease ended' }, CTX);
+
+    assert.strictEqual(outcome.result.site.name, DEPOT.name);
+    assert.deepStrictEqual(storedSites(), [{ ...HOME }]);
+    assert.match(outcome.result.summary, /Removed site Ipswich depot/);
+  });
+
+  test('delete_site asks which site when the reference fits two', async () => {
+    store.update('customers', customer.id, { sites: [{ name: 'Depot', address: '4 Wattle Lane' }, { name: 'Depot', address: '9 Bell St' }] });
+
+    await assert.rejects(
+      () => executeAction('delete_site', { customer: CUSTOMER, site: 'Depot' }, CTX),
+      (error) => error.code === ERROR_CODES.AMBIGUOUS,
+    );
+    assert.strictEqual(storedSites().length, 2);
+  });
+
+  test('a contact can be added, changed and removed', async () => {
+    const added = await executeAction('add_contact', { customer: CUSTOMER, name: 'Jane Smith', role: 'Site foreman', phone: '0400 000 000' }, CTX);
+    assert.strictEqual(added.result.created, true);
+    assert.deepStrictEqual(store.getById('customers', customer.id).contacts, [{ name: 'Jane Smith', role: 'Site foreman', phone: '0400 000 000' }]);
+
+    const again = await executeAction('add_contact', { customer: CUSTOMER, name: 'jane smith', email: 'jane@example.com' }, CTX);
+    assert.strictEqual(again.result.created, false, 'the same person is not added twice');
+
+    const updated = await executeAction('update_contact', { customer: CUSTOMER, contact: 'Jane', role: 'Project manager' }, CTX);
+    assert.deepStrictEqual(updated.result.fields, ['role']);
+    assert.strictEqual(store.getById('customers', customer.id).contacts[0].role, 'Project manager');
+
+    const removed = await executeAction('delete_contact', { customer: CUSTOMER, contact: '0400 000 000', reason: 'Left the company' }, CTX);
+    assert.match(removed.result.summary, /Removed Jane Smith/);
+    assert.deepStrictEqual(store.getById('customers', customer.id).contacts, []);
+  });
+
+  test('a contact that is not on the customer is refused, not guessed', async () => {
+    store.update('customers', customer.id, { contacts: [{ name: 'Jane Smith' }] });
+
+    await assert.rejects(
+      () => executeAction('delete_contact', { customer: CUSTOMER, contact: 'Bob Jones' }, CTX),
+      (error) => error.code === ERROR_CODES.INVALID_INPUT && /no contact matching/.test(error.message),
+    );
+    assert.strictEqual(store.getById('customers', customer.id).contacts.length, 1);
+  });
+
+  test('delete_customer removes the record and says what is left behind', async () => {
+    store.create('jobs', { customerId: customer.id, title: 'Probe job', status: 'Pending' });
+    store.create('quotes', { customerId: customer.id, title: 'Probe quote', status: 'Draft' });
+
+    const outcome = await executeAction('delete_customer', { customer: CUSTOMER, reason: 'Duplicate record' }, CTX);
+
+    assert.strictEqual(store.getById('customers', customer.id), null);
+    assert.deepStrictEqual(outcome.result.linked.jobs, 1);
+    assert.deepStrictEqual(outcome.result.linked.quotes, 1);
+    assert.match(outcome.result.summary, /1 jobs/);
+    assert.match(outcome.result.summary, /left on file without a customer/);
+    assert.ok(store.getAll('activity').some((entry) => entry.type === 'customer_deleted' && entry.recordId === customer.id));
+  });
+
+  test('brny must ask before deleting a customer', async () => {
+    await assert.rejects(
+      () => executeAction('delete_customer', { customer: CUSTOMER }, { ...CTX, source: 'brny' }),
+      (error) => error.code === ERROR_CODES.APPROVAL_REQUIRED,
+    );
+    assert.ok(store.getById('customers', customer.id), 'a declined approval deletes nothing');
+  });
 });

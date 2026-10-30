@@ -624,6 +624,21 @@ export async function renderDashboard(container) {
     renderWidgets(world, data); renderPins(world); applyTransform(viewport, world, guides);
     return mod.title;
   };
+  window.__relay.removeWidgetById = (ref) => {
+    const text = String(ref || '').trim().toLowerCase();
+    if (!text) return false;
+    const titleOf = (id) => MODULES[id]?.title || KPIS[id]?.title || id;
+    const match = live.widgets.find((item) =>
+      item.instanceId === ref
+      || item.id === ref
+      || titleOf(item.id).toLowerCase() === text
+      || titleOf(item.id).toLowerCase().includes(text));
+    if (!match) return false;
+    live.widgets = live.widgets.filter((item) => item !== match);
+    renderWidgets(world, data); renderPins(world); applyTransform(viewport, world, guides);
+    saveLayout();
+    return titleOf(match.id);
+  };
   window.__relay.flyToViewByName = (name) => {
     const n = name.toLowerCase();
     const p = live.pins.find(x => (x.label || '').toLowerCase() === n) || live.pins.find(x => (x.label || '').toLowerCase().includes(n));

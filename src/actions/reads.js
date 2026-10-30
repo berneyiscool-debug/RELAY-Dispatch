@@ -102,6 +102,60 @@ const RECORD_TYPES = {
     search: ['title', 'recordId'],
     fields: ['id', 'title', 'assignedTo', 'dueAt', 'status', 'recordType', 'recordId', 'createdBy', 'completedAt'],
   },
+  kits: {
+    collection: 'kits',
+    label: (r) => r.name || r.id,
+    search: ['name', 'category', 'description'],
+    fields: ['id', 'name', 'category', 'description', 'items', 'totalCost', 'totalPrice', 'active'],
+  },
+  quoteTemplates: {
+    collection: 'quoteTemplates',
+    label: (r) => r.name || r.id,
+    search: ['name', 'description'],
+    fields: ['id', 'name', 'description', 'sections', 'subtotal', 'tax', 'total'],
+  },
+  documents: {
+    collection: 'documents',
+    label: (r) => r.name || r.id,
+    search: ['name', 'folder', 'type'],
+    fields: ['id', 'name', 'folder', 'type', 'size', 'url', 'uploadedAt'],
+  },
+  activities: {
+    collection: 'activities',
+    label: (r) => r.title || r.id,
+    search: ['title', 'notes', 'linkedLabel'],
+    fields: ['id', 'title', 'type', 'priority', 'date', 'time', 'duration', 'assignedToId', 'linkedType', 'linkedLabel', 'notes', 'status'],
+  },
+  costCenters: {
+    collection: 'costCenters',
+    label: (r) => `${r.code || ''} ${r.name || ''}`.trim() || r.id,
+    search: ['code', 'name'],
+    fields: ['id', 'code', 'name', 'active', 'xeroSalesAccountCode', 'xeroExpenseAccountCode', 'xeroTrackingCategoryName', 'xeroTrackingOptionName'],
+  },
+  storageLocations: {
+    collection: 'storageLocations',
+    label: (r) => r.name || r.id,
+    search: ['name', 'type'],
+    fields: ['id', 'name', 'type', 'technicianId', 'active'],
+  },
+  taskTemplates: {
+    collection: 'taskTemplates',
+    label: (r) => r.name || r.id,
+    search: ['name', 'description'],
+    fields: ['id', 'name', 'description', 'tags', 'tasks'],
+  },
+  formTemplates: {
+    collection: 'formTemplates',
+    label: (r) => r.name || r.id,
+    search: ['name', 'description'],
+    fields: ['id', 'name', 'description', 'sections'],
+  },
+  timeClocks: {
+    collection: 'timeClocks',
+    label: (r) => `${r.technicianName || ''} ${r.clockInAt || ''}`.trim() || r.id,
+    search: ['technicianName', 'note'],
+    fields: ['id', 'technicianId', 'technicianName', 'clockInAt', 'clockOutAt', 'status', 'approvalStatus', 'approvedHours', 'approvedBy', 'note'],
+  },
 };
 
 const TYPE_NAMES = Object.keys(RECORD_TYPES);

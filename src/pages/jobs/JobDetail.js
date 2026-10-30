@@ -39,6 +39,18 @@ import { entityLink } from '../../components/EntityLink.js';
 import { getSessionUser } from '../auth/session.js';
 import { dueDateForCustomer } from '../../utils/customerTerms.js';
 import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
+import { mergeJobHistory, newHistoryEvent } from '../../data/jobHistory.js';
+
+// History entries are appended as their own jobEvents rows rather than written
+// back into the job, so a concurrent save elsewhere can't erase them.
+function recordJobHistory(jobId, { action, content, author, payload, date }) {
+  return store.create('jobEvents', newHistoryEvent({ id: store.generateId(), jobId, action, content, author, payload, date }));
+}
+
+function jobHistoryOf(job) {
+  return mergeJobHistory(job, store.getAll('jobEvents') || []);
+}
+
 // Display an uploaded activity image at full size in a centered lightbox modal
 function showImageLightbox(src, name) {
   const wrapper = document.createElement('div');
@@ -1793,17 +1805,7 @@ export function renderJobDetail(container, { id, tab, form }) {
                   </div>
                   <div class="card-body" style="padding:20px; display:flex; flex-direction:column; gap:16px;">
                     ${(() => {
-                      if (!job.historyLog) job.historyLog = [];
-                      if (!job.activityLog) job.activityLog = [];
-                      const sysEntries = job.activityLog.filter(l => l.type === 'system');
-                      if (sysEntries.length > 0) {
-                        job.historyLog = [...sysEntries, ...job.historyLog];
-                        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-                        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
-                        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
-                      }
-
-                      const historyLog = job.historyLog.slice(0, 5);
+                      const historyLog = jobHistoryOf(job).slice(0, 5);
                       if (historyLog.length === 0) {
                         return '<div style="color:var(--text-tertiary); font-size:13px; font-style:italic">No recent history.</div>';
                       }
@@ -1840,7 +1842,7 @@ export function renderJobDetail(container, { id, tab, form }) {
       `;
 
       tc.querySelector('#btn-view-all-history')?.addEventListener('click', () => {
-        const historyLog = job.historyLog || [];
+        const historyLog = jobHistoryOf(job);
         const content = document.createElement('div');
         content.innerHTML = `
           <div style="max-height:450px; overflow-y:auto; padding:4px;">
@@ -2243,38 +2245,26 @@ export function renderJobDetail(container, { id, tab, form }) {
           node.progress = e.target.checked ? 100 : 0;
           node.status = e.target.checked ? 'Completed' : 'Not Started';
           
-          if (!job.historyLog) job.historyLog = [];
           const currentUser = getSessionUser() || {};
           const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
-          
+
           if (e.target.checked) {
             node.completedBy = authorName;
             node.completedAt = new Date().toISOString();
-            
-            job.historyLog.unshift({
-              id: store.generateId(),
-              type: 'system',
-              action: 'task_completed',
-              date: node.completedAt,
-              author: authorName,
-              content: `Task "${node.name}" marked as completed`
-            });
           } else {
             delete node.completedBy;
             delete node.completedAt;
-            
-            job.historyLog.unshift({
-              id: store.generateId(),
-              type: 'system',
-              action: 'task_uncompleted',
-              date: new Date().toISOString(),
-              author: authorName,
-              content: `Task "${node.name}" marked as incomplete`
-            });
           }
-          
+
           updateParentProgress(job.tasks, path);
-          store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
+          store.update('jobs', id, { tasks: job.tasks });
+          recordJobHistory(id, {
+            action: e.target.checked ? 'task_completed' : 'task_uncompleted',
+            content: `Task "${node.name}" marked as ${e.target.checked ? 'completed' : 'incomplete'}`,
+            author: authorName,
+            payload: { taskId: node.id || null, done: e.target.checked },
+            date: node.completedAt,
+          });
           renderTabContent();
         });
         chk.addEventListener('click', (e) => e.stopPropagation());
@@ -2360,23 +2350,19 @@ export function renderJobDetail(container, { id, tab, form }) {
               const selectedIds = Array.from(content.querySelectorAll('.contractor-assign-checkbox:checked')).map(cb => cb.value);
               node.assignedContractorIds = selectedIds;
               
-              if (!job.historyLog) job.historyLog = [];
               const currentUser = getSessionUser() || {};
               const assignedNames = selectedIds.map(cid => {
                 const c = store.getById('contractors', cid);
                 return c ? (c.businessName || c.name) : cid;
               }).join(', ');
 
-              job.historyLog.unshift({
-                id: store.generateId(),
-                type: 'system',
+              store.update('jobs', id, { tasks: job.tasks });
+              recordJobHistory(id, {
                 action: 'contractor_assigned',
-                date: new Date().toISOString(),
                 author: currentUser.name || currentUser.username || 'System',
-                content: selectedIds.length ? `Assigned task "${node.name}" to contractor(s) [${assignedNames}]` : `Cleared contractor allocation for task "${node.name}"`
+                content: selectedIds.length ? `Assigned task "${node.name}" to contractor(s) [${assignedNames}]` : `Cleared contractor allocation for task "${node.name}"`,
+                payload: { taskId: node.id || null, contractorIds: selectedIds },
               });
-
-              store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
               showToast('Contractor allocation updated', 'success');
               renderTabContent();
               close();
@@ -3791,17 +3777,11 @@ export function renderJobDetail(container, { id, tab, form }) {
     } else if (activeTab === 'activity_staff' || activeTab === 'activity_customer') {
       if (!job.activityLog) job.activityLog = [];
       if (!job.customerActivityLog) job.customerActivityLog = [];
-      if (!job.historyLog) job.historyLog = [];
-      
-      // Separate system history from staff notes if any exist
-      const sysEntries = job.activityLog.filter(l => l.type === 'system');
-      if (sysEntries.length > 0) {
-        job.historyLog = [...sysEntries, ...job.historyLog];
-        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
-        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
-      }
-      
+
+      // Early system entries were filed in activityLog; the history timeline
+      // reads them from there (jobHistory.js), so they're only filtered out here.
+      // Opening this tab used to move them into historyLog and save the job,
+      // which could overwrite a change made on another device.
       // Filter activityLog for Communications (staff notes & attachments)
       const commsLog = job.activityLog.filter(l => l.type !== 'system').map(l => {
         if (l.type === 'note' || l.type === 'attachment') {
@@ -4894,19 +4874,17 @@ export function renderJobDetail(container, { id, tab, form }) {
     container.querySelector('#header-job-status-select')?.addEventListener('change', (e) => {
       const newStatus = e.target.value;
       if (job.status !== newStatus) {
-        if (!job.historyLog) job.historyLog = [];
         const currentUser = getSessionUser() || {};
         const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
-        job.historyLog.unshift({
-          id: store.generateId(),
-          type: 'system',
-          action: 'status_changed',
-          date: new Date().toISOString(),
-          author: authorName,
-          content: `Job status changed from "${job.status}" to "${newStatus}"`
-        });
+        const from = job.status;
         job.status = newStatus;
-        store.update('jobs', id, { status: newStatus, historyLog: job.historyLog });
+        store.update('jobs', id, { status: newStatus });
+        recordJobHistory(id, {
+          action: 'status_changed',
+          author: authorName,
+          content: `Job status changed from "${from}" to "${newStatus}"`,
+          payload: { from, to: newStatus },
+        });
         showToast(`Job status updated to ${newStatus}`, 'success');
         render();
       }

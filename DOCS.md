@@ -204,6 +204,29 @@ the client bundle. Changing either is an ordinary frontend change: commit to
   `toToolDefinitions`. Adding a skill means a new module there plus an entry in
   that folder's `index.js`. The action's `description` is the whole of the model's
   instructions, so write it for the model, not for a reader.
+- **Coverage is the bar.** Every record the pages can delete has a matching
+  `delete_*` action — customers, contacts, sites, leads, quotes, quote templates,
+  recurring jobs, job tasks, projects, suppliers, contractors, assets, stock, kits,
+  purchase orders, invoices, documents, timesheets, notifications and to-dos — and
+  authoring covers the gaps those deletes exposed (contacts, kits, quote templates,
+  timesheet entries, document records and unfiling a job from a project). Beyond
+  records, the everyday configuration a user can change is a tool too: company
+  settings, tax and labour rates, material pricing, portals, email and its
+  templates, the document theme, user types and their permissions, storage and
+  location types, kit types, cost centres, tasklist and form templates, leave and
+  blockouts, expected rosters, clock in/out, activities, reports/CSV exports and
+  filing documents. Each destructive tool is `risky: true`, so the approval card
+  is the gate and the permission check still runs through the same `MODULE_PERMS`
+  the UI uses. Every record type brny writes is also in `RECORD_TYPES` in
+  [src/actions/reads.js](./src/actions/reads.js), so `search_records`,
+  `get_record` and `list_records` can address it. A page capability with no tool
+  leaves brny telling the user to do the work by hand, which is exactly how
+  customer and recurring-template deletion went missing.
+- **What stays human.** File pickers, OAuth consent screens and checkouts cannot be
+  driven by a tool: connecting Xero, Stripe or an email domain, choosing a backup
+  folder, changing a password or avatar, and signing/submitting a compliance form
+  stay with the person. brny can prepare everything up to that point and says
+  plainly which step needs them.
 - **Personalities are the selectable voice layer.**
   [src/utils/brnyPersonalities.js](./src/utils/brnyPersonalities.js) holds the
   presets (Straight, Friendly, Brief, Trainer, Formal), and My Profile → brny's

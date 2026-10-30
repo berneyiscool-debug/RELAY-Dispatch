@@ -746,3 +746,151 @@ defineAction({
     return { summary: queued ? `Queued ${queued} invoice(s) for Xero.` : 'Every sent invoice is already in Xero or queued.', queued };
   },
 });
+
+defineAction({
+  name: 'delete_invoice',
+  title: 'Delete an invoice',
+  description:
+    'Permanently delete an invoice and its price lines. This cannot be undone. Only a draft that should never have existed is safe to delete — void a sent, paid or Xero-synced invoice with void_invoice so the audit trail survives.',
+  permission: { module: 'Invoices', key: 'void' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      invoice: str('Invoice number, or the customer and job it covers.'),
+      reason: str('Why the invoice is being deleted.'),
+    },
+    ['invoice']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ invoice: reference, reason }) => {
+    const invoice = resolveInvoice(reference);
+    const snapshot = {
+      id: invoice.id,
+      number: invoice.number || null,
+      customerName: invoice.customerName || null,
+      jobNumber: invoice.jobNumber || null,
+      status: invoice.status || null,
+      total: invoice.total || 0,
+    };
+    const job = invoice.jobId ? store.getById('jobs', invoice.jobId) : null;
+    await store.delete('invoices', invoice.id);
+    logActivity({
+      type: 'invoice_deleted',
+      text: `Invoice ${snapshot.number || snapshot.id} (${snapshot.status || 'Draft'}) deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'invoice',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted invoice ${snapshot.number || snapshot.id}${job ? `; job ${job.number} is no longer marked Invoiced by it` : ''}.`,
+      invoice: snapshot,
+      jobReleased: job ? job.number : null,
+      reason: reason || null,
+    };
+  },
+});
+
+async function invoiceEmailParts(template, invoice) {
+  const [{ emailUnavailableReason }, { sendEmail }] = await Promise.all([
+    import('../utils/documentEmails.js'),
+    import('../utils/email.js'),
+  ]);
+  const blocked = emailUnavailableReason(template, invoice);
+  if (blocked) throw invalidInput(`No email went out: ${blocked}`);
+  return { sendEmail };
+}
+
+defineAction({
+  name: 'send_invoice_email',
+  title: 'Email an invoice',
+  description:
+    'Email the themed invoice with its portal link and PDF to the customer. A draft becomes Sent; an already-sent or overdue invoice is re-sent. Use send_invoice when the invoice only needs marking as sent.',
+  permission: { module: 'Invoices', key: 'send' },
+  risky: true,
+  inputSchema: objectSchema({ invoice: str('Invoice number, or the customer and job it covers.') }, ['invoice']),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.invoice.number, path: `/invoices/${result.invoice.id}` }],
+  run: async ({ invoice: reference }) => {
+    const invoice = resolveInvoice(reference);
+    if (invoice.status === 'Void') throw conflict(`${invoice.number} is void, so there is nothing to send.`);
+    const { sendEmail } = await invoiceEmailParts('invoice', invoice);
+    const [{ invoiceEmail }, { portalUrlForDocument }, { documentAttachment }, payments] = await Promise.all([
+      import('../utils/emailTemplates.js'),
+      import('../utils/portalLinks.js'),
+      import('../utils/documentPdf.js'),
+      import('../utils/payments.js'),
+    ]);
+    let payUrl = null;
+    if (payments.paymentsEnabledFor('invoice')) {
+      try { payUrl = (await payments.createInvoicePaymentLink(invoice)).url; } catch { /* email without a pay link */ }
+    }
+    const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: await portalUrlForDocument(invoice) });
+    const attachments = await documentAttachment('invoice', invoice);
+    const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+    await sendEmail({ to, subject, html, attachments, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
+
+    const changed = invoice.status === 'Draft';
+    if (changed) await store.update('invoices', invoice.id, { status: 'Sent' });
+    logActivity({ type: 'invoice_emailed', text: `Invoice ${invoice.number} emailed to ${invoice.customerName}.`, recordType: 'invoice', recordId: invoice.id });
+    return {
+      summary: `Invoice ${invoice.number} (${money(invoice.total)} inc GST) emailed to ${invoice.customerName}${changed ? ' and marked Sent' : ''}.`,
+      invoice: { ...invoice, status: changed ? 'Sent' : invoice.status },
+      emailed: true,
+      changed,
+    };
+  },
+});
+
+defineAction({
+  name: 'send_invoice_reminder',
+  title: 'Send an invoice reminder',
+  description: 'Email the customer a friendly payment reminder for a sent or overdue invoice.',
+  permission: { module: 'Invoices', key: 'send' },
+  risky: true,
+  inputSchema: objectSchema({ invoice: str('Invoice number, or the customer and job it covers.') }, ['invoice']),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.invoice.number, path: `/invoices/${result.invoice.id}` }],
+  run: async ({ invoice: reference }) => {
+    const invoice = resolveInvoice(reference);
+    if (!['Sent', 'Overdue'].includes(invoice.status)) throw invalidInput(`${invoice.number} is ${invoice.status.toLowerCase()} — reminders are for sent or overdue invoices.`);
+    await invoiceEmailParts('reminder', invoice);
+    const { sendInvoiceReminder } = await import('../utils/documentEmails.js');
+    const to = await sendInvoiceReminder(invoice);
+    logActivity({ type: 'invoice_reminder', text: `Payment reminder for ${invoice.number} sent to ${to}.`, recordType: 'invoice', recordId: invoice.id });
+    return { summary: `Reminder for ${invoice.number} (${money(invoice.total)} inc GST) sent to ${to}.`, invoice, to, emailed: true };
+  },
+});
+
+defineAction({
+  name: 'send_invoice_receipt',
+  title: 'Send a payment receipt',
+  description: 'Email a payment receipt for an invoice that has been paid.',
+  permission: { module: 'Invoices', key: 'send' },
+  risky: true,
+  inputSchema: objectSchema({ invoice: str('Invoice number, or the customer and job it covers.') }, ['invoice']),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.invoice.number, path: `/invoices/${result.invoice.id}` }],
+  run: async ({ invoice: reference }) => {
+    const invoice = resolveInvoice(reference);
+    if (invoice.status !== 'Paid') throw invalidInput(`${invoice.number} is ${invoice.status.toLowerCase()} — a receipt is for a paid invoice.`);
+    const { sendEmail } = await invoiceEmailParts('receipt', invoice);
+    const [{ receiptEmail }, { portalUrlForDocument }, { documentAttachment }] = await Promise.all([
+      import('../utils/emailTemplates.js'),
+      import('../utils/portalLinks.js'),
+      import('../utils/documentPdf.js'),
+    ]);
+    const { subject, html } = receiptEmail(invoice, { portalUrl: await portalUrlForDocument(invoice) });
+    const attachments = await documentAttachment('invoice', invoice);
+    const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+    await sendEmail({
+      to,
+      subject,
+      html,
+      attachments,
+      template: 'receipt',
+      relatedType: 'invoice',
+      relatedId: invoice.id,
+    });
+    logActivity({ type: 'invoice_receipt', text: `Receipt for ${invoice.number} sent to ${to}.`, recordType: 'invoice', recordId: invoice.id });
+    return { summary: `Receipt for ${invoice.number} (${money(invoice.total)} inc GST) sent to ${to}.`, invoice, to, emailed: true };
+  },
+});

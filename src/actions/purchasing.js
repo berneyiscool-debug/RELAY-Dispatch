@@ -299,4 +299,45 @@ defineAction({
   },
 });
 
+defineAction({
+  name: 'delete_purchase_order',
+  title: 'Delete purchase order',
+  description:
+    'Permanently delete a purchase order. This cannot be undone. Only a Draft is safe to delete — an Issued order has stock sitting in On Order, and a Received order is the record of what arrived, so correct those with adjust_stock rather than deleting the order.',
+  permission: { module: 'Purchase Orders', key: 'approve' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      purchaseOrder: str('PO number, supplier or id.'),
+      reason: str('Why the purchase order is being deleted.'),
+    },
+    ['purchaseOrder']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ purchaseOrder: reference, reason }) => {
+    const po = resolvePurchaseOrder(reference);
+    const snapshot = {
+      id: po.id,
+      number: po.number || null,
+      supplierName: po.supplierName || null,
+      status: po.status || null,
+      total: po.total || 0,
+    };
+    const onOrder = po.status === 'Issued';
+    await store.delete('purchaseOrders', po.id);
+    logActivity({
+      type: 'purchase_order',
+      text: `Purchase order ${snapshot.number || snapshot.id} (${snapshot.status || 'Draft'}) deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'purchaseOrder',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted purchase order ${snapshot.number || snapshot.id}${onOrder ? ' — any stock it had On Order is no longer tied to an order, so check the On Order counts' : ''}.`,
+      purchaseOrder: snapshot,
+      wasIssued: onOrder,
+      reason: reason || null,
+    };
+  },
+});
+
 export { PO_STATUSES };

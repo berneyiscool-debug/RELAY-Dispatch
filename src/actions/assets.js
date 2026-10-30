@@ -253,3 +253,71 @@ defineAction({
     return { asset, plan: saved, created: !existing };
   },
 });
+
+defineAction({
+  name: 'delete_maintenance_plan',
+  title: 'Delete a maintenance plan',
+  description: 'Permanently remove a servicing plan from an asset, so it stops raising work. This cannot be undone. Set the plan inactive with set_maintenance_plan when the history should stay.',
+  permission: { module: 'Assets', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      asset: str('Asset name, serial number or id.'),
+      plan: str('The plan name.'),
+      reason: str('Why the plan is being deleted.'),
+    },
+    ['asset', 'plan']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ asset: assetRef, plan: planName, reason }) => {
+    const asset = resolveAsset(assetRef);
+    const text = String(planName || '').trim().toLowerCase();
+    const plan = (store.getAll('maintenancePlans') || []).find((row) => row.assetId === asset.id && String(row.name || '').toLowerCase() === text);
+    if (!plan) throw invalidInput(`${asset.name} has no maintenance plan called "${planName}".`);
+    await store.delete('maintenancePlans', plan.id);
+    logActivity({ type: 'maintenance_plan', text: `Maintenance plan "${plan.name}" deleted from ${asset.name}${reason ? ` — ${reason}` : ''}.`, recordType: 'asset', recordId: asset.id });
+    return { summary: `Deleted the ${plan.name} plan from ${asset.name}.`, asset: { id: asset.id, name: asset.name }, plan: { id: plan.id, name: plan.name }, reason: reason || null };
+  },
+});
+
+defineAction({
+  name: 'delete_asset',
+  title: 'Delete asset',
+  description:
+    'Permanently delete an asset, together with its maintenance plans and the notifications they raised. This cannot be undone. Jobs that recorded work on it keep their history. Use update_asset to set status Decommissioned when the record should stay.',
+  permission: { module: 'Assets', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      asset: str('Asset name, serial number or id.'),
+      reason: str('Why the asset is being deleted.'),
+    },
+    ['asset']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ asset: reference, reason }) => {
+    const asset = resolveAsset(reference);
+    const plans = (store.getAll('maintenancePlans') || []).filter((plan) => plan.assetId === asset.id).length;
+    const jobs = (store.getAll('jobs') || []).filter((job) => job.assetId === asset.id).length;
+    const snapshot = {
+      id: asset.id,
+      name: asset.name || asset.id,
+      serial: asset.serial || null,
+      customerName: asset.customerName || null,
+    };
+    await store.delete('assets', asset.id);
+    logActivity({
+      type: 'asset_deleted',
+      text: `Asset ${snapshot.name} deleted${reason ? ` — ${reason}` : ''}${plans ? ` with ${plans} maintenance plan${plans === 1 ? '' : 's'}` : ''}.`,
+      recordType: 'asset',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted asset ${snapshot.name}${plans ? ` and ${plans} maintenance plan${plans === 1 ? '' : 's'}` : ''}${jobs ? `; ${jobs} job${jobs === 1 ? '' : 's'} keep their history` : ''}.`,
+      asset: snapshot,
+      removedPlans: plans,
+      keptJobs: jobs,
+      reason: reason || null,
+    };
+  },
+});

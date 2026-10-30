@@ -14,9 +14,10 @@
 
 import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
-import { resolveOne, tryResolveOne } from './resolve.js';
+import { normalizeText, resolveOne, tryResolveOne } from './resolve.js';
 import { objectSchema, str, num, enumOf } from './schema.js';
 import { ambiguousMatch, invalidInput } from './errors.js';
+import { logActivity } from './context.js';
 
 const COMPANY_HINTS = /\b(pty|limited|ltd|inc|co|corp|group|holdings|services|trust|university|school|council|hotel|motel|club|tavern|brewing|hospital)\b/i;
 
@@ -494,4 +495,294 @@ defineAction({
     };
   },
   artifacts: sitesArtifact,
+});
+
+/** A customer's contacts, always as an array. */
+export function customerContacts(customer) {
+  return Array.isArray(customer?.contacts) ? customer.contacts : [];
+}
+
+/** "Jane Smith (Site foreman)", or whichever part of that exists. */
+export function contactLabel(contact) {
+  if (!contact) return '';
+  const name = String(contact.name || '').trim();
+  const role = String(contact.role || '').trim();
+  if (name && role) return `${name} (${role})`;
+  return name || role || String(contact.email || contact.phone || '').trim() || 'contact';
+}
+
+/**
+ * Which of a customer's contacts a request means.
+ *
+ * Matching runs over name, role, email and phone, with an exact hit beating a
+ * prefix and a prefix beating a substring. Two contacts that tie are a question
+ * rather than a coin toss, because the wrong person on a quote is worse than
+ * one more card.
+ */
+export function resolveContact(customer, query) {
+  const text = normalizeText(query);
+  if (!text) throw invalidInput('A contact name is required.');
+  const hits = customerContacts(customer)
+    .map((contact, index) => {
+      const values = [contact.name, contact.role, contact.email, contact.phone].map(normalizeText).filter(Boolean);
+      let score = 0;
+      if (values.includes(text)) score = 1;
+      else if (values.some((value) => value.startsWith(text))) score = 0.9;
+      else if (values.some((value) => value.includes(text))) score = 0.8;
+      else if (text.split(' ').every((token) => values.join(' ').includes(token))) score = 0.6;
+      return { contact, index, score };
+    })
+    .filter((hit) => hit.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  if (!hits.length) {
+    const known = customerContacts(customer).map((contact) => contactLabel(contact)).join(', ');
+    throw invalidInput(
+      `${customerLabel(customer) || 'That customer'} has no contact matching "${query}".${known ? ` Their contacts are: ${known}.` : ' They have no contacts saved yet — add one with add_contact first.'}`
+    );
+  }
+  const [top] = hits;
+  if (hits.length === 1 || top.score - hits[1].score >= 0.15 || (top.score === 1 && hits[1].score < 1)) {
+    return { contact: top.contact, index: top.index, hits };
+  }
+  throw ambiguousMatch(
+    'contact',
+    query,
+    hits.slice(0, 5).map((hit) => ({ id: contactLabel(hit.contact), label: contactLabel(hit.contact) }))
+  );
+}
+
+defineAction({
+  name: 'add_contact',
+  title: 'Add a customer contact',
+  description:
+    'Save a person at a customer — the site foreman, the accounts clerk, the owner — with their role, email and phone. Use it when a job or quote needs a named contact who is not on the customer record yet.',
+  permission: { module: 'Customers', key: 'manage_contacts' },
+  inputSchema: objectSchema(
+    {
+      customer: str('Customer name or id.'),
+      name: str('The person\'s name.'),
+      role: str('Their role, e.g. "Site foreman" or "Accounts".'),
+      email: str('Email address.'),
+      phone: str('Phone number.'),
+    },
+    ['customer', 'name']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ customer, name, role, email, phone }) => {
+    const record = requireCustomerRecord(customer);
+    const label = customerLabel(record);
+    const contacts = customerContacts(record).map((contact) => ({ ...contact }));
+    const wanted = {
+      name: String(name).trim(),
+      ...(role != null ? { role: String(role).trim() } : {}),
+      ...(email != null ? { email: String(email).trim() } : {}),
+      ...(phone != null ? { phone: String(phone).trim() } : {}),
+    };
+    const existing = contacts.find((contact) => normalizeText(contact.name) === normalizeText(wanted.name));
+    if (existing) {
+      return {
+        summary: `${label} already has ${contactLabel(existing)} — use update_contact to change it.`,
+        customerId: record.id,
+        customerName: label,
+        contact: existing,
+        created: false,
+        contacts,
+      };
+    }
+    contacts.push(wanted);
+    await store.update('customers', record.id, { contacts });
+    return {
+      summary: `Added ${contactLabel(wanted)} to ${label}.`,
+      customerId: record.id,
+      customerName: label,
+      contact: wanted,
+      created: true,
+      contacts,
+    };
+  },
+  artifacts: (result) => [{ label: `${result.customerName} — contacts`, path: `/people/${result.customerId}?tab=contacts` }],
+});
+
+defineAction({
+  name: 'update_contact',
+  title: 'Update a customer contact',
+  description: 'Change a contact\'s name, role, email or phone. Only pass the fields that change.',
+  permission: { module: 'Customers', key: 'manage_contacts' },
+  inputSchema: objectSchema(
+    {
+      customer: str('Customer name or id.'),
+      contact: str('The contact to change — their name, email or phone.'),
+      name: str('New name.'),
+      role: str('New role.'),
+      email: str('New email address.'),
+      phone: str('New phone number.'),
+    },
+    ['customer', 'contact']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ customer, contact: reference, name, role, email, phone }) => {
+    const record = requireCustomerRecord(customer);
+    const label = customerLabel(record);
+    const found = resolveContact(record, reference);
+    const contacts = customerContacts(record).map((entry) => ({ ...entry }));
+    const patch = {};
+    if (name != null) patch.name = String(name).trim();
+    if (role != null) patch.role = String(role).trim();
+    if (email != null) patch.email = String(email).trim();
+    if (phone != null) patch.phone = String(phone).trim();
+    if (!Object.keys(patch).length) throw invalidInput('Nothing to update — pass at least one new value.');
+    contacts[found.index] = { ...contacts[found.index], ...patch };
+    await store.update('customers', record.id, { contacts });
+    return {
+      summary: `Updated ${contactLabel(contacts[found.index])} at ${label} (${Object.keys(patch).join(', ')}).`,
+      customerId: record.id,
+      customerName: label,
+      contact: contacts[found.index],
+      fields: Object.keys(patch),
+      contacts,
+    };
+  },
+  artifacts: (result) => [{ label: `${result.customerName} — contacts`, path: `/people/${result.customerId}?tab=contacts` }],
+});
+
+defineAction({
+  name: 'delete_contact',
+  title: 'Delete a customer contact',
+  description: 'Permanently remove a contact from a customer. This cannot be undone.',
+  permission: { module: 'Customers', key: 'manage_contacts' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      customer: str('Customer name or id.'),
+      contact: str('The contact to remove — their name, email or phone.'),
+      reason: str('Why the contact is being removed.'),
+    },
+    ['customer', 'contact']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ customer, contact: reference, reason }) => {
+    const record = requireCustomerRecord(customer);
+    const label = customerLabel(record);
+    const found = resolveContact(record, reference);
+    const contacts = customerContacts(record).map((entry) => ({ ...entry }));
+    const [removed] = contacts.splice(found.index, 1);
+    await store.update('customers', record.id, { contacts });
+    await logActivity({
+      type: 'customer_updated',
+      text: `Contact ${contactLabel(removed)} removed from ${label}${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'customer',
+      recordId: record.id,
+    });
+    return {
+      summary: `Removed ${contactLabel(removed)} from ${label}.`,
+      customerId: record.id,
+      customerName: label,
+      contact: removed,
+      reason: reason || null,
+      contacts,
+    };
+  },
+  artifacts: (result) => [{ label: `${result.customerName} — contacts`, path: `/people/${result.customerId}?tab=contacts` }],
+});
+
+defineAction({
+  name: 'delete_site',
+  title: 'Delete a customer\'s site',
+  description:
+    'Permanently remove a site from a customer\'s site list. Jobs already booked at that address keep the address they have. This cannot be undone.',
+  permission: { module: 'Customers', key: 'manage_contacts' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      customer: str('Customer name or id.'),
+      site: str('The site to remove — its name or its address.'),
+      reason: str('Why the site is being removed.'),
+    },
+    ['customer', 'site']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ customer, site: reference, reason }) => {
+    const record = requireCustomerRecord(customer);
+    const label = customerLabel(record);
+    const found = resolveSite(record, reference);
+    if (found.kind === 'many') throw siteAmbiguous(reference, found.hits);
+    if (found.kind === 'none') throw siteNotFound(record, reference);
+    const sites = customerSites(record).map((site) => ({ ...site }));
+    const [removed] = sites.splice(found.index, 1);
+    await store.update('customers', record.id, { sites });
+    const jobs = (store.getAll('jobs') || []).filter((job) => job.customerId === record.id);
+    const booked = siteJobCount(jobs, removed);
+    await logActivity({
+      type: 'customer_updated',
+      text: `Site ${siteLabel(removed)} removed from ${label}${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'customer',
+      recordId: record.id,
+    });
+    return {
+      summary: `Removed site ${siteLabel(removed)} from ${label}${booked ? `; ${booked} job${booked === 1 ? '' : 's'} still carry that address` : ''}.`,
+      customerId: record.id,
+      customerName: label,
+      site: removed,
+      bookedJobs: booked,
+      reason: reason || null,
+      sites,
+    };
+  },
+  artifacts: sitesArtifact,
+});
+
+defineAction({
+  name: 'delete_customer',
+  title: 'Delete a customer',
+  description:
+    'Permanently delete a customer and their contacts and sites. This cannot be undone, and it is the wrong tool when the history should stay. Jobs, quotes, invoices and projects that pointed at the customer are left on file without one — read the record first and tell the user what will be orphaned.',
+  permission: { module: 'Customers', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      customer: str('Customer name or id.'),
+      reason: str('Why the customer is being deleted.'),
+    },
+    ['customer']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ customer, reason }) => {
+    const record = requireCustomerRecord(customer);
+    const label = customerLabel(record);
+    const count = (collection) => (store.getAll(collection) || []).filter((row) => row.customerId === record.id).length;
+    const linked = {
+      jobs: count('jobs'),
+      quotes: count('quotes'),
+      invoices: count('invoices'),
+      projects: count('projects'),
+      assets: count('assets'),
+      leads: count('leads'),
+    };
+    const snapshot = {
+      id: record.id,
+      name: label,
+      email: record.email || null,
+      phone: record.phone || null,
+      contacts: customerContacts(record).length,
+      sites: customerSites(record).length,
+    };
+    const total = Object.values(linked).reduce((sum, n) => sum + n, 0);
+
+    await store.delete('customers', record.id);
+    await logActivity({
+      type: 'customer_deleted',
+      text: `Customer ${label} deleted${reason ? ` — ${reason}` : ''}${total ? ` (${total} linked records left on file)` : ''}.`,
+      recordType: 'customer',
+      recordId: snapshot.id,
+    });
+
+    const left = Object.entries(linked).filter(([, n]) => n).map(([name, n]) => `${n} ${name}`).join(', ');
+    return {
+      summary: `Deleted customer ${label}${left ? `; ${left} left on file without a customer` : ''}.`,
+      customer: snapshot,
+      linked,
+      reason: reason || null,
+    };
+  },
 });
