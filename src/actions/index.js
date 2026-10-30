@@ -23,6 +23,7 @@ import './invoices.js';
 import './purchasing.js';
 import './notifications.js';
 import './todos.js';
+import './messaging.js';
 import './staff.js';
 import './routines.js';
 import './reads.js';
