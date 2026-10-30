@@ -21,6 +21,7 @@ import './invoices.js';
 import './purchasing.js';
 import './notifications.js';
 import './todos.js';
+import './documents.js';
 import './reads.js';
 import './forms.js';
 import './conversation.js';
