@@ -16,6 +16,7 @@ import { entityLink } from '../../components/EntityLink.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
+import { PAYMENT_TERMS_PRESETS, DEFAULT_PAYMENT_TERMS_DAYS, paymentTermsDaysFromInput, customerPaymentTermsLabel, creditUsage } from '../../utils/customerTerms.js';
 
 export function renderPersonDetail(container, { id, tab }) {
   const person = store.getById('customers', id);
@@ -115,6 +116,82 @@ export function renderPersonDetail(container, { id, tab }) {
         ],
       });
     });
+  }
+
+  // Payment terms and the credit limit live next to the figures they change, so
+  // they are edited from the Financials tab rather than only in the full form.
+  function showPaymentSettingsDrawer() {
+    const savedDays = paymentTermsDaysFromInput(person.paymentTermsDays);
+    const preset = savedDays === null
+      ? ''
+      : (PAYMENT_TERMS_PRESETS.some(t => t.days === savedDays) ? String(savedDays) : 'custom');
+    const customDays = preset === 'custom' ? savedDays : '';
+    const limitValue = Number(person.creditLimit) > 0 ? Number(person.creditLimit) : '';
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Payment Terms</label>
+        <select class="form-select" id="ps-terms">
+          <option value="" ${preset === '' ? 'selected' : ''}>Default (${DEFAULT_PAYMENT_TERMS_DAYS} Days)</option>
+          ${PAYMENT_TERMS_PRESETS.map(t => `<option value="${t.days}" ${preset === String(t.days) ? 'selected' : ''}>${escapeHTML(t.label)}</option>`).join('')}
+          <option value="custom" ${preset === 'custom' ? 'selected' : ''}>Custom…</option>
+        </select>
+        <p class="text-tertiary" style="margin-top:6px">Sets the due date on new invoices for this customer.</p>
+      </div>
+      <div class="form-group" id="ps-terms-custom-group" style="display:${preset === 'custom' ? 'block' : 'none'}">
+        <label class="form-label">Custom Terms (days)</label>
+        <input type="number" min="0" step="1" class="form-input" id="ps-terms-custom" value="${customDays}" placeholder="21" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Credit Limit</label>
+        <input type="number" min="0" step="0.01" class="form-input" id="ps-credit-limit" value="${limitValue}" placeholder="No limit" />
+        <p class="text-tertiary" style="margin-top:6px">Leave blank for no limit. An invoice that takes their unpaid balance over it shows a warning.</p>
+      </div>
+    `;
+
+    showDrawer({
+      title: 'Payment Settings',
+      content: content.outerHTML,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        { label: 'Save', className: 'btn-primary', onClick: (close) => {
+          const overlay = document.querySelector('.drawer-overlay');
+          const choice = overlay.querySelector('#ps-terms').value;
+          const customText = String(overlay.querySelector('#ps-terms-custom')?.value ?? '').trim();
+          const limitText = String(overlay.querySelector('#ps-credit-limit')?.value ?? '').trim();
+
+          const paymentTermsDays = choice === 'custom'
+            ? (customText === '' ? null : Number(customText))
+            : (choice === '' ? null : Number(choice));
+          const creditLimit = limitText === '' ? null : Number(limitText);
+
+          if (paymentTermsDays !== null && (!Number.isFinite(paymentTermsDays) || paymentTermsDays < 0)) {
+            return showToast('Custom terms must be a number of days', 'error');
+          }
+          if (creditLimit !== null && (!Number.isFinite(creditLimit) || creditLimit < 0)) {
+            return showToast('Credit limit must be an amount', 'error');
+          }
+
+          store.update('customers', id, { paymentTermsDays, creditLimit });
+          // Keep the record this page renders from in step with the saved one.
+          person.paymentTermsDays = paymentTermsDays;
+          person.creditLimit = creditLimit;
+          showToast('Payment settings updated', 'success');
+          renderTabContent();
+          close();
+        }}
+      ]
+    });
+
+    // The custom-days field only appears for "Custom…".
+    setTimeout(() => {
+      const overlay = document.querySelector('.drawer-overlay');
+      overlay?.querySelector('#ps-terms')?.addEventListener('change', (e) => {
+        const group = overlay.querySelector('#ps-terms-custom-group');
+        if (group) group.style.display = e.target.value === 'custom' ? 'block' : 'none';
+      });
+    }, 0);
   }
 
   function renderTabContent() {
@@ -776,6 +853,15 @@ export function renderPersonDetail(container, { id, tab }) {
            }
         }
       });
+
+      // The credit position counts live invoices the same way the KPI cards do
+      // (drafts are not debt, part-payments reduce the balance), so the limit
+      // shown here agrees with the warning shown when an invoice is created.
+      const credit = creditUsage(person, invoices);
+      const creditTone = credit.over ? 'badge-danger' : 'badge-success';
+      const creditStatusText = credit.over
+        ? `$${fmtMoney(credit.outstanding - credit.limit)} over limit`
+        : `$${fmtMoney(credit.available)} available`;
       
       tabContent.innerHTML = `
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
@@ -802,16 +888,30 @@ export function renderPersonDetail(container, { id, tab }) {
           </div>
           
           <div class="card" style="margin:0">
-            <div class="card-header"><h4>Payment Settings</h4></div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-sm)">
+              <h4 style="margin:0">Payment Settings</h4>
+              <button class="btn btn-secondary btn-sm" id="btn-edit-payment-settings" data-tooltip="Change this customer's payment terms and credit limit" data-tooltip-pos="left">
+                <span class="material-icons-outlined" style="font-size:16px">edit</span> Edit
+              </button>
+            </div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
               <div style="display:flex; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid var(--border-color)">
                 <span style="color:var(--text-secondary)">Payment Terms</span>
-                <span style="font-weight:500">${escapeHTML(person.paymentTerms || 'Default (14 Days)')}</span>
+                <span style="font-weight:500">${escapeHTML(customerPaymentTermsLabel(person))}</span>
               </div>
               <div style="display:flex; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid var(--border-color)">
                 <span style="color:var(--text-secondary)">Credit Limit</span>
-                <span style="font-weight:500">${(person.creditLimit ? '$' + parseFloat(person.creditLimit).toLocaleString('en-AU', { minimumFractionDigits: 2 }) : 'None Set')}</span>
+                <span style="font-weight:500">${credit.limit === null ? 'No limit' : '$' + fmtMoney(credit.limit)}</span>
               </div>
+              ${credit.limit === null ? '' : `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--border-color)">
+                <span style="color:var(--text-secondary)">Credit Used</span>
+                <span style="display:flex; align-items:center; gap:8px">
+                  <span style="font-weight:500">$${fmtMoney(credit.outstanding)} of $${fmtMoney(credit.limit)}</span>
+                  <span class="badge ${creditTone}">${escapeHTML(creditStatusText)}</span>
+                </span>
+              </div>
+              `}
               <div style="display:flex; justify-content:space-between;">
                 <span style="color:var(--text-secondary)">Account Status</span>
                 <span class="badge ${(totalOverdue > 0 ? 'badge-danger' : 'badge-success')}">${(totalOverdue > 0 ? 'In Arrears' : 'In Good Standing')}</span>
@@ -826,10 +926,16 @@ export function renderPersonDetail(container, { id, tab }) {
         { label: 'Balance', key: 'balanceDue', format: 'currency' },
         { label: 'Due', key: 'dueDate', format: 'date' },
       ], 'invoices', 'No outstanding invoices for this customer');
+
+      tabContent.querySelector('#btn-edit-payment-settings').addEventListener('click', showPaymentSettingsDrawer);
     }
   }
 
   render();
+}
+
+function fmtMoney(value) {
+  return (Number(value) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function detailRow(label, value) {

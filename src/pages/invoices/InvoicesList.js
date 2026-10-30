@@ -14,6 +14,7 @@ import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, cachedXeroStatus, cachedInvoiceSyncJobs, xeroSyncBadgeHtml, pushToXero } from '../../utils/xero.js';
 import { xeroImportCsv, plainCsv, downloadCsv } from '../../utils/accountingExport.js';
+import { dueDateForCustomer } from '../../utils/customerTerms.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -273,7 +274,7 @@ export function renderInvoicesList(container) {
                         tax: roundCurrency(subtotal * taxRate),
                         total: roundCurrency(subtotal * (1 + taxRate)),
                         issueDate: new Date().toISOString(),
-                        dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
+                        dueDate: dueDateForCustomer(store.getById('customers', invoices[0].customerId)).toISOString()
                       });
 
                       // Void the originals

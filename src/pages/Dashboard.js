@@ -31,6 +31,8 @@ import {
 } from '../utils/kpis.js';
 import { ACTION_WIDGETS, wireActionWidgets, openRevenueGoalEditor } from './dashboard/actionWidgets.js';
 import { getSessionUser } from './auth/session.js';
+import { dueDateForCustomer } from '../utils/customerTerms.js';
+import { confirmOverCreditLimit } from '../utils/creditLimitPrompt.js';
 // Permanent quick actions, icon-only (name on hover). They're rendered as the
 // page's header actions, so the app shell moves them into the breadcrumb bar at
 // the same size as every other page's action buttons. Icons match the sidebar's
@@ -1745,33 +1747,40 @@ function wireWidgetControls(grid, data) {
       const subtotal = matCost + billableLab;
       const tax = roundCurrency(subtotal * store.getTaxRate());
 
-      const inv = store.create('invoices', {
-        jobNumber: job.number,
-        jobId: job.id,
-        customerId: job.customerId,
-        customerName: job.customerName,
-        contactName: job.contactName || '',
-        status: 'Draft',
-        lineItems: [
-          { description: `${job.title} - Labor`, amount: billableLab },
-          { description: `${job.title} - Materials`, amount: matCost },
-        ],
-        subtotal,
-        tax,
-        total: roundCurrency(subtotal + tax),
-        invoiceType: 'Standard',
-        issueDate: new Date().toISOString(),
-        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        paidDate: null,
-        notes: ''
-      });
+      const total = roundCurrency(subtotal + tax);
 
-      // Job flips to "Invoiced" automatically when this draft is sent (store hook)
+      // Warn, but never block, when this invoice takes the customer past their limit.
+      confirmOverCreditLimit({ customerId: job.customerId, customerName: job.customerName, amount: total }).then((proceed) => {
+        if (!proceed) return;
 
-      import('../components/Notifications.js').then(({ showToast }) => {
-        showToast(`Standard Invoice Created for #${job.number}`, 'success');
+        const inv = store.create('invoices', {
+          jobNumber: job.number,
+          jobId: job.id,
+          customerId: job.customerId,
+          customerName: job.customerName,
+          contactName: job.contactName || '',
+          status: 'Draft',
+          lineItems: [
+            { description: `${job.title} - Labor`, amount: billableLab },
+            { description: `${job.title} - Materials`, amount: matCost },
+          ],
+          subtotal,
+          tax,
+          total,
+          invoiceType: 'Standard',
+          issueDate: new Date().toISOString(),
+          dueDate: dueDateForCustomer(store.getById('customers', job.customerId)).toISOString().split('T')[0],
+          paidDate: null,
+          notes: ''
+        });
+
+        // Job flips to "Invoiced" automatically when this draft is sent (store hook)
+
+        import('../components/Notifications.js').then(({ showToast }) => {
+          showToast(`Standard Invoice Created for #${job.number}`, 'success');
+        });
+        window.location.hash = `/invoices/${inv.id}`;
       });
-      window.location.hash = `/invoices/${inv.id}`;
     });
   });
 

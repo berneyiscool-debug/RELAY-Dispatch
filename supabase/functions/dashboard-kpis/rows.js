@@ -22,7 +22,7 @@ export const KPI_TABLES = {
   schedule:         { table: 'schedule', columns: 'id,job_id,technician_id,title,type,date,start_hour,end_hour,start_time,finish_time,hours,color,created_at' },
   leads:            { table: 'leads', columns: 'id,status,stage_history,created_at,updated_at' },
   timesheets:       { table: 'timesheets', columns: 'id,technician_id,date,duration_hours,job_id,status,approved_by,created_at' },
-  customers:        { table: 'customers', columns: 'id,status,created_at' },
+  customers:        { table: 'customers', columns: 'id,status,created_at,credit_limit' },
   technicians:      { table: 'profiles', columns: 'id,role,pay_rate,deactivated' },
   jobMaterials:     { table: 'job_materials', columns: 'id,job_id,quantity,unit_cost,total_cost,date' },
   purchaseOrders:   { table: 'purchase_orders', columns: 'id,job_id,status,total,issue_date' },
@@ -30,7 +30,7 @@ export const KPI_TABLES = {
   assets:           { table: 'assets', columns: 'id,status' },
 };
 
-const NUMERIC = new Set(['subtotal', 'tax', 'total', 'payRate', 'materialCost', 'quantity', 'unitCost', 'totalCost', 'hours', 'startHour', 'endHour']);
+const NUMERIC = new Set(['subtotal', 'tax', 'total', 'payRate', 'materialCost', 'quantity', 'unitCost', 'totalCost', 'hours', 'startHour', 'endHour', 'creditLimit']);
 
 const camel = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 

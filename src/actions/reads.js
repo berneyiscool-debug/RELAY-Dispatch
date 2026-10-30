@@ -46,7 +46,7 @@ const RECORD_TYPES = {
     collection: 'customers',
     label: (r) => r.company || [r.firstName, r.lastName].filter(Boolean).join(' ') || r.id,
     search: ['company', 'firstName', 'lastName', 'email', 'phone', 'address'],
-    fields: ['id', 'company', 'firstName', 'lastName', 'email', 'phone', 'address', 'status', 'type'],
+    fields: ['id', 'company', 'firstName', 'lastName', 'email', 'phone', 'address', 'status', 'type', 'paymentTermsDays', 'creditLimit'],
   },
   technicians: {
     collection: 'technicians',

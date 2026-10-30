@@ -169,3 +169,92 @@ describe('invoicing a job from its tasklist estimates or its booked hours', () =
     assert.strictEqual(labourLineOf(invoice).rate, 2200);
   });
 });
+
+describe('a customer\'s payment terms and credit limit on a drafted invoice', () => {
+  const TERMS_CUSTOMER = 'Invoice Terms Probe Pty Ltd';
+
+  beforeEach(async () => {
+    supabase.from = () => ({ upsert: async () => ({}), insert: async () => ({}), delete: () => ({ eq: async () => ({}), in: async () => ({}) }) });
+    store.demoMode = true;
+    store.companyId = DEMO_COMPANY_ID;
+    store.db = { transaction: () => { throw new Error('IndexedDB touched'); } };
+    await store.initializeDemo({ id: 'user_test', name: 'Test Admin', email: 'test@example.com' });
+    store.create('customers', {
+      company: TERMS_CUSTOMER,
+      status: 'Active',
+      type: 'Company',
+      paymentTermsDays: 7,
+      creditLimit: 1000,
+    });
+  });
+
+  afterEach(() => {
+    store.demoMode = false;
+    store.db = null;
+    store.clearSync();
+  });
+
+  /** A job worth about $935 inc GST at the default rate: inside a $1,000 limit. */
+  async function jobFor(customer, estimatedHours = 10) {
+    const outcome = await executeAction('create_job', { customer, title: 'Terms probe job', estimatedHours }, CTX);
+    return outcome.result.job;
+  }
+
+  const daysUntil = (value) => Math.round((new Date(value).getTime() - Date.now()) / 86400000);
+
+  test('the due date follows the customer\'s terms, not a flat 30 days', async () => {
+    const job = await jobFor(TERMS_CUSTOMER);
+
+    const invoice = (await executeAction('create_invoice', { job: job.number }, CTX)).result.invoice;
+
+    assert.strictEqual(daysUntil(invoice.dueDate), 7);
+  });
+
+  test('a customer with no terms of their own keeps the 30-day default', async () => {
+    store.create('customers', { company: 'Invoice No Terms Pty Ltd', status: 'Active', type: 'Company' });
+    const job = await jobFor('Invoice No Terms Pty Ltd');
+
+    const invoice = (await executeAction('create_invoice', { job: job.number }, CTX)).result.invoice;
+
+    assert.strictEqual(daysUntil(invoice.dueDate), 30);
+  });
+
+  test('an explicit dueInDays still wins over the account terms', async () => {
+    const job = await jobFor(TERMS_CUSTOMER);
+
+    const invoice = (await executeAction('create_invoice', { job: job.number, dueInDays: 45 }, CTX)).result.invoice;
+
+    assert.strictEqual(daysUntil(invoice.dueDate), 45);
+  });
+
+  test('a draft inside the limit is drafted quietly', async () => {
+    const job = await jobFor(TERMS_CUSTOMER, 4);
+
+    const result = (await executeAction('create_invoice', { job: job.number }, CTX)).result;
+
+    assert.strictEqual(result.creditWarning, '');
+    assert.doesNotMatch(result.summary, /credit limit/i);
+  });
+
+  test('a draft over the limit still gets drafted, and the summary says how far over', async () => {
+    const job = await jobFor(TERMS_CUSTOMER, 20); // ~$1,870 inc GST against a $1,000 limit
+
+    const result = (await executeAction('create_invoice', { job: job.number }, CTX)).result;
+
+    assert.ok(result.invoice, 'a credit limit warns, it never blocks the draft');
+    assert.match(result.creditWarning, /\$1,000\.00 credit limit/);
+    assert.match(result.creditWarning, /over the limit/);
+    assert.match(result.summary, /credit limit/);
+  });
+
+  test('money already owed counts towards the limit', async () => {
+    const job = await jobFor(TERMS_CUSTOMER);
+    const first = (await executeAction('create_invoice', { job: job.number }, CTX)).result.invoice;
+
+    // The first invoice is only debt once it leaves Draft.
+    await executeAction('send_invoice', { invoice: first.number }, CTX);
+    const second = (await executeAction('create_invoice', { job: job.number }, CTX)).result;
+
+    assert.match(second.creditWarning, /already owes/);
+  });
+});

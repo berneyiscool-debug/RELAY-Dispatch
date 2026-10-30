@@ -24,6 +24,8 @@ import { xeroEnabled, getXeroStatusCached, fetchInvoiceSyncJobs, xeroInvoiceSync
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { getSessionUser } from '../auth/session.js';
+import { dueDateForCustomer } from '../../utils/customerTerms.js';
+import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
 export function renderInvoiceDetail(container, params) {
   const { id, tab } = params;
   const isNew = id === 'new';
@@ -42,7 +44,7 @@ export function renderInvoiceDetail(container, params) {
     sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
     subtotal: 0, tax: 0, total: 0,
     issueDate: new Date().toISOString(), 
-    dueDate: new Date(Date.now() + 30*86400000).toISOString(),
+    dueDate: dueDateForCustomer(null).toISOString(),
     invoiceType: 'Standard',
     laborProfileId: defaultLaborRateId
   } : store.getById('invoices', id);
@@ -721,7 +723,19 @@ export function renderInvoiceDetail(container, params) {
     const customerSelect = container.querySelector('#inv-customer');
     if (customerSelect) {
       wireNewCustomerOption(customerSelect, { customers });
-      customerSelect.addEventListener('change', () => { invoice.customerId = customerSelect.value; });
+      customerSelect.addEventListener('change', () => {
+        invoice.customerId = customerSelect.value;
+
+        // A new invoice takes the customer's payment terms. An existing invoice's
+        // due date is a deliberate choice, so editing one never rewrites it.
+        if (isNew && invoice.customerId) {
+          const customer = store.getById('customers', invoice.customerId) || customers.find(c => c.id === invoice.customerId);
+          const issueDate = container.querySelector('#inv-issue')?.value;
+          invoice.dueDate = dueDateForCustomer(customer, issueDate || new Date()).toISOString();
+          const dueInput = container.querySelector('#inv-due');
+          if (dueInput) dueInput.value = invoice.dueDate.split('T')[0];
+        }
+      });
     }
 
     container.querySelector('#btn-add-invoice-history-note')?.addEventListener('click', () => {
@@ -1067,6 +1081,14 @@ export function renderInvoiceDetail(container, params) {
       invoice.pendingVariationsSum = pendingVariationsSum;
 
       if (isNew) {
+        // Warn, but never block, when this invoice takes the customer past their limit.
+        const proceed = await confirmOverCreditLimit({
+          customerId: invoice.customerId,
+          customerName: invoice.customerName,
+          amount: invoice.total
+        });
+        if (!proceed) return;
+
         const saved = store.create('invoices', invoice);
         showToast('Invoice created', 'success');
         router.navigate(`/invoices/${saved.id}`);

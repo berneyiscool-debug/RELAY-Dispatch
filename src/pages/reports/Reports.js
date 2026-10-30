@@ -270,8 +270,12 @@ function csvFor(id, r) {
           return [p.assetName || '', asset?.serial || '', p.customerName || '', p.name || '', p.frequency || 'Meter-Based', p.nextServiceDate || p.nextDue || '', p.priority || 5, assetServiceCost(asset)];
         }));
     case 'customers':
-      return toCsv(['Company', 'First name', 'Last name', 'Email', 'Phone', 'Status', 'Invoiced in range (ex GST)'],
-        d.customers.map(c => [c.company, c.firstName, c.lastName, c.email, c.phone, c.status, r.customers.revenueById.get(String(c.id)) || 0]));
+      return toCsv(['Company', 'First name', 'Last name', 'Email', 'Phone', 'Status', 'Invoiced in range (ex GST)', 'Credit limit', 'Owing (incl. GST)', 'Over limit by'],
+        d.customers.map(c => {
+          const a = r.credit.byId.get(String(c.id));
+          return [c.company, c.firstName, c.lastName, c.email, c.phone, c.status, r.customers.revenueById.get(String(c.id)) || 0,
+            a && a.limit > 0 ? a.limit : '', a ? a.owing : 0, a && a.overBy > 0 ? a.overBy : ''];
+        }));
     case 'inventory':
       return toCsv(['Name', 'SKU', 'Category', 'Quantity', 'Cost price', 'Sell price', 'Location', 'Supplier'],
         d.stock.map(i => [i.name, i.sku, i.category, Number(i.quantity) || 0, Number(i.costPrice) || 0, Number(i.unitPrice) || 0, i.location, i.supplier]));

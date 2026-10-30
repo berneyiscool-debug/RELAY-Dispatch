@@ -25,7 +25,9 @@ regional. RELAY flips both:
 ## What it does
 
 **Sales & jobs**
-- CRM — customers with multiple contacts, sites, and equipment; lead pipeline
+- CRM — customers with multiple contacts, sites, and equipment, plus account
+  terms (payment terms that set invoice due dates, and a credit limit that
+  warns when a new invoice takes the unpaid balance over it); lead pipeline
   with weighted forecasting and one-click convert-to-quote
 - Quotes — multi-section builder, line items, kit insertion with margin
   control, versioning, email-with-tracking, accept/decline

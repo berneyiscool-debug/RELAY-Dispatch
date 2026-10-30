@@ -15,7 +15,7 @@
 import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
 import { resolveOne, tryResolveOne } from './resolve.js';
-import { objectSchema, str, enumOf } from './schema.js';
+import { objectSchema, str, num, enumOf } from './schema.js';
 import { ambiguousMatch, invalidInput } from './errors.js';
 
 const COMPANY_HINTS = /\b(pty|limited|ltd|inc|co|corp|group|holdings|services|trust|university|school|council|hotel|motel|club|tavern|brewing|hospital)\b/i;
@@ -27,6 +27,30 @@ export function customerLabel(customer) {
 
 export function guessCustomerType(name) {
   return COMPANY_HINTS.test(String(name)) ? 'Company' : 'Individual';
+}
+
+/**
+ * A non-negative whole number of days, or null when the caller said nothing.
+ * Rejected rather than clamped: a negative term would put every new invoice's
+ * due date in the past.
+ */
+function normalizeTerms(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const days = Number(value);
+  if (!Number.isFinite(days) || days < 0) {
+    throw invalidInput('Payment terms must be a number of days, 0 or more.', { paymentTermsDays: value });
+  }
+  return Math.round(days);
+}
+
+/** A non-negative dollar credit limit, or null for "no limit". */
+function normalizeCreditLimit(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit < 0) {
+    throw invalidInput('Credit limit must be a dollar amount, 0 or more.', { creditLimit: value });
+  }
+  return limit;
 }
 
 function nameTokens(text) {
@@ -242,11 +266,13 @@ defineAction({
       email: str('Email address.'),
       phone: str('Phone number.'),
       address: str('Site or billing address.'),
+      paymentTermsDays: num('Days of credit on new invoices, 0 for COD. Defaults to 30.', { minimum: 0 }),
+      creditLimit: num('Dollar credit limit before a warning shows on a new invoice. Omit or 0 for no limit.', { minimum: 0 }),
       notes: str('Anything worth remembering about the customer.'),
     },
     ['name']
   ),
-  run: async ({ name, type, firstName, lastName, email, phone, address, notes }) => {
+  run: async ({ name, type, firstName, lastName, email, phone, address, paymentTermsDays, creditLimit, notes }) => {
     const existing = (store.getAll('customers') || []).find((c) => sameCustomerName(customerLabel(c), name));
     if (existing) {
       return {
@@ -256,6 +282,8 @@ defineAction({
       };
     }
     const isCompany = !firstName && !lastName && (type ? type === 'Company' : guessCustomerType(name) === 'Company');
+    const terms = normalizeTerms(paymentTermsDays);
+    const limit = normalizeCreditLimit(creditLimit);
     const record = store.create('customers', {
       status: 'Active',
       type: isCompany ? 'Company' : (type || 'Individual'),
@@ -263,6 +291,8 @@ defineAction({
       ...(email ? { email } : {}),
       ...(phone ? { phone } : {}),
       ...(address ? { address } : {}),
+      ...(terms !== null ? { paymentTermsDays: terms } : {}),
+      ...(limit !== null ? { creditLimit: limit } : {}),
       ...(notes ? { notes } : {}),
     });
     return { summary: `Added customer ${customerLabel(record)}.`, customer: record, created: true };
@@ -272,7 +302,7 @@ defineAction({
 defineAction({
   name: 'update_customer',
   title: 'Update a customer',
-  description: 'Change a customer\'s contact details. Only pass the fields that change.',
+  description: 'Change a customer\'s contact details or account terms. Only pass the fields that change.',
   permission: { module: 'Customers', key: 'edit' },
   inputSchema: objectSchema(
     {
@@ -282,10 +312,12 @@ defineAction({
       phone: str('New phone number.'),
       address: str('New address.'),
       type: enumOf(['Company', 'Individual'], 'New customer type.'),
+      paymentTermsDays: num('Days of credit on new invoices, 0 for COD.', { minimum: 0 }),
+      creditLimit: num('Dollar credit limit before a new invoice shows a warning. 0 for no limit.', { minimum: 0 }),
     },
     ['customer']
   ),
-  run: async ({ customer, name, email, phone, address, type }) => {
+  run: async ({ customer, name, email, phone, address, type, paymentTermsDays, creditLimit }) => {
     const found = resolveOne('customers', customer, {
       label: customerLabel,
       searchFields: ['company', 'firstName', 'lastName', 'email', 'phone'],
@@ -297,6 +329,8 @@ defineAction({
     if (phone) changes.phone = phone;
     if (address) changes.address = address;
     if (type) changes.type = type;
+    if (paymentTermsDays !== undefined) changes.paymentTermsDays = normalizeTerms(paymentTermsDays);
+    if (creditLimit !== undefined) changes.creditLimit = normalizeCreditLimit(creditLimit);
     if (!Object.keys(changes).length) throw invalidInput('Nothing to update — pass at least one new value.');
     await store.update('customers', found.id, changes);
     return { summary: `Updated ${customerLabel(found)} (${Object.keys(changes).join(', ')}).`, customerId: found.id, changes };

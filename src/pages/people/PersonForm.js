@@ -7,11 +7,21 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 import { escapeHTML } from '../../utils/security.js';
+import { PAYMENT_TERMS_PRESETS, paymentTermsDaysFromInput } from '../../utils/customerTerms.js';
 
 export function renderPersonForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const person = isEdit ? store.getById('customers', id) : {};
   const isIndividual = person.type === 'Individual';
+
+  // Payment terms are stored as a number of days; the select offers the presets
+  // and falls back to a free number when the saved value is anything else.
+  const savedDays = paymentTermsDaysFromInput(person.paymentTermsDays);
+  const termsPreset = savedDays === null
+    ? ''
+    : (PAYMENT_TERMS_PRESETS.some(t => t.days === savedDays) ? String(savedDays) : 'custom');
+  const customDays = termsPreset === 'custom' ? savedDays : '';
+  const creditLimitValue = Number(person.creditLimit) > 0 ? Number(person.creditLimit) : '';
 
   container.innerHTML = `
     <div class="page-header">
@@ -64,6 +74,27 @@ export function renderPersonForm(container, { id }) {
                 <option value="Active" ${person.status === 'Active' || !isEdit ? 'selected' : ''}>Active</option>
                 <option value="Inactive" ${person.status === 'Inactive' ? 'selected' : ''}>Inactive</option>
               </select>
+            </div>
+          </div>
+          <h4 style="margin:var(--space-lg) 0 var(--space-base)">Payment &amp; Credit</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Payment Terms</label>
+              <select class="form-select" name="paymentTermsPreset" id="payment-terms-preset">
+                <option value="" ${termsPreset === '' ? 'selected' : ''}>Default (30 Days)</option>
+                ${PAYMENT_TERMS_PRESETS.map(t => `<option value="${t.days}" ${termsPreset === String(t.days) ? 'selected' : ''}>${escapeHTML(t.label)}</option>`).join('')}
+                <option value="custom" ${termsPreset === 'custom' ? 'selected' : ''}>Custom…</option>
+              </select>
+              <p class="text-tertiary" style="margin-top:6px">Sets the due date on new invoices. Default is 30 days.</p>
+            </div>
+            <div class="form-group" id="payment-terms-custom-group" style="display:${termsPreset === 'custom' ? 'block' : 'none'}">
+              <label class="form-label">Custom Terms (days)</label>
+              <input class="form-input" type="number" min="0" step="1" name="paymentTermsCustom" id="payment-terms-custom" value="${customDays}" placeholder="21" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Credit Limit</label>
+              <input class="form-input" type="number" min="0" step="0.01" name="creditLimit" id="credit-limit" value="${creditLimitValue}" placeholder="No limit" />
+              <p class="text-tertiary" style="margin-top:6px">Warns when a new invoice takes their unpaid balance over this. Leave blank for no limit.</p>
             </div>
           </div>
           <div class="form-group">
@@ -122,6 +153,17 @@ export function renderPersonForm(container, { id }) {
     router.navigate(isEdit ? `/people/${id}` : '/people');
   });
 
+  // The custom-days field only appears when "Custom…" is chosen.
+  const termsSelect = container.querySelector('#payment-terms-preset');
+  const customGroup = container.querySelector('#payment-terms-custom-group');
+  if (termsSelect && customGroup) {
+    termsSelect.addEventListener('change', () => {
+      const isCustom = termsSelect.value === 'custom';
+      customGroup.style.display = isCustom ? 'block' : 'none';
+      if (isCustom) container.querySelector('#payment-terms-custom')?.focus();
+    });
+  }
+
   container.querySelector('#btn-save').addEventListener('click', () => {
     const form = container.querySelector('#person-form');
     if (!form.checkValidity()) {
@@ -131,6 +173,20 @@ export function renderPersonForm(container, { id }) {
 
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
+
+    // Terms and limit are controls of their own, not plain form fields: the
+    // preset select and its custom-days companion collapse into one number, and
+    // a blank limit is "no limit" rather than 0.
+    const termsChoice = termsSelect ? termsSelect.value : '';
+    const customValue = container.querySelector('#payment-terms-custom')?.value;
+    data.paymentTermsDays = termsChoice === 'custom'
+      ? (String(customValue ?? '').trim() === '' ? null : Number(customValue))
+      : (termsChoice === '' ? null : Number(termsChoice));
+    delete data.paymentTermsPreset;
+    delete data.paymentTermsCustom;
+
+    const limitText = String(container.querySelector('#credit-limit')?.value ?? '').trim();
+    data.creditLimit = limitText === '' ? null : Number(limitText);
 
     if (isEdit) {
       store.update('customers', id, data);

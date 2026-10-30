@@ -11,12 +11,14 @@
 import {
   KPIS, rows, toDate, inRange, invoiceIssued, invoiceJobShares,
   invoicedJobProfit, jobCosts, jobCompletedAt, lastBookingByJob,
-  timesheetHours, isTemplate, revenueByCustomer,
+  timesheetHours, isTemplate, revenueByCustomer, invoiceBalance,
 } from './kpis.js';
+import { customerPaymentTermsLabel } from './customerTerms.js';
 
 const DAY = 86400000;
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+const round2 = (v) => Math.round(v * 100) / 100;
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const isSet = (v) => !!v && v !== 'All';
@@ -303,7 +305,104 @@ export function buildReport(data, filters = emptyFilters(), { now = new Date(), 
     revenueById: new Map(byCustomer.map(c => [c.id, c.revenue])),
   };
 
-  return { range, ctx, scoped: d, money, profit, monthly, invoicesByStatus, jobs, team, labour: labourTotals, sales, customers };
+  // Credit — GST-inclusive on both sides, because a limit is something set
+  // against what the customer will actually owe. Balances come from the
+  // *unscoped* invoice list: a technician or asset filter slices an invoice's
+  // labour, and half an invoice is not half a credit exposure.
+  const owingByCustomer = new Map();
+  (data.invoices || []).forEach(i => {
+    if (!i || !i.customerId) return;
+    const balance = invoiceBalance(i);
+    if (balance <= 0) return;
+    const key = String(i.customerId);
+    owingByCustomer.set(key, (owingByCustomer.get(key) || 0) + balance);
+  });
+  const creditAccounts = d.customers.map(c => {
+    const limit = num(c.creditLimit);
+    const owing = round2(owingByCustomer.get(String(c.id)) || 0);
+    return {
+      id: c.id,
+      name: c.company || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || c.id,
+      terms: customerPaymentTermsLabel(c),
+      limit,
+      owing,
+      overBy: round2(owing - limit),
+    };
+  });
+  const limited = creditAccounts.filter(a => a.limit > 0);
+  const over = creditAccounts.filter(a => a.limit > 0 && a.overBy > 0).sort((a, b) => b.overBy - a.overBy);
+  const granted = sum(limited, a => a.limit);
+  const credit = {
+    accounts: limited.length,
+    granted: round2(granted),
+    used: round2(sum(limited, a => a.owing)),
+    overCount: over.length,
+    overTotal: round2(sum(over, a => a.overBy)),
+    // Share of the granted credit in use. Over-limit accounts push this past
+    // 100%, which is the point of showing it.
+    utilization: granted > 0 ? round2(sum(limited, a => a.owing)) / granted : null,
+    over,
+    // Every scoped customer, limit or not, so the CSV can carry a balance column.
+    byId: new Map(creditAccounts.map(a => [String(a.id), a])),
+  };
+
+  // Aged receivables, by the terms each account is on. Same GST-inclusive
+  // balances and the same "whole invoice" rule as credit: a technician filter
+  // slices an invoice's share, but a customer still owes the whole thing. The
+  // report's date range is deliberately ignored — this is what is owed *now*,
+  // exactly like the Outstanding and Overdue cards.
+  const today = startOfDay(now);
+  const inScope = new Set(d.customers.map(c => String(c.id)));
+  const ageBuckets = { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90p: 0 };
+  const ageByCustomer = new Map();
+  (data.invoices || []).forEach(i => {
+    if (!i || !i.customerId || !inScope.has(String(i.customerId))) return;
+    const balance = invoiceBalance(i);
+    if (balance <= 0) return;
+    const due = toDate(i.dueDate);
+    const daysPast = due ? Math.floor((today - startOfDay(due)) / DAY) : 0;
+    const bucket = daysPast <= 0 ? 'current'
+      : daysPast <= 30 ? 'd1_30'
+        : daysPast <= 60 ? 'd31_60'
+          : daysPast <= 90 ? 'd61_90' : 'd90p';
+    ageBuckets[bucket] += balance;
+    const key = String(i.customerId);
+    const entry = ageByCustomer.get(key) || { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90p: 0 };
+    entry[bucket] += balance;
+    ageByCustomer.set(key, entry);
+  });
+  const agingRows = d.customers
+    .filter(c => ageByCustomer.has(String(c.id)))
+    .map(c => {
+      const e = ageByCustomer.get(String(c.id));
+      const total = round2(e.current + e.d1_30 + e.d31_60 + e.d61_90 + e.d90p);
+      return {
+        id: c.id,
+        name: c.company || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || c.id,
+        terms: customerPaymentTermsLabel(c),
+        current: round2(e.current),
+        d1_30: round2(e.d1_30),
+        d31_60: round2(e.d31_60),
+        d61_90: round2(e.d61_90),
+        d90p: round2(e.d90p),
+        total,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+  const aging = {
+    buckets: {
+      current: round2(ageBuckets.current),
+      d1_30: round2(ageBuckets.d1_30),
+      d31_60: round2(ageBuckets.d31_60),
+      d61_90: round2(ageBuckets.d61_90),
+      d90p: round2(ageBuckets.d90p),
+    },
+    overdue: round2(ageBuckets.d1_30 + ageBuckets.d31_60 + ageBuckets.d61_90 + ageBuckets.d90p),
+    total: round2(sum(Object.values(ageBuckets), v => v)),
+    rows: agingRows,
+  };
+
+  return { range, ctx, scoped: d, money, profit, monthly, invoicesByStatus, jobs, team, labour: labourTotals, sales, customers, credit, aging };
 }
 
 // Days covered by a range, for labels.

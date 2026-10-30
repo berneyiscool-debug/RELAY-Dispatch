@@ -54,6 +54,8 @@ describe('launch cards against the demo dataset', () => {
     repeat_customers:      [1,        0.9762,   1],
     maintenance_due:       [1,        null,     1],
     top_customer_share:    [0.1285,   0.1502,   0.2018],
+    // One demo account (Hunter Valley Brewing Co, $1,800 limit) is $94.09 over.
+    credit_over:           [94.09,    null,     94.09],
   };
 
   test('callback rate waits for a flagged callback (the demo has none)', () => {
@@ -75,6 +77,7 @@ describe('launch cards against the demo dataset', () => {
     assert.equal(kpiSubline('outstanding', month.outstanding), '45 invoices');
     assert.equal(kpiSubline('scheduled_today', month.scheduled_today), '5 still to start');
     assert.equal(kpiSubline('quotes_sent', month.quotes_sent), '$25.6k quoted');
+    assert.equal(kpiSubline('credit_over', month.credit_over), '1 account over');
     assert.equal(kpiSubline('gross_margin', month.gross_margin), ''); // every job costed
   });
 
@@ -95,7 +98,7 @@ describe('launch cards against the demo dataset', () => {
   });
 
   test('every card is defined and covered here', () => {
-    assert.equal(KPI_IDS.length, 32);
+    assert.equal(KPI_IDS.length, 33);
     assert.equal(KPI_IDS.filter(id => KPIS[id].launch).length, 15);
     assert.deepEqual([...KPI_IDS].sort(), [...Object.keys(expected), 'callback_rate'].sort());
   });

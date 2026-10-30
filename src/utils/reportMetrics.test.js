@@ -191,3 +191,123 @@ describe('CSV', () => {
     assert.equal(toCsv(['a', 'b'], [[1, 'x']]), 'a,b\r\n1,x\r\n');
   });
 });
+
+// A credit limit is only meaningful next to what the customer already owes, so
+// the report has to read the same GST-inclusive balances as the customer page.
+describe('credit limits in the customer report', () => {
+  const creditData = () => ({
+    technicians: [{ id: 't1', name: 'Ana', payRate: 50 }],
+    customers: [
+      { id: 'c1', company: 'Acme', status: 'Active', creditLimit: 1000, paymentTermsDays: 14 },
+      { id: 'c2', company: 'Beta', status: 'Active', creditLimit: 5000 },
+      { id: 'c3', company: 'Gamma', status: 'Active' }, // no limit: never reported
+    ],
+    jobs: [{ id: 'j1', customerId: 'c1', status: 'Invoiced', technicianId: 't1', createdAt: '2026-10-01' }],
+    invoices: [
+      { id: 'i1', customerId: 'c1', status: 'Sent', total: 1500, jobIds: ['j1'], issueDate: '2026-10-02' },
+      { id: 'i2', customerId: 'c1', status: 'Paid', total: 800, jobIds: ['j1'], issueDate: '2026-10-02' },
+      { id: 'i3', customerId: 'c2', status: 'Sent', total: 2000, payments: [{ amount: 500 }], issueDate: '2026-10-02' },
+      { id: 'i4', customerId: 'c3', status: 'Sent', total: 900, issueDate: '2026-10-02' },
+      { id: 'i5', customerId: 'c1', status: 'Draft', total: 10000, issueDate: '2026-10-02' }, // not debt yet
+    ],
+    timesheets: [], assets: [], schedule: [], quotes: [], leads: [],
+    jobMaterials: [], purchaseOrders: [], stock: [], maintenancePlans: [],
+  });
+  const report = (f = {}) => buildReport(creditData(), filters({ start: '2026-10-01', end: '2026-10-31', ...f }), { now });
+
+  test('sums the limits and the GST-inclusive balances of live invoices', () => {
+    const { credit } = report();
+    assert.equal(credit.accounts, 2, 'only customers with a limit');
+    assert.equal(credit.granted, 6000);
+    // 1,500 owed + (2,000 − 500 paid); the paid, draft and unlimited accounts are out.
+    close(credit.used, 3000, 'used');
+    close(credit.utilization, 3000 / 6000, 'utilization');
+  });
+
+  test('reports who is over their limit, worst first, with their terms', () => {
+    const { credit } = report();
+    assert.equal(credit.overCount, 1);
+    close(credit.overTotal, 500, 'over in total');
+    assert.deepEqual(credit.over.map(a => a.id), ['c1']);
+    assert.equal(credit.over[0].name, 'Acme');
+    assert.equal(credit.over[0].terms, '14 Days');
+    close(credit.over[0].limit, 1000, 'limit');
+    close(credit.over[0].owing, 1500, 'owing');
+    close(credit.over[0].overBy, 500, 'over by');
+  });
+
+  test('an account with no terms is labelled with the 30-day default', () => {
+    const data = creditData();
+    data.invoices.push({ id: 'i6', customerId: 'c2', status: 'Sent', total: 5000, issueDate: '2026-10-02' });
+    const { credit } = buildReport(data, filters({ start: '2026-10-01', end: '2026-10-31' }), { now });
+    const beta = credit.over.find(a => a.id === 'c2');
+    assert.equal(beta.terms, '30 Days (default)');
+  });
+
+  test('a technician filter does not slice the exposure', () => {
+    const scoped = report({ technicianId: 't1' });
+    close(scoped.credit.used, 3000, 'balances stay whole under a technician filter');
+  });
+
+  test('no limits set means an empty, not broken, credit block', () => {
+    const data = creditData();
+    data.customers = data.customers.map(c => ({ ...c, creditLimit: null }));
+    const { credit } = buildReport(data, filters(), { now });
+    assert.equal(credit.accounts, 0);
+    assert.equal(credit.granted, 0);
+    assert.equal(credit.utilization, null);
+    assert.deepEqual(credit.over, []);
+  });
+});
+
+// Aged receivables: what is owed *now*, in the buckets a credit controller works
+// in, with each account's terms beside it. Dates here are relative to `now`
+// (8 Oct 2026) so the bucket boundaries are exact.
+describe('aged receivables', () => {
+  const agingData = () => ({
+    customers: [
+      { id: 'c1', company: 'Acme', status: 'Active', paymentTermsDays: 14 },
+      { id: 'c2', company: 'Beta', status: 'Active', paymentTermsDays: 30 },
+    ],
+    invoices: [
+      { id: 'a', customerId: 'c1', status: 'Sent', total: 100, dueDate: '2026-10-20' }, // not due
+      { id: 'b', customerId: 'c1', status: 'Sent', total: 200, dueDate: '2026-10-01' }, // 7 days
+      { id: 'c', customerId: 'c1', status: 'Sent', total: 300, dueDate: '2026-09-01' }, // 37 days
+      { id: 'd', customerId: 'c2', status: 'Sent', total: 400, dueDate: '2026-08-01' }, // 68 days
+      { id: 'e', customerId: 'c2', status: 'Sent', total: 500, dueDate: '2026-06-01' }, // 129 days
+      { id: 'f', customerId: 'c1', status: 'Paid', total: 900, dueDate: '2026-08-01' },
+      { id: 'g', customerId: 'c2', status: 'Draft', total: 900, dueDate: '2026-08-01' },
+    ],
+    jobs: [], technicians: [], timesheets: [], assets: [], schedule: [], quotes: [], leads: [],
+    jobMaterials: [], purchaseOrders: [], stock: [], maintenancePlans: [],
+  });
+
+  test('buckets each live balance by days past due', () => {
+    const { aging } = buildReport(agingData(), filters(), { now });
+    assert.deepEqual(aging.buckets, { current: 100, d1_30: 200, d31_60: 300, d61_90: 400, d90p: 500 });
+    close(aging.overdue, 1400, 'everything past due');
+    close(aging.total, 1500, 'total owed');
+  });
+
+  test('a date range does not hide old debt — this is a snapshot', () => {
+    // A range that only covers today still reports the June invoice.
+    const { aging } = buildReport(agingData(), filters({ start: '2026-10-08', end: '2026-10-08' }), { now });
+    close(aging.total, 1500, 'total owed');
+  });
+
+  test('lists customers worst first with the terms they are on', () => {
+    const { aging } = buildReport(agingData(), filters(), { now });
+    assert.deepEqual(aging.rows.map(a => a.id), ['c2', 'c1']);
+    assert.equal(aging.rows[0].terms, '30 Days');
+    assert.equal(aging.rows[1].terms, '14 Days');
+    close(aging.rows[0].total, 900, 'Beta total');
+    close(aging.rows[0].d90p, 500, 'Beta 90+');
+    close(aging.rows[1].current, 100, 'Acme not yet due');
+  });
+
+  test('the customer filter narrows the ageing, not just the rows', () => {
+    const { aging } = buildReport(agingData(), filters({ customerId: 'c1' }), { now });
+    close(aging.total, 600, 'only Acme');
+    assert.deepEqual(aging.rows.map(a => a.id), ['c1']);
+  });
+});

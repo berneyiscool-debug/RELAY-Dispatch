@@ -10,6 +10,8 @@ import { escapeHTML } from '../../utils/security.js';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { entityLink } from '../../components/EntityLink.js';
+import { dueDateForCustomer } from '../../utils/customerTerms.js';
+import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
 
 export function renderProjectDetail(container, params) {
   const { id, tab } = params;
@@ -662,6 +664,17 @@ export function renderProjectDetail(container, params) {
     try {
       const confirmed = await showConfirm(`Generate a single consolidated invoice of $${invoiceSubtotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })} for ${selectedJobs.length} selected stages?`, { title: 'Generate Invoice', confirmLabel: 'Generate' });
       if (confirmed) {
+        const taxRate = store.getTaxRate();
+        const total = invoiceSubtotal * (1 + taxRate);
+
+        // Warn, but never block, when this invoice takes the customer past their limit.
+        const proceed = await confirmOverCreditLimit({
+          customerId: project.customerId,
+          customerName: project.customerName,
+          amount: total
+        });
+        if (!proceed) return;
+
         const inv = await store.create('invoices', {
           number: store.getNextNumber('INV-', 'invoices'),
           invoiceType: 'Consolidated',
@@ -671,10 +684,10 @@ export function renderProjectDetail(container, params) {
           status: 'Draft',
           sections: sections,
           subtotal: invoiceSubtotal,
-          tax: invoiceSubtotal * store.getTaxRate(),
-          total: invoiceSubtotal * (1 + store.getTaxRate()),
+          tax: invoiceSubtotal * taxRate,
+          total,
           issueDate: new Date().toISOString(),
-          dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+          dueDate: dueDateForCustomer(store.getById('customers', project.customerId)).toISOString(),
           notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.title || j.number).join(', ')}.`,
           // Each selected stage keeps a share of this shared invoice so its own
           // financials can show what it contributed.

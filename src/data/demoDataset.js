@@ -190,14 +190,14 @@ const LAST = ['Turner', 'Nguyen', 'Halloran', 'Kowalski', 'Fitzgerald', 'Achebe'
 const COMMERCIAL = [
   {
     key: 'seaview', company: 'Seaview Strata Management', first: 'Carla', last: 'Benedetti', phone: '02 5550 1201', email: 'carla.benedetti@seaview-strata.example',
-    suburb: 'Hamilton', street: '120 Shoreline Drive', terms: 30,
+    suburb: 'Hamilton', street: '120 Shoreline Drive', terms: 30, limit: 25000,
     contacts: [['Carla Benedetti', 'Strata Manager', '0491 570 101'], ['Josh Varley', 'Building Manager — Harbour View', '0491 570 102'], ['Accounts Payable', 'Accounts', '02 5550 1209']],
     sites: [['Harbour View Apartments', '2 Pelican Parade, Merewether NSW 2291', 'Building manager on site 7am–3pm. Plant room key in lockbox by loading dock.'],
       ['Junction Lofts', '48 Brushbox Street, The Junction NSW 2291', 'Visitor parking bays 1–3. Switch room behind lift core.']],
   },
   {
     key: 'northside', company: 'Northside Real Estate — Property Management', first: 'Tegan', last: 'Albright', phone: '02 5550 1302', email: 'pm@northside-re.example',
-    suburb: 'Lambton', street: '33 Kurrajong Street', terms: 14,
+    suburb: 'Lambton', street: '33 Kurrajong Street', terms: 14, limit: 15000,
     contacts: [['Tegan Albright', 'Senior Property Manager', '0491 570 103'], ['Ollie Brandt', 'Leasing Consultant', '0491 570 104']],
     sites: [['Rental — 14 Myrtle St, Waratah', '14 Myrtle Street, Waratah NSW 2298', 'Tenant: call 30 min before arrival.'],
       ['Rental — 6/22 Wren St, Mayfield', '6/22 Wren Street, Mayfield NSW 2304', 'Keys from office.'],
@@ -205,49 +205,49 @@ const COMMERCIAL = [
   },
   {
     key: 'dental', company: 'The Junction Dental Studio', first: 'Dr. Anika', last: 'Rao', phone: '02 5550 1403', email: 'practice@junction-dental.example',
-    suburb: 'The Junction', street: '7 Grevillea Grove', terms: 14,
+    suburb: 'The Junction', street: '7 Grevillea Grove', terms: 14, limit: 8000,
     contacts: [['Dr. Anika Rao', 'Principal Dentist', '0491 570 105'], ['Shona Kemp', 'Practice Manager', '0491 570 106']],
     sites: [['Main Surgery', '7 Grevillea Grove, The Junction NSW 2291', 'Surgery hours 8am–5pm. Work in treatment rooms only before 8am or with practice manager approval.']],
   },
   {
     key: 'childcare', company: 'Lakeside Early Learning Centre', first: 'Robyn', last: 'Faulkner', phone: '02 5550 1504', email: 'director@lakeside-elc.example',
-    suburb: 'Warners Bay', street: '210 Heron Way', terms: 14,
+    suburb: 'Warners Bay', street: '210 Heron Way', terms: 14, limit: 6000,
     contacts: [['Robyn Faulkner', 'Centre Director', '0491 570 107'], ['Admin Office', 'Reception', '02 5550 1505']],
     sites: [['Warners Bay Centre', '210 Heron Way, Warners Bay NSW 2282', 'Children on site — sign in at office, Working With Children Check required, no tools left unattended.']],
   },
   {
     key: 'brewing', company: 'Hunter Valley Brewing Co', first: 'Dougal', last: 'Ferris', phone: '02 5550 1606', email: 'dougal@hvbrewing.example',
-    suburb: 'Maitland', street: '4 Spotted Gum Road', terms: 14,
+    suburb: 'Maitland', street: '4 Spotted Gum Road', terms: 14, limit: 1800,
     contacts: [['Dougal Ferris', 'Head Brewer / Owner', '0491 570 108'], ['Kim Ashby', 'Bookkeeper', '0491 570 109']],
     sites: [['Brewery & Taproom', '4 Spotted Gum Road, Maitland NSW 2320', 'Forklift operating in warehouse. Taproom open from 12pm Thu–Sun.']],
   },
   {
     key: 'forge', company: 'Forge & Weld Fabrications', first: 'Steve', last: 'Mulholland', phone: '02 5550 1707', email: 'steve@forgeweld.example',
-    suburb: 'Cardiff', street: '15 Bottlebrush Road', terms: 30,
+    suburb: 'Cardiff', street: '15 Bottlebrush Road', terms: 30, limit: 20000,
     contacts: [['Steve Mulholland', 'Workshop Manager', '0491 570 110'], ['Lena Fisk', 'WHS Coordinator', '0491 570 111']],
     sites: [['Fabrication Workshop', '15 Bottlebrush Road, Cardiff NSW 2285', 'Steel caps and hi-vis at all times. Report to WHS before testing.']],
   },
   {
     key: 'physio', company: 'Kotara Physio & Pilates', first: 'Mel', last: 'Chau', phone: '02 5550 1808', email: 'mel@kotara-physio.example',
-    suburb: 'Kotara', street: '2/58 Jacaranda Avenue', terms: 14,
+    suburb: 'Kotara', street: '2/58 Jacaranda Avenue', terms: 14, limit: 4000,
     contacts: [['Mel Chau', 'Owner / Physiotherapist', '0491 570 112']],
     sites: [['Clinic', '2/58 Jacaranda Avenue, Kotara NSW 2289', 'Clinic closes 7pm. Studio floor is sprung timber — drop sheets please.']],
   },
   {
     key: 'espresso', company: 'Little Darby Espresso', first: 'Gus', last: 'Petrov', phone: '02 5550 1909', email: 'gus@littledarby.example',
-    suburb: 'Cooks Hill', street: '61 Boronia Avenue', terms: 7,
+    suburb: 'Cooks Hill', street: '61 Boronia Avenue', terms: 7, limit: 2000,
     contacts: [['Gus Petrov', 'Owner', '0491 570 113']],
     sites: [['Cafe', '61 Boronia Avenue, Cooks Hill NSW 2300', 'Trading 6am–2pm. Book shutdowns after 2pm.']],
   },
   {
     key: 'coastalreno', company: 'Coastal Renovations Pty Ltd', first: 'Jade', last: 'Whitcombe', phone: '02 5550 2010', email: 'jade@coastal-renos.example',
-    suburb: 'Charlestown', street: '19 Silky Oak Drive', terms: 30,
+    suburb: 'Charlestown', street: '19 Silky Oak Drive', terms: 30, limit: 30000,
     contacts: [['Jade Whitcombe', 'Builder / Director', '0491 570 114'], ['Aaron Pell', 'Site Supervisor', '0491 570 115']],
     sites: [['Head Office', '19 Silky Oak Drive, Charlestown NSW 2290', '']],
   },
   {
     key: 'hall', company: 'Adamstown Community Hall Association', first: 'Bev', last: 'Ingram', phone: '02 5550 2111', email: 'secretary@adamstown-hall.example',
-    suburb: 'Adamstown', street: '80 Tea Tree Close', terms: 30,
+    suburb: 'Adamstown', street: '80 Tea Tree Close', terms: 30, limit: 3000,
     contacts: [['Bev Ingram', 'Secretary', '0491 570 116']],
     sites: [['Community Hall', '80 Tea Tree Close, Adamstown NSW 2289', 'Key from Bev. Hall booked most evenings.']],
   },
@@ -574,7 +574,7 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     });
     const rec = {
       id: cid, type: 'Company', company: c.company, firstName: c.first, lastName: c.last, email: c.email, phone: c.phone, address, status: 'Active',
-      portalToken: `${scope}cpt_cust_${c.key}`, paymentTermsDays: c.terms,
+      portalToken: `${scope}cpt_cust_${c.key}`, paymentTermsDays: c.terms, creditLimit: c.limit,
       contacts: c.contacts.map(([name, role, phone]) => ({ name, role, phone, email: name.includes(' ') && !name.startsWith('Accounts') && !name.startsWith('Admin') ? `${name.split(' ')[0].toLowerCase()}@${c.email.split('@')[1]}` : c.email })),
       sites, notes: '', createdAt: isoAt(addDays(anchor, -260 + i * 9), 10), updatedAt: isoAt(addDays(anchor, -5), 10),
     };

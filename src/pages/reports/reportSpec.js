@@ -366,6 +366,15 @@ function blocksFor(id, r) {
 
     case 'customers': {
       const c = r.customers;
+      const cr = r.credit;
+      const ag = r.aging;
+      const overRows = cr.over.map(a => [
+        a.name,
+        a.terms,
+        money(a.limit),
+        money(a.owing),
+        money(a.overBy),
+      ]);
       return [
         kpis('headline', 'Headline figures', [
           { label: 'Active customers', value: String(c.active), sub: `${c.total} in total` },
@@ -373,6 +382,24 @@ function blocksFor(id, r) {
           { label: 'Invoiced', value: String(c.invoiced), sub: 'customers invoiced in this range' },
           { label: 'Repeat', value: String(c.repeat), sub: 'invoiced more than once' },
         ]),
+        kpis('credit', 'Credit limits (incl. GST)', [
+          { label: 'Credit granted', value: money(cr.granted), sub: cr.accounts > 0 ? `${cr.accounts} customers with a limit` : 'No limits set' },
+          { label: 'Credit used', value: money(cr.used), sub: cr.utilization == null ? '' : `${pct(cr.utilization)} of limits` },
+          { label: 'Over limit', value: String(cr.overCount), sub: cr.overCount > 0 ? `${money(cr.overTotal)} over in total` : 'Nobody over their limit' },
+        ]),
+        table('credit-over', 'Customers over their credit limit', ['Customer', 'Terms', R('Limit'), R('Owing'), R('Over by')],
+          overRows,
+          'Nobody is over their credit limit'),
+        kpis('aging', 'Aged receivables (incl. GST)', [
+          { label: 'Current', value: money(ag.buckets.current), sub: 'not yet due' },
+          { label: '1–30 days', value: money(ag.buckets.d1_30), sub: 'past due' },
+          { label: '31–60 days', value: money(ag.buckets.d31_60) },
+          { label: '61–90 days', value: money(ag.buckets.d61_90) },
+          { label: '90+ days', value: money(ag.buckets.d90p) },
+        ]),
+        table('aging-by-customer', 'Receivables by customer', ['Customer', 'Terms', R('Current'), R('1–30'), R('31–60'), R('61–90'), R('90+'), R('Total')],
+          ag.rows.map(a => [a.name, a.terms, money(a.current), money(a.d1_30), money(a.d31_60), money(a.d61_90), money(a.d90p), money(a.total)]),
+          'Nothing owing by any customer'),
         table('top', 'Top customers by revenue', [R('#'), 'Customer', R('Revenue (ex GST)'), R('Share')],
           c.top.map((t, i) => [String(i + 1), t.name || 'Customer', money(t.revenue), pct(t.share)]),
           'No customers invoiced in this range'),
