@@ -18,6 +18,7 @@ import { actorStamp, logActivity } from './context.js';
 import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFound } from './customers.js';
 import { findTechnician } from './leads.js';
 import { parseDate } from './dates.js';
+import { newHistoryEvent } from '../data/jobHistory.js';
 
 export const JOB_STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
 export const JOB_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -189,6 +190,12 @@ function historyEntry(content) {
     author: actor.createdBy || 'brny',
     content,
   };
+}
+
+// History goes in its own job_events row, never back into the job, so a
+// concurrent save on another device can't erase it.
+function recordHistory(job, entry, payload) {
+  return store.create('jobEvents', newHistoryEvent({ ...entry, jobId: job.id, payload }));
 }
 
 export function technicianPatch(technician) {
@@ -458,13 +465,15 @@ defineAction({
     const job = resolveJob(input.job, jobScope(input));
     if (job.status === input.status) return { job, changed: false, from: job.status };
 
-    const entry = historyEntry(`Job status changed from "${job.status}" to "${input.status}"${input.note ? ` — ${input.note}` : ''}`);
-    const historyLog = [entry, ...(job.historyLog || [])];
-    const activityLog = input.note
-      ? [{ id: store.generateId(), type: 'combined', content: input.note, files: [], date: new Date().toISOString(), author: entry.author }, ...(job.activityLog || [])]
-      : job.activityLog;
+    const from = job.status;
+    const entry = historyEntry(`Job status changed from "${from}" to "${input.status}"${input.note ? ` — ${input.note}` : ''}`);
+    const patch = { status: input.status };
+    if (input.note) {
+      patch.activityLog = [{ id: store.generateId(), type: 'combined', content: input.note, files: [], date: new Date().toISOString(), author: entry.author }, ...(job.activityLog || [])];
+    }
 
-    await store.update('jobs', job.id, { status: input.status, historyLog, ...(activityLog ? { activityLog } : {}) });
+    await store.update('jobs', job.id, patch);
+    await recordHistory(job, entry, { from, to: input.status });
     await logActivity({
       type: 'status_changed',
       text: entry.content,
@@ -473,7 +482,7 @@ defineAction({
       status: input.status,
     });
 
-    return { job: store.getById('jobs', job.id), changed: true, from: job.status, historyLog };
+    return { job: store.getById('jobs', job.id), changed: true, from };
   },
 });
 
@@ -798,8 +807,10 @@ defineAction({
 
     if (job.status === 'Completed') return { job, changed: false, openTasks };
 
-    const entry = historyEntry(`Job status changed from "${job.status}" to "Completed"${input.note ? ` — ${input.note}` : ''}`);
-    await store.update('jobs', job.id, { status: 'Completed', historyLog: [entry, ...(job.historyLog || [])] });
+    const from = job.status;
+    const entry = historyEntry(`Job status changed from "${from}" to "Completed"${input.note ? ` — ${input.note}` : ''}`);
+    await store.update('jobs', job.id, { status: 'Completed' });
+    await recordHistory(job, entry, { from, to: 'Completed' });
     await logActivity({
       type: 'status_changed',
       text: entry.content,

@@ -34,6 +34,7 @@ import {
   normalizeExpectedRosterTime
 } from '../../utils/expectedWorkRoster.js';
 import { getSessionUser } from '../auth/session.js';
+import { mergeJobHistory } from '../../data/jobHistory.js';
 const SCHEDULE_HOUR_HEIGHT = 32;
 
 function initScheduleTimePickers(root) {
@@ -3281,11 +3282,10 @@ export function renderScheduleView(container) {
             : '';
           const qvWhen = qvDateLabel ? `${qvDateLabel}${qvTimeLabel ? `, ${qvTimeLabel}` : ''}` : 'Not scheduled';
 
-          // Status moves and task completions land in historyLog, staff notes in activityLog.
-          // The job screen merges the two by moving entries between the arrays and saving them
-          // back; this is a read, so the merge happens on a copy instead.
+          // Status moves and task completions are job history (jobEvents rows plus the
+          // legacy historyLog, merged by jobHistory.js); staff notes are in activityLog.
           const qvActivity = [
-            ...(job.historyLog || []),
+            ...mergeJobHistory(job, store.getAll('jobEvents') || []),
             ...(job.activityLog || []).filter(entry => entry.type !== 'system')
           ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
           const qvActivityShown = qvActivity.slice(0, 5);
