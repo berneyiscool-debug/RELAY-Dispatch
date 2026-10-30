@@ -305,12 +305,34 @@ being disclosed. Replacing it in Settings is the only step that makes the old va
 | 8 | 🟡 Medium | Technician-controlled data reaches the AI assistant's prompt and action protocol | ✅ Fixed — `src/utils/promptSafety.js`, inert-content guard in both follow-up prompts |
 | 9 | 🟠 High | Both portals resolved their magic link in the browser, where RLS gives an anonymous visitor nothing — every customer and contractor link answered *Invalid Access Link* | ✅ Fixed in code — `relay-portal` resolver, `portalClient.js`, scoped hydration in `store.js`, `042_portal_token_lookup.sql`. ⚠️ **Needs the owner**: apply `042` and deploy the function with JWT verification off. See [§1 Item 9](#item-9--the-portals-had-no-anonymous-resolution-path-at-all) |
 | 10 | 🔴 Critical | `relay-portal` returned the company's whole `settings` blob — including the tenant's `ai.apiKey` — to anonymous callers **before any PIN was entered** | ✅ Fixed — `publicSettings()` allow-list, applied where `ctx.settings` is built and verified against the live project. ⚠️ **Needs the owner**: rotate the provider key. See [§1 Item 10](#item-10--the-resolver-handed-the-tenants-ai-key-to-anonymous-callers) |
+| 11 | 🟠 High | Every tenant policy checks `company_id` only, so any signed-in technician can read and write invoices, quotes, prices, customer portal tokens, password-reset tokens and every colleague's pay rate | ✅ Fixed in code — `20261030090000_tech_job_scope.sql` (restrictive policies, `is_office_user()`, `search_customers_for_tech()`, approval guard on time records). ⚠️ **Needs the owner**: apply it. See [live drift](#live-drift-found-2026-10-30) |
+| 12 | 🟡 Medium | `20261020100000_security_advisor_fixes.sql` was never applied live: `trusted_directory` still runs as its owner and `anon` holds every privilege on it, so anyone with the public anon key can list approved trusted contractors' business name, phone, email and address | ✅ Applied live 2026-10-30 and verified: `security_invoker=true`, anon has no privileges, `authenticated` has SELECT only |
+| 13 | 🟡 Medium | `20261020100100_scope_system_locks.sql` was never applied live: any signed-in user of any company can hold the global `maintenance_engine` lock or release another user's lock | ✅ Applied live 2026-10-30 and verified: both functions replaced in place (no new overloads), anon can't execute them; `maintenanceEngine.js` already passes the session user's id |
 
 **Residual, out of scope (pre-existing):** `030`'s `profiles_security_guard()` already makes the
 admin role-change / Deactivate / Reactivate controls server-side no-ops for authenticated sessions.
 `src/utils/permissions.js` defines `Settings.manage_users`, but no UI reads it, and `currentUser`
 defaults to `{"role":"admin"}` when local storage lacks it — so the client gate on the Users tab is
 cosmetic and `039` is the real control.
+
+### Live drift found 2026-10-30
+
+Checked by querying the live project (`pg_policies`, table grants, function definitions) against
+the migration files, read-only. The live migration history only lists 21 entries: the numbered
+files up to `048` were applied by hand in the SQL editor, so the history can't be used to tell what
+has landed. Compare objects, not history.
+
+- **Policies:** every live policy matches a migration file. `profile_delete_tenant` (`020`) is not
+  live, so nobody can delete a profile row through the API; the `delete-company` function does it
+  with the service role. `llm_usage` (`016`) doesn't exist live; `api_usage` replaced it.
+- **Not applied until 2026-10-30:** `20261020100000_security_advisor_fixes.sql` (item 12) and
+  `20261020100100_scope_system_locks.sql` (item 13). Both were applied that day, unchanged from
+  the files, and now appear in the live migration history.
+- **Roles:** live profiles hold `admin` (3) and `Teacher` (1); there are no `technician` or
+  `manager` rows yet. `invite-user` writes the role it is sent, so role is free text in practice.
+  Item 11 treats every role other than `admin` and `manager` as a technician, so the `Teacher`
+  account drops to the technician scope once it is applied. Change that account's role first if it
+  should keep office access.
 
 ---
 
