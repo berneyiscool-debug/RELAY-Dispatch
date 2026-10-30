@@ -17,6 +17,8 @@ import './quotes.js';
 import './jobs.js';
 import './scheduling.js';
 import './timeMaterials.js';
+import './stock.js';
+import './assets.js';
 import './invoices.js';
 import './purchasing.js';
 import './notifications.js';
