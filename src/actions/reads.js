@@ -80,15 +80,15 @@ const RECORD_TYPES = {
   },
   contractors: {
     collection: 'contractors',
-    label: (r) => r.name || r.company || r.id,
-    search: ['name', 'company', 'email', 'phone', 'trade'],
-    fields: ['id', 'name', 'company', 'email', 'phone', 'trade', 'status'],
+    label: (r) => r.businessName || r.contactName || r.name || r.id,
+    search: ['businessName', 'contactName', 'email', 'phone', 'licenseNumber'],
+    fields: ['id', 'businessName', 'contactName', 'email', 'phone', 'licenseNumber', 'insuranceExpiry', 'hourlyRate', 'specialties', 'active'],
   },
   suppliers: {
     collection: 'suppliers',
     label: (r) => r.name || r.company || r.id,
-    search: ['name', 'company', 'email', 'phone'],
-    fields: ['id', 'name', 'company', 'email', 'phone', 'address'],
+    search: ['name', 'contactName', 'email', 'phone', 'category', 'accountNumber'],
+    fields: ['id', 'name', 'contactName', 'email', 'phone', 'address', 'category', 'paymentTerms', 'accountNumber', 'active'],
   },
   assets: {
     collection: 'assets',

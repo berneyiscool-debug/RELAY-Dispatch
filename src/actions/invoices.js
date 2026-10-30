@@ -22,12 +22,13 @@ import { defineAction } from './registry.js';
 import { resolveOne } from './resolve.js';
 import { objectSchema, str, num, bool, enumOf, dateish } from './schema.js';
 import { conflict, invalidInput } from './errors.js';
-import { logActivity, currentActor } from './context.js';
+import { logActivity, currentActor, assertCloudOnly } from './context.js';
 import { resolveJob } from './jobs.js';
 import { resolveCustomer } from './customers.js';
 import { resolveQuote } from './quotes.js';
 import { tasklistHours, worksDoneDescription } from './timeMaterials.js';
 import { parseDate, todayLocalISO, dateLabel } from './dates.js';
+import { xeroEnabled, getXeroStatusCached, pushToXero, retryInvoiceSync } from '../utils/xero.js';
 import { roundCurrency, calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../utils/pricing.js';
 import {
   HOURS_SOURCE,
@@ -680,5 +681,59 @@ defineAction({
       invoice: { ...invoice, status: 'Void', historyLog },
       changed: true,
     };
+  },
+});
+
+defineAction({
+  name: 'create_payment_link',
+  title: 'Create a payment link',
+  description:
+    'Make a Stripe card-payment link for a sent invoice, so the customer can pay online. Returns the link to pass on; it does not message the customer. Needs Stripe payments connected in Settings.',
+  permission: { module: 'Invoices', key: 'send' },
+  cloudOnly: true,
+  inputSchema: objectSchema({ invoice: str('Invoice number, or the customer and job it covers.') }, ['invoice']),
+  summarize: (input, result) => `Payment link for ${result.invoice.number}: ${result.url}`,
+  artifacts: (result) => [{ label: result.invoice.number, path: `/invoices/${result.invoice.id}` }],
+  run: async ({ invoice: reference }) => {
+    assertCloudOnly('Online payment links');
+    const invoice = resolveInvoice(reference);
+    if (invoice.status === 'Paid') throw conflict(`${invoice.number} is already paid.`);
+    if (invoice.status === 'Void' || invoice.status === 'Draft') {
+      throw conflict(`${invoice.number} is ${invoice.status.toLowerCase()} — only a sent invoice can be paid online.`);
+    }
+    const { createInvoicePaymentLink } = await import('../utils/payments.js');
+    const { url } = await createInvoicePaymentLink(invoice);
+    logActivity({ type: 'payment_link', text: `Payment link created for ${invoice.number} (${money(invoice.total)}).`, recordType: 'invoice', recordId: invoice.id });
+    return { invoice, url };
+  },
+});
+
+defineAction({
+  name: 'push_to_xero',
+  title: 'Send invoices to Xero',
+  description:
+    'Send invoices to Xero. With an invoice: send (or retry) that one. Without: queue every sent invoice that has not reached Xero yet. Drafts and voids are never sent. Check the result afterwards with get_xero_sync.',
+  permission: { module: 'Invoices', key: 'send' },
+  cloudOnly: true,
+  inputSchema: objectSchema({ invoice: str('Optional invoice number or id. Leave out to send everything missing.') }),
+  summarize: (input, result) => result.summary,
+  run: async ({ invoice: reference }) => {
+    assertCloudOnly('Xero');
+    if (!xeroEnabled()) return { summary: 'Xero is not available on this account.', queued: 0 };
+    const status = await getXeroStatusCached();
+    if (!status?.connected) {
+      return { summary: 'Xero is not connected. An admin can connect it in Settings → Accounting & Xero.', queued: 0 };
+    }
+    if (reference) {
+      const invoice = resolveInvoice(reference);
+      if (invoice.status === 'Draft' || invoice.status === 'Void') {
+        throw conflict(`${invoice.number} is ${invoice.status.toLowerCase()}, and only sent invoices go to Xero.`);
+      }
+      const requeued = await retryInvoiceSync(invoice.id);
+      const queued = requeued || await pushToXero([invoice.id]);
+      return { summary: queued ? `${invoice.number} queued for Xero.` : `${invoice.number} had nothing to send — it may already be in Xero.`, queued, invoice };
+    }
+    const queued = await pushToXero('missing');
+    return { summary: queued ? `Queued ${queued} invoice(s) for Xero.` : 'Every sent invoice is already in Xero or queued.', queued };
   },
 });
