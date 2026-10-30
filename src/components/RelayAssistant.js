@@ -28,7 +28,7 @@ import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deput
 import { runConflictScan } from '../utils/DeputyAutopilot.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
 import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
-import { runTurn } from '../utils/brnyAgent.js';
+import { runTurn, continueAfterMaxSteps } from '../utils/brnyAgent.js';
 import { runRoutineTurn } from '../utils/routineTurn.js';
 import { buildBrnyPlaybook, LEGACY_BASE_PROMPT } from '../utils/brnyPlaybook.js';
 import { brnyVoiceLine } from '../utils/brnyPersonalities.js';
@@ -3254,6 +3254,31 @@ function renderAgentQuestion(thread, question) {
   });
 }
 
+// A turn that ran out of steps is carried on from its own history, so brny picks
+// up where it stopped instead of the user retyping the request.
+function renderKeepGoing(thread, messages, plan) {
+  const card = document.createElement('div');
+  card.className = 'relay-question-card';
+  card.innerHTML = `<div class="relay-question-title">brny ran out of steps before finishing.</div>
+    <div class="relay-question-options"><button type="button" class="relay-question-opt-btn">Keep going</button></div>`;
+  thread.appendChild(card);
+  thread.scrollTop = thread.scrollHeight;
+  const btn = card.querySelector('button');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    card.classList.add('is-answered');
+    const typing = addTyping(thread);
+    try {
+      await callBrnyAgent({ thread, typing, messages: continueAfterMaxSteps(messages), plan });
+    } catch (err) {
+      typing.remove();
+      const reply = err instanceof AILimitError ? err.message : `I couldn't finish that: ${err.message || err}`;
+      pushAssistant(reply);
+      addMessage(thread, 'relay', reply);
+    }
+  }, { once: true });
+}
+
 // Shown when an action changes something a person should see first. Approving
 // re-runs that one call with the exact input the card displayed, so the write
 // happens once and only once.
@@ -3394,6 +3419,7 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null, p
     if (typing) typing.remove();
     const elapsed = typing ? Date.now() - (firstStepAt || startedAt) : 0;
     await answerAgentTurn(target, result, ai, labels, elapsed, plan);
+    if (result.status === 'max_steps') renderKeepGoing(target, result.messages, plan);
     return null;
   } finally {
     if (stopBtn && stopBtn.isConnected) stopBtn.remove();

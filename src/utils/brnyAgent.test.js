@@ -427,13 +427,13 @@ test('a turn stopped between calls still answers the ones it did not run', async
   });
 });
 
-test('the step cap is user-visible, and defaults to twelve', async () => {
+test('the step cap is user-visible, and defaults to twenty-five', async () => {
   await withCloud(async () => {
     stubProvider(toolReply('get_today', {}));
 
     const turn = await runTurn({ prompt: 'Loop', briefing: false, tools: [], maxSteps: 2 });
 
-    assert.equal(MAX_STEPS, 12);
+    assert.equal(MAX_STEPS, 25);
     assert.equal(turn.status, 'max_steps');
     assert.equal(turn.steps, 2);
     assert.equal(turn.maxSteps, 2);

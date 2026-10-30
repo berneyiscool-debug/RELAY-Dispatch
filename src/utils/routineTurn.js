@@ -12,7 +12,7 @@ import { runTurn as defaultRunTurn } from './brnyAgent.js';
 import { describeTrigger } from './deputyRoutines.js';
 
 /** Routines may chain more work than a typed request before they report back. */
-export const ROUTINE_MAX_STEPS = 20;
+export const ROUTINE_MAX_STEPS = 30;
 
 /** The user turn a routine runs as: its instruction, framed as an unattended run. */
 export function routinePrompt(routine) {
