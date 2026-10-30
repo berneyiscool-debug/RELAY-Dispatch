@@ -11,7 +11,7 @@
 import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
 import { resolveOne } from './resolve.js';
-import { objectSchema, str, num, enumOf, list, objectOf, dateish } from './schema.js';
+import { objectSchema, str, num, bool, enumOf, list, objectOf, dateish } from './schema.js';
 import { invalidInput, notFound } from './errors.js';
 import { logActivity, currentActor } from './context.js';
 import { resolveCustomer, customerLabel } from './customers.js';
@@ -364,6 +364,57 @@ defineAction({
       job,
       quote: { ...quote, status: 'Converted' },
       artifacts: [{ label: `Job ${job.number}`, path: `/jobs/${job.id}` }],
+    };
+  },
+});
+
+defineAction({
+  name: 'send_quote',
+  title: 'Send a quote',
+  description:
+    'Email a quote to the customer — the same email, portal link and PDF as the Send Quote button — and mark it Sent. Check the total first. When email is not set up for this account the quote is only marked Sent, and the reply says that no email went out and why. Pass `resend` to email a quote that has already been sent.',
+  permission: { module: 'Quotes', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      quote: str('Quote number or a description of the job it covers.'),
+      resend: bool('Email it again even though it has already been sent.'),
+    },
+    ['quote']
+  ),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.quote.number, path: `/quotes/${result.quote.id}` }],
+  run: async ({ quote: reference, resend }) => {
+    const quote = resolveQuote(reference);
+    if (['Accepted', 'Declined', 'Converted', 'Archived'].includes(quote.status)) {
+      throw invalidInput(`${quote.number} is ${quote.status.toLowerCase()}, so there is nothing to send.`);
+    }
+    if (quote.status === 'Sent' && !resend) {
+      return { summary: `${quote.number} has already been sent. Pass resend to email it again.`, quote, emailed: false };
+    }
+
+    // Loaded lazily: the PDF and email modules pull in the browser renderer.
+    const { emailUnavailableReason, sendQuoteEmail } = await import('../utils/documentEmails.js');
+    const blocked = emailUnavailableReason('quote', quote);
+    const to = blocked ? null : await sendQuoteEmail(quote);
+
+    const status = 'Sent';
+    await store.update('quotes', quote.id, { status, emailStatus: 'Sent' });
+    logActivity({
+      type: 'quote_sent',
+      text: to ? `Quote ${quote.number} emailed to ${to}.` : `Quote ${quote.number} marked as sent — no email went out (${blocked}).`,
+      recordType: 'quote',
+      recordId: quote.id,
+    });
+
+    return {
+      summary: to
+        ? `Quote ${quote.number} emailed to ${to} ($${Number(quote.total || 0).toFixed(2)} incl. GST).`
+        : `Quote ${quote.number} marked as sent, but NO email went to the customer: ${blocked}`,
+      quote: { ...quote, status, emailStatus: 'Sent' },
+      emailed: !!to,
+      to,
+      emailBlockedReason: blocked,
     };
   },
 });
