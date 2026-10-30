@@ -38,8 +38,31 @@ import { executeTool, getAction, toolDefinitions } from '../actions/index.js';
 import { currentActor } from '../actions/context.js';
 import { localDateLabel, todayLocalISO } from './dateUtils.js';
 
-/** Hard stop for one turn. Long enough for a real multi-step job, short enough to cap a loop. */
-export const MAX_STEPS = 12;
+/**
+ * Hard stop for one turn. Long enough for a real multi-step job — set up a
+ * customer, quote it, book it, order the parts — short enough to cap a loop. A
+ * turn that hits it can be carried on with `continueAfterMaxSteps`.
+ */
+export const MAX_STEPS = 25;
+
+const KEEP_GOING = 'Keep going from where you stopped. Do not redo anything that already worked.';
+
+/**
+ * The history to send to carry on a turn that stopped at the step cap.
+ *
+ * A capped turn ends on the tool results of its last step, so the nudge is added
+ * to that same user message rather than as a second user message in a row.
+ */
+export function continueAfterMaxSteps(messages) {
+  const history = (messages || []).map((message) => ({ ...message }));
+  const last = history[history.length - 1];
+  if (last && last.role === 'user' && Array.isArray(last.content)) {
+    last.content = [...last.content, { type: 'text', text: KEEP_GOING }];
+  } else {
+    history.push({ role: 'user', content: KEEP_GOING });
+  }
+  return history;
+}
 
 /** Used when the caller supplies no system prompt of its own. */
 const BASE_INSTRUCTIONS = [
@@ -501,4 +524,4 @@ async function resumeCall(resume, baseCtx, state) {
   return { message: toolResultMessage(resume.toolUseId, outcome.toolResult) };
 }
 
-export default { runTurn, costOf, MAX_STEPS };
+export default { runTurn, costOf, continueAfterMaxSteps, MAX_STEPS };
