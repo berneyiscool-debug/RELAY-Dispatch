@@ -650,6 +650,32 @@ export const KPIS = {
     link: { route: '/jobs', filter: 'ready-to-invoice' },
   },
 
+  credit_over: {
+    group: 'money', label: 'Over credit limit', type: 'snapshot', format: 'currency', upIsGood: false, launch: false,
+    description: 'Owed beyond the credit limit on the account, incl. GST',
+    empty: 'Set a credit limit on a customer to see this',
+    needs: ['customers', 'invoices'],
+    compute: ({ customers = [], invoices = [] }) => {
+      const limited = customers.filter(c => num(c.creditLimit) > 0);
+      if (!limited.length) return null;
+      // Balances are the same GST-inclusive ones the customer page and the
+      // over-limit warning use, so all three agree.
+      const owing = new Map();
+      invoices.forEach(i => {
+        if (!i || !i.customerId) return;
+        const balance = invoiceBalance(i);
+        if (balance > 0) owing.set(String(i.customerId), (owing.get(String(i.customerId)) || 0) + balance);
+      });
+      let value = 0, count = 0;
+      limited.forEach(c => {
+        const over = (owing.get(String(c.id)) || 0) - num(c.creditLimit);
+        if (over > 0) { value += over; count++; }
+      });
+      return { value: Math.round(value * 100) / 100, count, alert: count > 0 };
+    },
+    link: { route: '/people', collection: 'customers' },
+  },
+
   // ── Jobs ──
   active_jobs: {
     group: 'jobs', label: 'Active jobs', type: 'snapshot', format: 'count', upIsGood: true, launch: true,
@@ -1215,6 +1241,8 @@ export function kpiSubline(id, result) {
       return result.value != null ? `Labour ${Math.round(result.value * 100)}% · Materials ${100 - Math.round(result.value * 100)}%` : '';
     case 'maintenance_due':
       return e.overdue ? `+${e.overdue} overdue` : '';
+    case 'credit_over':
+      return e.count ? `${e.count} account${e.count === 1 ? '' : 's'} over` : 'all within their limits';
     case 'top_customer_share':
       return e.customer || '';
     default:

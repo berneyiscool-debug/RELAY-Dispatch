@@ -42,6 +42,7 @@ const LEADS_ACTIVITY_SQL = readFileSync(join(MIGRATIONS_DIR, '041_leads_activity
 const PORTAL_LOOKUP_SQL = readFileSync(join(MIGRATIONS_DIR, '042_portal_token_lookup.sql'), 'utf8');
 const TODOS_SQL = readFileSync(join(MIGRATIONS_DIR, '043_todos.sql'), 'utf8');
 const SITES_SQL = readFileSync(join(MIGRATIONS_DIR, '044_add_customer_sites.sql'), 'utf8');
+const CREDIT_TERMS_SQL = readFileSync(join(MIGRATIONS_DIR, '20261030120000_customer_credit_terms.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -2593,6 +2594,115 @@ describe('044 customer sites column', () => {
   });
 
   test('the anon key cannot read sites', async () => {
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
+    });
+  });
+});
+
+// 20261030120000 adds the two customer account fields the Financials tab had
+// always shown but never stored: payment terms (null = the 30-day default) and a
+// credit limit (null = no limit). Both are read by the invoice due-date and
+// over-limit paths, which is why "not set" has to stay null rather than 0.
+describe('20261030120000 customer payment terms and credit limit', () => {
+  let db;
+
+  const CUSTOMER_A = 'aaaaaaaa-0000-0000-0000-000000000005';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    // Run twice: the migration ships as ADD COLUMN IF NOT EXISTS plus guarded
+    // constraints, so a project where it has already landed must not abort.
+    await db.exec(CREDIT_TERMS_SQL);
+    await db.exec(CREDIT_TERMS_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds two nullable columns to customers', async () => {
+    const columns = await db.exec(
+      `SELECT column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'customers'
+          AND column_name IN ('payment_terms_days', 'credit_limit')
+        ORDER BY column_name`
+    );
+    const rows = columns[columns.length - 1].rows;
+    assert.deepStrictEqual(rows.map((r) => [r.column_name, r.data_type]), [
+      ['credit_limit', 'numeric'],
+      ['payment_terms_days', 'integer'],
+    ]);
+    assert.deepStrictEqual(rows.filter((r) => r.is_nullable !== 'YES').map((r) => r.column_name), []);
+  });
+
+  test('reports every expected object present in its verification grid', async () => {
+    const results = await db.exec(CREDIT_TERMS_SQL);
+    const grid = results[results.length - 1].rows;
+    assert.strictEqual(grid.length, 2);
+    assert.deepStrictEqual(grid.filter((r) => r.is_present !== true).map((r) => r.object_name), []);
+    assert.deepStrictEqual(grid.filter((r) => r.has_expected_type !== true).map((r) => r.object_name), []);
+  });
+
+  test('stores both values and keeps "not set" as null', async () => {
+    await db.query(`INSERT INTO public.customers (id, company_id, label, payment_terms_days, credit_limit) VALUES
+      ('${CUSTOMER_A}', '${TENANT_A}', 'A customer', 14, 5000)`);
+
+    const row = await one(db, `SELECT payment_terms_days, credit_limit FROM public.customers WHERE id = '${CUSTOMER_A}'`);
+    assert.strictEqual(row.payment_terms_days, 14);
+    assert.strictEqual(Number(row.credit_limit), 5000);
+
+    await db.query(`INSERT INTO public.customers (id, company_id, label) VALUES
+      ('bbbbbbbb-0000-0000-0000-000000000005', '${TENANT_A}', 'No terms yet')`);
+    const unset = await one(db, `SELECT payment_terms_days, credit_limit FROM public.customers WHERE id = 'bbbbbbbb-0000-0000-0000-000000000005'`);
+    assert.strictEqual(unset.payment_terms_days, null);
+    assert.strictEqual(unset.credit_limit, null);
+  });
+
+  test('refuses negative terms and negative limits', async () => {
+    await assert.rejects(
+      db.query(`UPDATE public.customers SET payment_terms_days = -1 WHERE id = '${CUSTOMER_A}'`),
+      /customers_payment_terms_days_check/
+    );
+    await assert.rejects(
+      db.query(`UPDATE public.customers SET credit_limit = -0.01 WHERE id = '${CUSTOMER_A}'`),
+      /customers_credit_limit_check/
+    );
+    // Zero is meaningful: COD terms, and "no limit".
+    await db.query(`UPDATE public.customers SET payment_terms_days = 0, credit_limit = 0 WHERE id = '${CUSTOMER_A}'`);
+    const row = await one(db, `SELECT payment_terms_days, credit_limit FROM public.customers WHERE id = '${CUSTOMER_A}'`);
+    assert.strictEqual(row.payment_terms_days, 0);
+    assert.strictEqual(Number(row.credit_limit), 0);
+  });
+
+  test('is re-runnable without disturbing stored terms', async () => {
+    await db.query(`UPDATE public.customers SET payment_terms_days = 30, credit_limit = 12000 WHERE id = '${CUSTOMER_A}'`);
+    await db.exec(CREDIT_TERMS_SQL);
+    const row = await one(db, `SELECT payment_terms_days, credit_limit FROM public.customers WHERE id = '${CUSTOMER_A}'`);
+    assert.strictEqual(row.payment_terms_days, 30);
+    assert.strictEqual(Number(row.credit_limit), 12000);
+  });
+
+  test('the new columns add no cross-tenant read or write path', async () => {
+    await asRole(db, 'authenticated', ADMIN_B, async () => {
+      assert.strictEqual(
+        await value(db, `SELECT count(*)::int FROM public.customers WHERE id = '${CUSTOMER_A}'`),
+        0,
+        'tenant B must not see tenant A accounts'
+      );
+      await db.query(`UPDATE public.customers SET credit_limit = 1 WHERE id = '${CUSTOMER_A}'`);
+    });
+    assert.strictEqual(
+      Number(await value(db, `SELECT credit_limit FROM public.customers WHERE id = '${CUSTOMER_A}'`)),
+      12000,
+      'tenant B must not change tenant A limits'
+    );
+  });
+
+  test('the anon key cannot read the new columns', async () => {
     await asRole(db, 'anon', null, async () => {
       assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
     });

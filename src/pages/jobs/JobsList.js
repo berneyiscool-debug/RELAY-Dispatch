@@ -21,6 +21,8 @@ import {
   readHoursSource,
   setHoursSourceError
 } from '../../utils/invoiceLabour.js';
+import { dueDateForCustomer } from '../../utils/customerTerms.js';
+import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -189,35 +191,55 @@ export function renderJobsList(container, params) {
 
               function createInvoices(selectedQuotesMap, hoursSource = HOURS_SOURCE.ESTIMATED) {
                 const taxRate = store.getTaxRate();
-                jobs.forEach(job => {
+                const drafts = jobs.map(job => {
                   const qId = selectedQuotesMap[job.id];
                   const quote = qId && qId !== 'tasklist' ? store.getById('quotes', qId) : null;
                   const { sections, subtotal, worksDescription, hoursSource: appliedHoursSource } = getInvoiceDataForJob(job, quote, hoursSource);
-
-                  store.create('invoices', {
-                    number: store.getNextNumber('INV-', 'invoices'),
-                    invoiceType: 'Job Invoice',
-                    hoursSource: appliedHoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
-                    jobId: job.id,
-                    jobNumber: job.number,
-                    customerId: job.customerId,
-                    customerName: job.customerName,
-                    contactName: job.contactName || '',
-                    status: 'Draft',
-                    sections: sections,
-                    originalSubtotal: subtotal,
-                    subtotal: subtotal,
-                    tax: roundCurrency(subtotal * taxRate),
-                    total: roundCurrency(subtotal * (1 + taxRate)),
-                    issueDate: new Date().toISOString(),
-                    dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-                    notes: worksDescription || ''
-                  });
-                  // Jobs flip to "Invoiced" automatically when their draft is sent (store hook)
+                  return { job, sections, subtotal, worksDescription, appliedHoursSource };
                 });
-                table.clearSelection();
-                renderJobsList(container);
-                import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully generated ${ids.length} draft invoices`, 'success'));
+
+                // This action drafts one invoice per job, so the credit limit is
+                // checked once per customer against the combined new debt.
+                const amountByCustomer = new Map();
+                drafts.forEach(({ job, subtotal }) => {
+                  if (!job.customerId) return;
+                  const total = roundCurrency(subtotal * (1 + taxRate));
+                  amountByCustomer.set(job.customerId, (amountByCustomer.get(job.customerId) || 0) + total);
+                });
+
+                (async () => {
+                  for (const [customerId, amount] of amountByCustomer) {
+                    const customerName = drafts.find(d => d.job.customerId === customerId)?.job.customerName;
+                    const proceed = await confirmOverCreditLimit({ customerId, customerName, amount });
+                    if (!proceed) return;
+                  }
+
+                  drafts.forEach(({ job, sections, subtotal, worksDescription, appliedHoursSource }) => {
+                    store.create('invoices', {
+                      number: store.getNextNumber('INV-', 'invoices'),
+                      invoiceType: 'Job Invoice',
+                      hoursSource: appliedHoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
+                      jobId: job.id,
+                      jobNumber: job.number,
+                      customerId: job.customerId,
+                      customerName: job.customerName,
+                      contactName: job.contactName || '',
+                      status: 'Draft',
+                      sections: sections,
+                      originalSubtotal: subtotal,
+                      subtotal: subtotal,
+                      tax: roundCurrency(subtotal * taxRate),
+                      total: roundCurrency(subtotal * (1 + taxRate)),
+                      issueDate: new Date().toISOString(),
+                      dueDate: dueDateForCustomer(store.getById('customers', job.customerId)).toISOString(),
+                      notes: worksDescription || ''
+                    });
+                    // Jobs flip to "Invoiced" automatically when their draft is sent (store hook)
+                  });
+                  table.clearSelection();
+                  renderJobsList(container);
+                  import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully generated ${ids.length} draft invoices`, 'success'));
+                })();
               }
 
               if (jobsWithMultipleQuotes.length > 0) {
@@ -398,30 +420,39 @@ export function renderJobsList(container, params) {
                 });
 
                 const taxRate = store.getTaxRate();
+                const combinedTotal = roundCurrency(subtotal * (1 + taxRate));
 
-                store.create('invoices', {
-                  number: store.getNextNumber('INV-', 'invoices'),
-                  invoiceType: 'Standard',
-                  hoursSource: bookedHoursUsed ? HOURS_SOURCE.BOOKED : '',
+                confirmOverCreditLimit({
                   customerId: jobs[0].customerId,
                   customerName: jobs[0].customerName,
-                  contactName: jobs[0].contactName || '',
-                  status: 'Draft',
-                  sections: combinedSections,
-                  subtotal,
-                  tax: roundCurrency(subtotal * taxRate),
-                  total: roundCurrency(subtotal * (1 + taxRate)),
-                  issueDate: new Date().toISOString(),
-                  dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-                  notes: worksDoneNotes.join('\n\n'),
-                  jobIds: jobs.map(j => j.id), // jobs flip to "Invoiced" when this draft is sent
-                  jobAmounts,
-                  jobNumbers: jobs.map(j => j.number).filter(Boolean)
-                });
+                  amount: combinedTotal
+                }).then((proceed) => {
+                  if (!proceed) return;
 
-                table.clearSelection();
-                renderJobsList(container);
-                import('../../components/Notifications.js').then(({ showToast }) => showToast(`Combined ${jobs.length} jobs into one invoice`, 'success'));
+                  store.create('invoices', {
+                    number: store.getNextNumber('INV-', 'invoices'),
+                    invoiceType: 'Standard',
+                    hoursSource: bookedHoursUsed ? HOURS_SOURCE.BOOKED : '',
+                    customerId: jobs[0].customerId,
+                    customerName: jobs[0].customerName,
+                    contactName: jobs[0].contactName || '',
+                    status: 'Draft',
+                    sections: combinedSections,
+                    subtotal,
+                    tax: roundCurrency(subtotal * taxRate),
+                    total: combinedTotal,
+                    issueDate: new Date().toISOString(),
+                    dueDate: dueDateForCustomer(store.getById('customers', jobs[0].customerId)).toISOString(),
+                    notes: worksDoneNotes.join('\n\n'),
+                    jobIds: jobs.map(j => j.id), // jobs flip to "Invoiced" when this draft is sent
+                    jobAmounts,
+                    jobNumbers: jobs.map(j => j.number).filter(Boolean)
+                  });
+
+                  table.clearSelection();
+                  renderJobsList(container);
+                  import('../../components/Notifications.js').then(({ showToast }) => showToast(`Combined ${jobs.length} jobs into one invoice`, 'success'));
+                });
               }
 
               if (jobsWithMultipleQuotes.length > 0) {

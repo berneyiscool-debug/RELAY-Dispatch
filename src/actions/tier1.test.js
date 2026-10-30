@@ -179,6 +179,39 @@ describe('assistant tier 1 tools', () => {
     });
   });
 
+  describe('customer account terms', () => {
+    test('create_customer keeps the payment terms and credit limit it was given', async () => {
+      const { result } = await executeAction(
+        'create_customer',
+        { name: 'Terms Treasury Pty Ltd', paymentTermsDays: 14, creditLimit: 7500 },
+        CTX
+      );
+
+      assert.strictEqual(result.customer.paymentTermsDays, 14);
+      assert.strictEqual(result.customer.creditLimit, 7500);
+    });
+
+    test('update_customer changes one term without disturbing the other', async () => {
+      const created = (await executeAction('create_customer', { name: 'Terms Update Pty Ltd', creditLimit: 2000 }, CTX)).result.customer;
+
+      const { result } = await executeAction('update_customer', { customer: created.id, paymentTermsDays: 0 }, CTX);
+
+      assert.strictEqual(result.changes.paymentTermsDays, 0, 'COD is zero days, not "unset"');
+      assert.strictEqual(store.getById('customers', created.id).creditLimit, 2000);
+    });
+
+    test('negative terms and limits are refused rather than stored', async () => {
+      await assert.rejects(
+        executeAction('create_customer', { name: 'Terms Negative Pty Ltd', creditLimit: -50 }, CTX),
+        (error) => error.code === ERROR_CODES.INVALID_INPUT
+      );
+      await assert.rejects(
+        executeAction('create_customer', { name: 'Terms Negative Days Pty Ltd', paymentTermsDays: -1 }, CTX),
+        (error) => error.code === ERROR_CODES.INVALID_INPUT
+      );
+    });
+  });
+
   describe('payments and Xero', () => {
     test('payment links and Xero are refused in the demo workspace', async () => {
       await assert.rejects(executeAction('create_payment_link', { invoice: 'INV-1' }, CTX), (error) => error.code === ERROR_CODES.UNSUPPORTED);

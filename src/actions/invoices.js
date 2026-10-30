@@ -30,6 +30,7 @@ import { tasklistHours, worksDoneDescription } from './timeMaterials.js';
 import { parseDate, todayLocalISO, dateLabel } from './dates.js';
 import { xeroEnabled, getXeroStatusCached, pushToXero, retryInvoiceSync } from '../utils/xero.js';
 import { roundCurrency, calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../utils/pricing.js';
+import { paymentTermsDaysFor, creditLimitCheck, creditLimitMessage } from '../utils/customerTerms.js';
 import {
   HOURS_SOURCE,
   bookedHoursByJob,
@@ -45,7 +46,6 @@ export const PAYMENT_METHODS = ['Credit Card', 'Bank Transfer', 'Cash', 'Cheque'
 /** Written into `historyLog`, which the invoice timeline renders. */
 const STATUS_BADGE = { Sent: 'badge-info', Paid: 'badge-success', Void: 'badge-void' };
 
-const DEFAULT_TERM_DAYS = 30;
 const DAY_MS = 86400000;
 
 const money = (value) => `$${(Number(value) || 0).toFixed(2)}`;
@@ -363,16 +363,17 @@ defineAction({
         'Price the labour from the tasklist estimates (default) or from the hours booked against the job in timesheets.'
       ),
       applyDeposits: bool('Standard invoices: deduct any deposit already billed. Defaults to true.'),
-      dueInDays: num('Payment terms in days from today. Defaults to 30.'),
+      dueInDays: num('Payment terms in days from today. Defaults to the customer\'s own terms, or 30 days when they have none.'),
       notes: str('Notes to show on the invoice.'),
     },
     ['job']
   ),
   summarize: (input, result) =>
-    `${result.invoice.number} drafted for ${result.job.number}: ${money(result.invoice.total)} inc GST, due ${dateLabel(result.invoice.dueDate)}.`,
+    `${result.invoice.number} drafted for ${result.job.number}: ${money(result.invoice.total)} inc GST, due ${dateLabel(result.invoice.dueDate)}.${result.creditWarning ? ` ${result.creditWarning}` : ''}`,
   artifacts: (result) => [{ label: `${result.invoice.number} — ${result.job.number}`, path: `/invoices/${result.invoice.id}` }],
   run: async (input) => {
     const job = resolveJob(input.job, customerScope(input.customer));
+    const customer = job.customerId ? store.getById('customers', job.customerId) : null;
     const type = input.type || (input.percent != null ? 'Progress' : 'Standard');
     const percent = input.percent == null ? null : Number(input.percent);
 
@@ -380,7 +381,9 @@ defineAction({
       throw invalidInput(`A ${type.toLowerCase()} invoice needs a percentage between 1 and 100.`, { percent: input.percent });
     }
 
-    const termDays = input.dueInDays == null ? DEFAULT_TERM_DAYS : Number(input.dueInDays);
+    // No explicit terms means the customer's account terms, which is what the
+    // invoice screens use too; a customer without terms gets the 30-day default.
+    const termDays = input.dueInDays == null ? paymentTermsDaysFor(customer) : Number(input.dueInDays);
     if (!Number.isFinite(termDays) || termDays < 0) {
       throw invalidInput('Payment terms must be a number of days from today.', { dueInDays: input.dueInDays });
     }
@@ -526,11 +529,17 @@ defineAction({
       recordId: invoice.id,
     });
 
+    // Drafting is never blocked by a credit limit (the office may be billing a
+    // disputed account deliberately), but the approval card has to say so.
+    const creditCheck = creditLimitCheck(customer, store.getAll('invoices'), total);
+    const creditWarning = creditCheck ? creditLimitMessage(creditCheck, invoice.customerName) : '';
+
     return {
-      summary: `${invoice.number} drafted: a ${type.toLowerCase()} invoice for ${invoice.customerName}, ${money(total)} inc GST (${money(subtotal)} + ${money(tax)} GST), due ${dateLabel(invoice.dueDate)}. It is a draft until you send it.`,
+      summary: `${invoice.number} drafted: a ${type.toLowerCase()} invoice for ${invoice.customerName}, ${money(total)} inc GST (${money(subtotal)} + ${money(tax)} GST), due ${dateLabel(invoice.dueDate)}. It is a draft until you send it.${creditWarning ? ` Note: ${creditWarning}` : ''}`,
       invoice,
       job,
       source,
+      creditWarning,
     };
   },
 });

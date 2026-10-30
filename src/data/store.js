@@ -28,6 +28,14 @@ function jsonEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// Nullable numeric columns mean "not set" (no credit limit, company default
+// terms), so a null has to survive the round trip — parseFloat(null) is NaN.
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 
 // Table name mappings to match local collection keys with PostgreSQL tables
 const TABLE_MAP = {
@@ -147,6 +155,8 @@ const TABLE_COLUMNS = {
     "portal_last_accessed",
     "geo",
     "sites",
+    "payment_terms_days",
+    "credit_limit",
     "created_at",
     "updated_at"
   ],
@@ -1956,6 +1966,14 @@ class DataStore {
       record.portalLastAccessed = record.portal_last_accessed;
       delete record.portal_last_accessed;
     }
+    if (record.payment_terms_days !== undefined) {
+      record.paymentTermsDays = numberOrNull(record.payment_terms_days);
+      delete record.payment_terms_days;
+    }
+    if (record.credit_limit !== undefined) {
+      record.creditLimit = numberOrNull(record.credit_limit);
+      delete record.credit_limit;
+    }
     if (record.owner_type !== undefined) {
       record.ownerType = record.owner_type;
       delete record.owner_type;
@@ -2700,6 +2718,14 @@ class DataStore {
     if (record.portalLastAccessed !== undefined) {
       record.portal_last_accessed = record.portalLastAccessed;
       delete record.portalLastAccessed;
+    }
+    if (record.paymentTermsDays !== undefined) {
+      record.payment_terms_days = numberOrNull(record.paymentTermsDays);
+      delete record.paymentTermsDays;
+    }
+    if (record.creditLimit !== undefined) {
+      record.credit_limit = numberOrNull(record.creditLimit);
+      delete record.creditLimit;
     }
     if (record.ownerType !== undefined) {
       record.owner_type = record.ownerType;

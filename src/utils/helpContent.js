@@ -264,7 +264,8 @@ export const HELP_TOPICS = [
         items: [
           { label: 'Overview', text: 'Contact details, address and running totals of jobs and quotes.' },
           { label: 'Sites / Locations', text: 'Every address you work at for this customer, each with its own contacts and assets.' },
-          { label: 'Financials', text: 'What they\'ve been invoiced, what they\'ve paid and what\'s outstanding.' },
+          { label: 'Financials', text: 'What they\'ve been invoiced, what they\'ve paid and what\'s outstanding, plus their payment terms, credit limit and how much of it is used.' },
+          { label: 'Payment terms & credit limit', text: 'Set on the customer or from the Financials tab. Terms set the due date on new invoices (blank means 30 days); a credit limit shows a warning when a new invoice takes their unpaid balance over it, but never stops you billing.' },
           { label: 'Jobs & Workflow', text: 'Every quote, job and invoice for the customer.' },
           { label: 'Customer portal', text: 'A link and PIN so the customer can view jobs, accept quotes and send requests.', cloud: true },
         ],
@@ -402,7 +403,7 @@ export const HELP_TOPICS = [
           { label: 'Revenue & Profit', text: 'Income and margins over time.' },
           { label: 'Job Performance and Job Costing', text: 'Which jobs make money, and why.' },
           { label: 'Technician Productivity and Timesheet & Labor', text: 'Hours, utilisation and labour cost.' },
-          { label: 'Customer Analysis', text: 'Your best customers and who owes what.' },
+          { label: 'Customer Analysis', text: 'Your best customers, who owes what, how old the debt is and who is over their credit limit.' },
           { label: 'Asset Maintenance and Inventory', text: 'Service compliance and stock value.' },
         ],
       },

@@ -569,6 +569,34 @@ describe('DataStore', () => {
       assert.strictEqual(norm.sites[0].notes, 'Gate code 4417');
     });
 
+    // Payment terms and the credit limit are nullable: null means "company
+    // default terms" and "no limit". parseFloat(null) is NaN, so they get their
+    // own conversion — otherwise an unset limit would read as $NaN.
+    test('payment terms and credit limit round-trip, keeping "not set" as null', () => {
+      const denorm = store.denormalizeRecord({ id: 'cust_1', paymentTermsDays: 14, creditLimit: 5000 }, 'customers');
+
+      assert.strictEqual(denorm.payment_terms_days, 14);
+      assert.strictEqual(denorm.credit_limit, 5000);
+      assert.strictEqual(denorm.paymentTermsDays, undefined);
+      assert.strictEqual(denorm.creditLimit, undefined);
+
+      const norm = store.normalizeRecord({ id: 'cust_1', payment_terms_days: '14', credit_limit: '5000.00' }, 'customers');
+
+      assert.strictEqual(norm.paymentTermsDays, 14);
+      assert.strictEqual(norm.creditLimit, 5000);
+      assert.strictEqual(norm.payment_terms_days, undefined);
+      assert.strictEqual(norm.credit_limit, undefined);
+
+      const unset = store.normalizeRecord({ id: 'cust_2', payment_terms_days: null, credit_limit: null }, 'customers');
+      assert.strictEqual(unset.paymentTermsDays, null);
+      assert.strictEqual(unset.creditLimit, null);
+
+      // Clearing a limit from the UI must reach the database as null, not be dropped.
+      const cleared = store.denormalizeRecord({ id: 'cust_2', paymentTermsDays: null, creditLimit: null }, 'customers');
+      assert.strictEqual(cleared.payment_terms_days, null);
+      assert.strictEqual(cleared.credit_limit, null);
+    });
+
     // A whitelist entry that lands before its migration must not turn every cloud
     // write into a failure, so the rejected column is dropped and the write retried.
     test('a write the database rejects for an unknown column is retried once without it', async () => {

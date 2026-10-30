@@ -37,6 +37,8 @@ import { quoteForJob, planQuotePurchasing, groupIntoPurchaseOrders, isActiveSupp
 import { statCard } from '../../components/StatCard.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { getSessionUser } from '../auth/session.js';
+import { dueDateForCustomer } from '../../utils/customerTerms.js';
+import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
 import { mergeJobHistory, newHistoryEvent } from '../../data/jobHistory.js';
 
 // History entries are appended as their own jobEvents rows rather than written
@@ -144,24 +146,33 @@ export function renderJobDetail(container, { id, tab, form }) {
       }
     }
 
-    const inv = store.create('invoices', {
-      number: store.getNextNumber('INV-', 'invoices'),
-      invoiceType: type,
-      hoursSource: hoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
-      jobId: id, jobNumber: job.number,
-      customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
-      status: 'Draft',
-      sections: sections,
-      originalQuoteId,
-      originalQuoteNumber,
-      originalSubtotal: subtotal,
-      subtotal: subtotal, tax: subtotal * store.getTaxRate(), total: subtotal * (1 + store.getTaxRate()),
-      issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-      notes: worksDescription || ''
+    const customer = store.getById('customers', job.customerId);
+    const tax = subtotal * store.getTaxRate();
+    const total = subtotal + tax;
+
+    // Over-limit invoices are allowed, but never silently.
+    confirmOverCreditLimit({ customerId: job.customerId, customerName: job.customerName, amount: total }).then((proceed) => {
+      if (!proceed) return;
+
+      const inv = store.create('invoices', {
+        number: store.getNextNumber('INV-', 'invoices'),
+        invoiceType: type,
+        hoursSource: hoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
+        jobId: id, jobNumber: job.number,
+        customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
+        status: 'Draft',
+        sections: sections,
+        originalQuoteId,
+        originalQuoteNumber,
+        originalSubtotal: subtotal,
+        subtotal: subtotal, tax, total,
+        issueDate: new Date().toISOString(), dueDate: dueDateForCustomer(customer).toISOString(),
+        notes: worksDescription || ''
+      });
+      // Job flips to "Invoiced" automatically when this draft is sent (store hook)
+      showToast(`${type} Invoice created`, 'success');
+      router.navigate(`/invoices/${inv.id}`);
     });
-    // Job flips to "Invoiced" automatically when this draft is sent (store hook)
-    showToast(`${type} Invoice created`, 'success');
-    router.navigate(`/invoices/${inv.id}`);
   }
 
   function getJobInvoiceData(selectedQuote, hoursSource = HOURS_SOURCE.ESTIMATED) {
