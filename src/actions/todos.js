@@ -307,4 +307,29 @@ defineAction({
   },
 });
 
+defineAction({
+  name: 'delete_todo',
+  title: 'Delete a to-do',
+  description: 'Permanently delete a to-do. This is housekeeping — complete_todo is better when the thing was actually done.',
+  inputSchema: objectSchema(
+    {
+      todo: str('The to-do to delete.'),
+    },
+    ['todo']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ todo: reference }) => {
+    const todo = resolveTodo(reference);
+    const snapshot = { id: todo.id, title: todo.title || null, assignedToName: todo.assignedToName || null, status: todo.status || 'open' };
+    await store.delete('todos', todo.id);
+    logActivity({
+      type: 'todo',
+      text: `Deleted to-do for ${assignedName(todo)}: ${todo.title}`,
+      recordType: 'todo',
+      recordId: snapshot.id,
+    });
+    return { summary: `Deleted to-do "${snapshot.title}".`, todo: snapshot };
+  },
+});
+
 export { TODO_STATUSES, RECORD_TYPES };

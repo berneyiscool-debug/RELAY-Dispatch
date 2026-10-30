@@ -16,7 +16,7 @@ import { defineAction } from './registry.js';
 import { resolveOne } from './resolve.js';
 import { objectSchema, str, num, bool } from './schema.js';
 import { conflict, invalidInput, permissionDenied } from './errors.js';
-import { logActivity } from './context.js';
+import { logActivity, assertCloudOnly } from './context.js';
 import { isCloudCompany } from '../utils/subscription.js';
 import { normalizeBackupEmail } from '../../supabase/functions/invite-user/provision.js';
 
@@ -220,5 +220,24 @@ defineAction({
     }
     logActivity({ type: 'staff_updated', text: `${person.name} ${input.reactivate ? 'reactivated' : 'deactivated'}.` });
     return { staff: view(store.getById('technicians', person.id)), changed: true };
+  },
+});
+
+defineAction({
+  name: 'resend_staff_confirmation',
+  title: 'Resend a staff confirmation',
+  description: 'Resend the backup-email confirmation link to a staff member whose address is still pending. The person still sets their own password.',
+  permission: USERS_PERMISSION,
+  cloudOnly: true,
+  inputSchema: objectSchema({ person: str('Their name or username.') }, ['person']),
+  summarize: (input, result) => result.summary,
+  run: async ({ person: reference }, ctx) => {
+    requireAdmin(ctx);
+    assertCloudOnly('Staff confirmation emails');
+    const person = resolveStaff(reference);
+    const { resendBackupEmailConfirmation } = await import('../utils/backupEmailConfirmation.js');
+    const { email } = await resendBackupEmailConfirmation(person.id);
+    logActivity({ type: 'staff_updated', text: `Backup-email confirmation resent to ${person.name} (${email}).` });
+    return { summary: `Confirmation email sent to ${email}.`, staff: view(person), to: email };
   },
 });

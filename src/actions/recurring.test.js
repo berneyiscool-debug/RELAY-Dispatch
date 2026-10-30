@@ -114,4 +114,41 @@ describe('assistant recurring jobs', () => {
       (error) => error.code === ERROR_CODES.INVALID_INPUT,
     );
   });
+
+  test('delete_recurring_job removes the template and keeps the jobs it already made', async () => {
+    const { result } = await executeAction('create_recurring_job', { customer: CUSTOMER, title: 'Daily plant check', frequency: 'Daily' }, CTX);
+    const templateId = result.template.id;
+    const children = store.getAll('jobs').filter((job) => job.parentJobId === templateId);
+    assert.ok(children.length > 0, 'the series spawned its week before deletion');
+
+    const outcome = await executeAction('delete_recurring_job', { template: result.template.number, reason: 'Contract ended' }, CTX);
+
+    assert.strictEqual(store.getById('jobs', templateId), null);
+    assert.strictEqual(outcome.result.keptJobs, children.length);
+    assert.strictEqual(outcome.result.removedJobs.length, 0);
+    store.getAll('jobs').filter((job) => job.parentJobId === templateId).forEach((job) => assert.ok(store.getById('jobs', job.id)));
+    assert.match(outcome.result.summary, /^Deleted recurring job T-/);
+  });
+
+  test('delete_recurring_job can take the unstarted future jobs with it', async () => {
+    const { result } = await executeAction('create_recurring_job', { customer: CUSTOMER, title: 'Daily check', frequency: 'Daily', start: addDaysKey(1) }, CTX);
+    const templateId = result.template.id;
+    const children = store.getAll('jobs').filter((job) => job.parentJobId === templateId);
+    assert.ok(children.length > 0);
+
+    const outcome = await executeAction('delete_recurring_job', { template: result.template.number, deleteFutureJobs: true }, CTX);
+
+    assert.strictEqual(outcome.result.removedJobs.length, children.length);
+    children.forEach((job) => assert.strictEqual(store.getById('jobs', job.id), null));
+    assert.strictEqual(outcome.result.keptJobs, 0);
+  });
+
+  test('brny must ask before deleting a recurring job', async () => {
+    const { result } = await executeAction('create_recurring_job', { customer: CUSTOMER, title: 'Ask first', frequency: 'Daily' }, CTX);
+    await assert.rejects(
+      executeAction('delete_recurring_job', { template: result.template.number }, { ...CTX, source: 'brny' }),
+      (error) => error.code === ERROR_CODES.APPROVAL_REQUIRED,
+    );
+    assert.ok(store.getById('jobs', result.template.id), 'a declined approval deletes nothing');
+  });
 });

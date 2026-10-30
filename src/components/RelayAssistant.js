@@ -4081,6 +4081,11 @@ function executeAction(action, param) {
         if (title) {
           showToast(`Relay added the "${title}" widget.`, 'success');
         }
+      } else if (action === 'REMOVE_WIDGET' && param) {
+        const title = ff.removeWidgetById?.(param);
+        if (title) {
+          showToast(`Relay removed the "${title}" widget.`, 'info');
+        }
       } else if (action === 'FIT_CANVAS') {
         ff.fitAll?.();
         showToast('Relay fitted the dashboard canvas.', 'info');

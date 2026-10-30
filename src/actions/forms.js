@@ -20,7 +20,7 @@ import {
 } from '../utils/formScan.js';
 import { defineAction } from './registry.js';
 import { resolveOne, normalizeText } from './resolve.js';
-import { objectSchema, str } from './schema.js';
+import { objectSchema, str, num, bool, enumOf, list, objectOf } from './schema.js';
 import { ambiguousMatch, conflict, invalidInput, notFound } from './errors.js';
 import { actorStamp, logActivity } from './context.js';
 import { jobLabel, resolveJob } from './jobs.js';
@@ -219,5 +219,276 @@ defineAction({
       flagged,
       reviewPath: `/jobs/${job.id}?tab=forms&form=${formInstance.id}`,
     };
+  },
+});
+
+// ── Form templates and job forms ────────────────────────────────────────
+
+const FORM_FIELD_TYPES = ['text', 'textarea', 'checkbox', 'select', 'date', 'signature', 'info', 'spacer'];
+
+const formFieldSchema = () => objectOf(
+  {
+    type: enumOf(FORM_FIELD_TYPES, 'Field type.'),
+    label: str('Question or heading.'),
+    required: bool('The technician must answer it before submitting.'),
+    options: list(str('A choice.'), 'Dropdown choices.'),
+    colSpan: num('How many of the section\'s columns the field takes.'),
+    width: enumOf(['full', 'half'], 'Legacy width hint.'),
+    height: num('Height in pixels, for a spacer.'),
+  },
+  'A form field.',
+  ['type']
+);
+
+const formSectionSchema = () => objectOf(
+  {
+    title: str('Section heading.'),
+    columns: num('Columns in the section, 1-3.'),
+    fields: list(formFieldSchema(), 'The fields in this section.'),
+  },
+  'A form section.',
+  ['title', 'fields']
+);
+
+function buildFormSections(sections) {
+  return (sections || []).map((section) => {
+    const columns = Math.min(Math.max(Number(section.columns) || 1, 1), 3);
+    return {
+      id: store.generateId(),
+      title: String(section.title || 'General Info').trim(),
+      columns,
+      width: 'full',
+      fields: (section.fields || []).map((field) => {
+        const node = {
+          id: store.generateId(),
+          type: FORM_FIELD_TYPES.includes(field.type) ? field.type : 'text',
+          label: String(field.label || '').trim(),
+          required: !!field.required,
+          colSpan: Math.min(Math.max(Number(field.colSpan) || 1, 1), columns),
+        };
+        node.width = node.colSpan >= columns ? 'full' : 'half';
+        if (node.type === 'select') node.options = (field.options || []).map(String);
+        if (node.type === 'spacer') node.height = Number(field.height) || 50;
+        return node;
+      }),
+    };
+  });
+}
+
+function resolveFormTemplate(query) {
+  const text = String(query || '').trim();
+  if (!text) throw invalidInput('Which form template?');
+  const rows = store.getAll('formTemplates') || [];
+  const byId = rows.find((template) => String(template.id) === text);
+  if (byId) return byId;
+  const exact = rows.filter((template) => normalizeText(template.name) === normalizeText(text));
+  if (exact.length === 1) return exact[0];
+  const partial = rows.filter((template) => normalizeText(template.name).includes(normalizeText(text)));
+  if (partial.length === 1) return partial[0];
+  if (!partial.length) throw notFound('form template', text);
+  throw ambiguousMatch(
+    'form template',
+    text,
+    partial.slice(0, 5).map((template) => ({ id: template.id, label: template.name }))
+  );
+}
+
+const formTemplateView = (template) => ({
+  id: template.id,
+  name: template.name,
+  description: template.description || '',
+  sections: template.sections || [],
+  fields: (template.sections || []).reduce((sum, section) => sum + (section.fields || []).length, 0),
+});
+
+defineAction({
+  name: 'list_form_templates',
+  title: 'List form templates',
+  description: 'List the compliance form templates that can be attached to a job.',
+  permission: { module: 'Jobs', key: 'view' },
+  readOnly: true,
+  inputSchema: objectSchema({}),
+  summarize: (input, result) => `${result.templates.length} form template(s).`,
+  run: async () => ({ templates: (store.getAll('formTemplates') || []).map(formTemplateView) }),
+});
+
+defineAction({
+  name: 'create_form_template',
+  title: 'Create a form template',
+  description:
+    'Build a reusable compliance form — safety audits, site inspections, test sheets — from sections of text, dropdown, date, signature and checkbox fields.',
+  permission: { module: 'Settings', key: 'edit_company' },
+  inputSchema: objectSchema(
+    {
+      name: str('Form name.'),
+      description: str('What the form is for.'),
+      sections: list(formSectionSchema(), 'The form sections and their fields.'),
+    },
+    ['name', 'sections']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ name, description, sections }) => {
+    const built = buildFormSections(sections);
+    if (!built.some((section) => section.fields.length)) throw invalidInput('A form needs at least one field.');
+    const template = store.create('formTemplates', {
+      name: String(name).trim(),
+      description: description || '',
+      sections: built,
+    });
+    logActivity({ type: 'form_template_created', text: `Form template ${template.name} created.` });
+    return { summary: `Created form template ${template.name} (${formTemplateView(template).fields} field(s)).`, template: formTemplateView(template) };
+  },
+});
+
+defineAction({
+  name: 'update_form_template',
+  title: 'Update a form template',
+  description: 'Rename a form template, change its description, or replace its sections and fields. Forms already attached to jobs keep their answers.',
+  permission: { module: 'Settings', key: 'edit_company' },
+  inputSchema: objectSchema(
+    {
+      template: str('Form template name or id.'),
+      name: str('New name.'),
+      description: str('New description.'),
+      sections: list(formSectionSchema(), 'Replacement sections.'),
+    },
+    ['template']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ template: reference, name, description, sections }) => {
+    const template = resolveFormTemplate(reference);
+    const patch = {};
+    const fields = [];
+    if (name != null) { patch.name = String(name).trim(); fields.push('name'); }
+    if (description != null) { patch.description = description; fields.push('description'); }
+    if (sections != null) {
+      const built = buildFormSections(sections);
+      if (!built.some((section) => section.fields.length)) throw invalidInput('A form needs at least one field.');
+      patch.sections = built;
+      fields.push('sections');
+    }
+    if (!fields.length) throw invalidInput('Nothing to update — pass at least one new value.');
+    await store.update('formTemplates', template.id, patch);
+    logActivity({ type: 'form_template_updated', text: `Form template ${patch.name || template.name} updated.` });
+    return { summary: `Updated form template ${patch.name || template.name} (${fields.join(', ')}).`, template: formTemplateView(store.getById('formTemplates', template.id)) };
+  },
+});
+
+defineAction({
+  name: 'delete_form_template',
+  title: 'Delete a form template',
+  description: 'Permanently delete a form template. Forms already attached to jobs stay, but no new ones can be created from it.',
+  permission: { module: 'Settings', key: 'edit_company' },
+  risky: true,
+  inputSchema: objectSchema({ template: str('Form template name or id.'), reason: str('Why it is being deleted.') }, ['template']),
+  summarize: (input, result) => result.summary,
+  run: async ({ template: reference, reason }) => {
+    const template = resolveFormTemplate(reference);
+    await store.delete('formTemplates', template.id);
+    logActivity({ type: 'form_template_deleted', text: `Form template ${template.name} deleted${reason ? ` — ${reason}` : ''}.` });
+    return { summary: `Deleted form template ${template.name}.`, template: { id: template.id, name: template.name }, reason: reason || null };
+  },
+});
+
+defineAction({
+  name: 'attach_form_to_job',
+  title: 'Attach a form to a job',
+  description: 'Put a compliance form on a job so a technician can fill it out in the field.',
+  permission: { module: 'Jobs', key: 'manage_tasks' },
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      customer: str('Customer, to narrow the job down when the name is not unique.'),
+      form: str('Form template name or id.'),
+    },
+    ['job', 'form']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ job: jobRef, customer, form: formRef }) => {
+    const { resolveCustomer } = await import('./customers.js');
+    const customerId = customer ? resolveCustomer(customer, { create: false }).customer?.id : null;
+    const job = resolveJob(jobRef, { customerId });
+    const template = resolveFormTemplate(formRef);
+    const existing = (store.getAll('formInstances') || []).find((instance) => instance.jobId === job.id && instance.templateId === template.id);
+    if (existing) throw conflict(`${template.name} is already attached to ${job.number}.`);
+    const instance = store.create('formInstances', {
+      jobId: job.id,
+      templateId: template.id,
+      responses: {},
+      status: 'Pending',
+      createdAt: new Date().toISOString(),
+    });
+    logActivity({ type: 'form_attached', text: `Form ${template.name} attached to job ${job.number}.`, recordType: 'job', recordId: job.id });
+    return { summary: `Attached ${template.name} to ${job.number}.`, formInstance: instance, job: { id: job.id, number: job.number }, template: { id: template.id, name: template.name } };
+  },
+});
+
+defineAction({
+  name: 'fill_job_form',
+  title: 'Fill a job form',
+  description:
+    'Save answers into a job\'s form as a draft. It never signs or submits the form — the technician reviews and submits it in the job\'s Forms tab.',
+  permission: { module: 'Jobs', key: 'manage_tasks' },
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      form: str('Form template name or id.'),
+      responses: {
+        type: 'object',
+        additionalProperties: true,
+        description: 'Field label to the answer. Labels must match the form.',
+      },
+    },
+    ['job', 'form', 'responses']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ job: jobRef, form: formRef, responses }) => {
+    const job = resolveJob(jobRef);
+    const template = resolveFormTemplate(formRef);
+    const instance = (store.getAll('formInstances') || []).find((row) => row.jobId === job.id && row.templateId === template.id);
+    if (!instance) throw invalidInput(`${template.name} is not attached to ${job.number}. Attach it with attach_form_to_job first.`);
+    if (instance.status === 'Completed') throw conflict(`${template.name} on ${job.number} has already been submitted.`);
+    const labels = new Set(
+      (template.sections || []).flatMap((section) => (section.fields || []).map((field) => normalizeText(field.label)))
+    );
+    const unknown = Object.keys(responses || {}).filter((label) => !labels.has(normalizeText(label)));
+    if (unknown.length) {
+      throw invalidInput(`Unknown field(s): ${unknown.join(', ')}. The form asks: ${(template.sections || []).flatMap((section) => (section.fields || []).map((field) => field.label)).join(', ')}.`);
+    }
+    const merged = { ...(instance.responses || {}), ...responses };
+    await store.update('formInstances', instance.id, { responses: merged, status: 'Pending' });
+    logActivity({ type: 'form_draft_saved', text: `Draft answers saved for ${template.name} on job ${job.number}.`, recordType: 'job', recordId: job.id });
+    return {
+      summary: `Saved ${Object.keys(responses).length} answer(s) to ${template.name} on ${job.number}. Review and submit it in the job's Forms tab.`,
+      formInstance: { id: instance.id, status: 'Pending' },
+      job: { id: job.id, number: job.number },
+      reviewPath: `/jobs/${job.id}?tab=forms&form=${instance.id}`,
+    };
+  },
+});
+
+defineAction({
+  name: 'remove_form_from_job',
+  title: 'Remove a form from a job',
+  description: 'Permanently remove an attached form and its answers from a job. This cannot be undone.',
+  permission: { module: 'Jobs', key: 'manage_tasks' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      form: str('Form template name or id.'),
+      reason: str('Why the form is being removed.'),
+    },
+    ['job', 'form']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ job: jobRef, form: formRef, reason }) => {
+    const job = resolveJob(jobRef);
+    const template = resolveFormTemplate(formRef);
+    const instance = (store.getAll('formInstances') || []).find((row) => row.jobId === job.id && row.templateId === template.id);
+    if (!instance) throw invalidInput(`${template.name} is not attached to ${job.number}.`);
+    await store.delete('formInstances', instance.id);
+    logActivity({ type: 'form_removed', text: `Form ${template.name} removed from job ${job.number}${reason ? ` — ${reason}` : ''}.`, recordType: 'job', recordId: job.id });
+    return { summary: `Removed ${template.name} from ${job.number}.`, job: { id: job.id, number: job.number }, template: { id: template.id, name: template.name }, reason: reason || null };
   },
 });

@@ -273,6 +273,7 @@ defineAction({
       siteAddress: str('Site address if different from the customer address.'),
       contactName: str('On-site contact person.'),
       priority: enumOf(JOB_PRIORITIES, 'Job priority. Defaults to Medium.'),
+      asset: str('Equipment asset at the site this job is for — the asset name or serial number. Use it when the customer\'s unit is being serviced or repaired.'),
       status: enumOf(JOB_STATUSES, 'Starting status. Defaults to Scheduled when a date is given, otherwise Pending.'),
       scheduledDate: dateish('Date the job is booked for.'),
       estimatedHours: num('Estimated labour hours for the whole job. Placed on the task list so the tasks are costed too.'),
@@ -306,6 +307,10 @@ defineAction({
     const scheduledDate = input.scheduledDate ? parseDate(input.scheduledDate) : null;
     const status = input.status || (scheduledDate ? 'Scheduled' : 'Pending');
     const number = store.getNextNumber('J-', 'jobs');
+    let asset = null;
+    if (input.asset) {
+      asset = resolveOne('assets', input.asset, { searchFields: ['name', 'serial', 'identifier', 'customerName'], what: 'asset' }).record;
+    }
 
     const job = store.create('jobs', {
       number,
@@ -314,6 +319,7 @@ defineAction({
       contactName: input.contactName || customer.contactName || '',
       ...(site ? { siteName: site.siteName } : {}),
       siteAddress: site ? (site.siteAddress || customerAddress(customer)) : (input.siteAddress || customerAddress(customer)),
+      ...(asset ? { assetId: asset.id } : {}),
       title: input.title,
       // `jobs.notes` is what survives to Postgres; the UI reads `description || notes`.
       description: input.description || '',
@@ -351,6 +357,8 @@ defineAction({
       title: str('New job title.'),
       description: str('New job description.'),
       priority: enumOf(JOB_PRIORITIES, 'New priority.'),
+      asset: str('Move the job to a different equipment asset — the asset name or serial.'),
+      removeAsset: bool('Take the asset off the job.'),
       contactName: str('New on-site contact.'),
       site: str('Move the job to one of the customer\'s sites — the site name or its address. Use list_sites to see them.'),
       siteAddress: str('New site address.'),
@@ -404,6 +412,14 @@ defineAction({
       const project = resolveOne('projects', input.project, { searchFields: ['name', 'number'] }).record;
       patch.projectId = project.id;
       fields.push('project');
+    }
+    if (input.removeAsset) {
+      patch.assetId = null;
+      fields.push('asset');
+    } else if (input.asset != null) {
+      const asset = resolveOne('assets', input.asset, { searchFields: ['name', 'serial', 'identifier', 'customerName'], what: 'asset' }).record;
+      patch.assetId = asset.id;
+      fields.push('asset');
     }
 
     if (!fields.length) throw invalidInput('Nothing to update — pass at least one new value.');
@@ -587,6 +603,45 @@ defineAction({
 });
 
 defineAction({
+  name: 'delete_job_task',
+  title: 'Delete job task',
+  description:
+    'Permanently remove a task and its sub-tasks from a job. Here is permanent — untick a finished task with complete_job_task instead. The job keeps every other task, and parent progress is recalculated.',
+  permission: { module: 'Jobs', key: 'manage_tasks' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      customer: str('Customer, to narrow the job down when the name is not unique.'),
+      task: str('Task name, or a sub-task name, to remove.'),
+    },
+    ['job', 'task']
+  ),
+  summarize: (input, result) => `Deleted task "${result.task.name}"${result.subTasks ? ` and ${result.subTasks} sub-task${result.subTasks === 1 ? '' : 's'}` : ''} from job ${result.job.number}.`,
+  artifacts: (result) => [{ label: `Open job ${result.job.number}`, path: `/jobs/${result.job.id}` }],
+  async run(input) {
+    const job = resolveJob(input.job, jobScope(input));
+    const tasks = cloneTasks(job.tasks);
+    const entry = resolveJobTask({ tasks }, input.task);
+    const siblings = entry.path.length === 1 ? tasks : subTasksOf(taskParent(tasks, entry.path.slice(0, -1)));
+    if (!siblings) throw invalidInput(`Could not find "${input.task}" in job ${job.number}'s task list.`);
+    const [removed] = siblings.splice(entry.path[entry.path.length - 1], 1);
+    const subTasks = taskEntries(subTasksOf(removed)).length;
+    rollUpProgress(tasks, entry.path);
+
+    await store.update('jobs', job.id, { tasks });
+    await logActivity({
+      type: 'task_deleted',
+      text: `Task "${removed.name}" deleted from job ${job.number}${subTasks ? ` with ${subTasks} sub-task${subTasks === 1 ? '' : 's'}` : ''}.`,
+      recordType: 'job',
+      recordId: job.id,
+    });
+
+    return { job, task: removed, subTasks, tasks };
+  },
+});
+
+defineAction({
   name: 'complete_job_task',
   title: 'Complete job task',
   description: 'Tick a job task off. Parent task progress is recalculated automatically.',
@@ -671,6 +726,50 @@ defineAction({
     });
 
     return { job, entry, audience };
+  },
+});
+
+defineAction({
+  name: 'delete_job_note',
+  title: 'Delete a job note',
+  description: 'Permanently delete a note or customer message from a job\'s history. This cannot be undone. Match it by a few words of the note.',
+  permission: { module: 'Jobs', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      customer: str('Customer, to narrow the job down when the name is not unique.'),
+      note: str('A few words from the note or message to delete.'),
+      audience: enumOf(['internal', 'customer'], 'The internal notes or the customer thread. Defaults to internal.'),
+    },
+    ['job', 'note']
+  ),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: `Open job ${result.job.number}`, path: `/jobs/${result.job.id}` }],
+  async run(input) {
+    const job = resolveJob(input.job, jobScope(input));
+    const audience = input.audience || 'internal';
+    const key = audience === 'customer' ? 'customerActivityLog' : 'activityLog';
+    const rows = Array.isArray(job[key]) ? job[key] : [];
+    const wanted = String(input.note || '').toLowerCase();
+    const matches = rows.filter((row) => String(row.content || row.text || '').toLowerCase().includes(wanted));
+    if (!matches.length) throw invalidInput(`Job ${job.number} has no ${audience} note matching "${input.note}".`);
+    if (matches.length > 1) {
+      throw invalidInput(`"${input.note}" matches ${matches.length} notes on ${job.number}. Use a longer phrase — the matches start: ${matches.slice(0, 3).map((row) => `"${String(row.content || row.text || '').slice(0, 40)}"`).join('; ')}.`);
+    }
+    const [removed] = matches;
+    await store.update('jobs', job.id, { [key]: rows.filter((row) => row !== removed) });
+    await logActivity({
+      type: 'note_deleted',
+      text: `A ${audience === 'customer' ? 'customer message' : 'note'} was deleted from job ${job.number}.`,
+      recordType: 'job',
+      recordId: job.id,
+    });
+    return {
+      summary: `Deleted the ${audience === 'customer' ? 'customer message' : 'note'} from ${job.number}.`,
+      job: { id: job.id, number: job.number },
+      note: { id: removed.id, content: removed.content || removed.text || '' },
+    };
   },
 });
 

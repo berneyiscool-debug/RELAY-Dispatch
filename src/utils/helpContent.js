@@ -455,7 +455,7 @@ export const HELP_TOPICS = [
         items: [
           { label: 'Open it', text: 'The robot button in the top bar, or Shift + B from anywhere.' },
           { label: 'Ask questions', text: 'Plain English: "how many active jobs do we have?" or "who owes us money?"' },
-          { label: 'Get things done', text: 'brny can create and update records and arrange your dashboard for you.' },
+          { label: 'Get things done', text: 'brny can create, update and delete records, build kits, templates and forms, manage settings and roles, clock people in and out, book leave and rosters, run reports, log timesheets and file documents.' },
           { label: 'You stay in control', text: 'Risky actions — sending invoices, recording payments, converting quotes, deleting jobs — show an approval card first.' },
           { label: 'Personality', text: 'Pick how brny talks to you in My Profile.' },
         ],

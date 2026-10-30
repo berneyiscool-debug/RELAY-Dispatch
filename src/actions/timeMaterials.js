@@ -15,7 +15,7 @@
 import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
 import { resolveOne } from './resolve.js';
-import { objectSchema, str, num, enumOf, dateish } from './schema.js';
+import { objectSchema, str, num, enumOf, dateish, list } from './schema.js';
 import { invalidInput, notFound } from './errors.js';
 import { logActivity, currentActor } from './context.js';
 import { parseClock, parseDate, todayLocalISO } from './dates.js';
@@ -149,6 +149,7 @@ defineAction({
       date: dateish('Day the work was done. Defaults to today.'),
       task: str('Name of the task the time belongs to.'),
       description: str('What was done, for the office to read.'),
+      assets: list(str('An asset name or serial number.'), 'Equipment used or worked on during this time, recorded as asset usage.'),
       status: enumOf(TIMESHEET_STATUSES, 'Pending (default) or Approved.'),
     },
     ['job']
@@ -207,14 +208,29 @@ defineAction({
     }
 
     const timesheet = await store.create('timesheets', entry);
+    const assetUsage = [];
+    for (const assetRef of input.assets || []) {
+      const asset = resolveOne('assets', assetRef, { searchFields: ['name', 'serial', 'identifier', 'customerName'], what: 'asset' }).record;
+      assetUsage.push(store.create('assetUsage', {
+        jobId: job.id,
+        assetId: asset.id,
+        assetName: asset.name,
+        taskPath: entry.taskId || null,
+        taskName: taskName || null,
+        ...(entry.startTime ? { startTime: entry.startTime } : {}),
+        ...(entry.finishTime ? { finishTime: entry.finishTime } : {}),
+        hours,
+        recoveryRate: asset.recoveryRate || 0,
+      }));
+    }
     await logActivity({
       type: 'time_logged',
-      text: `${hours}h logged on job ${job.number} by ${technician.name}${taskName ? ` for "${taskName}"` : ''}.`,
+      text: `${hours}h logged on job ${job.number} by ${technician.name}${taskName ? ` for "${taskName}"` : ''}${assetUsage.length ? ` on ${assetUsage.map((row) => row.assetName).join(', ')}` : ''}.`,
       recordType: 'job',
       recordId: job.id,
     });
 
-    return { summary: `${hours}h logged on job ${job.number}.`, job, timesheet, technician };
+    return { summary: `${hours}h logged on job ${job.number}${assetUsage.length ? ` on ${assetUsage.map((row) => row.assetName).join(', ')}` : ''}.`, job, timesheet, technician, assetUsage };
   },
 });
 
@@ -276,6 +292,7 @@ defineAction({
       totalCost: roundCurrency(unitCost * quantity),
       location: input.location || (part && part.location) || '',
       date: input.date ? parseDate(input.date) : new Date().toISOString(),
+      stockDeducted: !!part && !stockNote,
     });
 
     await store.update('jobs', job.id, { materials: [...(job.materials || []), material] });
@@ -287,5 +304,89 @@ defineAction({
     });
 
     return { summary: `${quantity} × ${name} added to job ${job.number}.`, job, material, stockNote: stockNote || null };
+  },
+});
+
+/** Put removed material back on the shelf at the location it came from. */
+function returnStock(material, quantity) {
+  if (!material?.partId || !material.location) return false;
+  const part = store.getById('stock', material.partId);
+  if (!part) return false;
+  const locations = (part.locations || []).map((row) => ({ ...row }));
+  const at = locations.find((row) => String(row.location).toLowerCase() === String(material.location).toLowerCase());
+  if (at) at.quantity = (parseFloat(at.quantity) || 0) + quantity;
+  else locations.push({ location: material.location, quantity });
+  store.update('stock', part.id, {
+    locations,
+    quantity: locations.reduce((sum, row) => sum + (parseFloat(row.quantity) || 0), 0),
+    location: locations[0]?.location || part.location,
+  });
+  return true;
+}
+
+defineAction({
+  name: 'remove_job_material',
+  title: 'Remove material from a job',
+  description:
+    'Take a material line back off a job and return it to stock when it came off the shelf. Pass `quantity` to remove only part of a line. Use adjust_stock instead when the part was damaged or used elsewhere.',
+  permission: { module: 'Jobs', key: 'manage_materials' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      customer: str('Customer, to narrow the job down when the name is not unique.'),
+      part: str('The material line to remove — the part name or SKU.'),
+      quantity: num('How many to remove. Defaults to the whole line.'),
+    },
+    ['job', 'part']
+  ),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: `Open job ${result.job.number}`, path: `/jobs/${result.job.id}` }],
+  async run(input) {
+    const job = resolveJob(input.job, customerScope(input.customer));
+    const materials = Array.isArray(job.materials) ? job.materials : [];
+    const wanted = String(input.part || '').trim();
+    let at = materials.findIndex((row) => String(row.partName || row.name || '').toLowerCase() === wanted.toLowerCase());
+    if (at < 0) at = materials.findIndex((row) => String(row.partName || row.name || '').toLowerCase().includes(wanted.toLowerCase()));
+    if (at < 0) {
+      const known = materials.map((row) => `${row.partName || row.name} (${row.quantity})`).join(', ');
+      throw invalidInput(`Job ${job.number} has no material matching "${input.part}".${known ? ` Its materials are: ${known}.` : ''}`);
+    }
+    const line = materials[at];
+    const onLine = Number(line.quantity) || 0;
+    const quantity = input.quantity == null ? onLine : Number(input.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) throw invalidInput('Quantity must be greater than zero.');
+    if (quantity > onLine) throw invalidInput(`Only ${onLine} of ${line.partName || line.name} is on job ${job.number}.`);
+
+    const returned = line.stockDeducted === false
+      ? false
+      : returnStock(line, quantity);
+    const remaining = Math.round((onLine - quantity) * 100) / 100;
+    const nextMaterials = remaining > 0
+      ? materials.map((row, i) => (i === at ? { ...row, quantity: remaining, totalCost: roundCurrency((Number(row.unitCost) || 0) * remaining) } : row))
+      : materials.filter((_, i) => i !== at);
+    await store.update('jobs', job.id, { materials: nextMaterials });
+
+    const allocation = store.getById('jobMaterials', line.id);
+    if (allocation) {
+      if (remaining > 0) await store.update('jobMaterials', line.id, { quantity: remaining, totalCost: roundCurrency((Number(line.unitCost) || 0) * remaining) });
+      else await store.delete('jobMaterials', line.id);
+    }
+
+    await logActivity({
+      type: 'material_removed',
+      text: `${quantity} × ${line.partName || line.name} removed from job ${job.number}${returned ? ' and returned to stock' : ''}.`,
+      recordType: 'job',
+      recordId: job.id,
+    });
+
+    return {
+      summary: `Removed ${quantity} × ${line.partName || line.name} from job ${job.number}${returned ? ' and returned it to stock' : ''}${remaining ? `; ${remaining} left on the job` : ''}.`,
+      job,
+      material: { ...line, quantity },
+      returnedToStock: returned,
+      remaining,
+      materials: nextMaterials,
+    };
   },
 });
