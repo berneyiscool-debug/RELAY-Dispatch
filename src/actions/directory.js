@@ -15,6 +15,7 @@ import { objectSchema, str, num, bool, enumOf, list } from './schema.js';
 import { conflict, invalidInput, notFound } from './errors.js';
 import { logActivity } from './context.js';
 import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFound } from './customers.js';
+import { resolveJob } from './jobs.js';
 import { parseDate } from './dates.js';
 
 export const PAYMENT_TERMS = ['COD', '7 Days', '14 Days', '30 Days'];
@@ -294,5 +295,144 @@ defineAction({
     await store.update('projects', project.id, patch);
     logActivity({ type: 'project_updated', text: `Project ${project.number} updated (${fields.join(', ')}).`, recordType: 'project', recordId: project.id });
     return { project: store.getById('projects', project.id), fields };
+  },
+});
+
+defineAction({
+  name: 'delete_supplier',
+  title: 'Delete supplier',
+  description:
+    'Permanently delete a supplier. This cannot be undone. Purchase orders already raised against it keep the supplier name they captured. Mark it inactive with update_supplier when history should stay linked.',
+  permission: { module: 'Suppliers', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      supplier: str('Supplier business name or id.'),
+      reason: str('Why the supplier is being deleted.'),
+    },
+    ['supplier']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ supplier: reference, reason }) => {
+    const supplier = resolveOne('suppliers', reference, supplierSearch).record;
+    const purchaseOrders = (store.getAll('purchaseOrders') || []).filter((po) => po.supplierId === supplier.id).length;
+    const snapshot = { id: supplier.id, name: supplier.name || supplier.company || supplier.id, email: supplier.email || null };
+    await store.delete('suppliers', supplier.id);
+    logActivity({
+      type: 'supplier_deleted',
+      text: `Supplier ${snapshot.name} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'supplier',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted supplier ${snapshot.name}${purchaseOrders ? `; ${purchaseOrders} purchase order${purchaseOrders === 1 ? '' : 's'} kept` : ''}.`,
+      supplier: snapshot,
+      keptPurchaseOrders: purchaseOrders,
+      reason: reason || null,
+    };
+  },
+});
+
+defineAction({
+  name: 'delete_contractor',
+  title: 'Delete contractor',
+  description:
+    'Permanently delete a subcontractor. This cannot be undone. Work already assigned to them keeps their name. Mark them inactive with update_contractor when the history should stay linked.',
+  permission: { module: 'Contractors', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      contractor: str('Contractor business name, contact or id.'),
+      reason: str('Why the contractor is being deleted.'),
+    },
+    ['contractor']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ contractor: reference, reason }) => {
+    const contractor = resolveOne('contractors', reference, contractorSearch).record;
+    const usesContractor = (node) => (node.assignedContractorIds || []).includes(contractor.id)
+      || node.assignedContractorId === contractor.id
+      || (node.subTasks || []).some(usesContractor);
+    const jobs = (store.getAll('jobs') || []).filter((job) => (job.tasks || []).some(usesContractor)).length;
+    const snapshot = { id: contractor.id, businessName: contractor.businessName || contractor.name || contractor.id, email: contractor.email || null };
+    await store.delete('contractors', contractor.id);
+    logActivity({
+      type: 'contractor_deleted',
+      text: `Contractor ${snapshot.businessName} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'contractor',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted contractor ${snapshot.businessName}${jobs ? `; ${jobs} job${jobs === 1 ? '' : 's'} keep their name` : ''}.`,
+      contractor: snapshot,
+      keptJobs: jobs,
+      reason: reason || null,
+    };
+  },
+});
+
+defineAction({
+  name: 'remove_job_from_project',
+  title: 'Remove job from project',
+  description: 'Unfile a job from its project without deleting the job or the project.',
+  permission: { module: 'Projects', key: 'edit' },
+  inputSchema: objectSchema(
+    {
+      job: str('Job number, title, customer or id.'),
+      customer: str('Customer, to narrow the job down when the name is not unique.'),
+    },
+    ['job']
+  ),
+  summarize: (input, result) => `Removed ${result.job.number} from ${result.project?.name || 'its project'}.`,
+  artifacts: (result) => [{ label: `Open job ${result.job.number}`, path: `/jobs/${result.job.id}` }],
+  run: async ({ job: reference, customer }) => {
+    const customerId = customer ? resolveCustomer(customer, { create: false }).customer?.id : null;
+    const job = resolveJob(reference, { customerId });
+    if (!job.projectId) throw invalidInput(`${job.number} is not filed under a project.`);
+    const project = store.getById('projects', job.projectId);
+    await store.update('jobs', job.id, { projectId: null });
+    logActivity({
+      type: 'job_updated',
+      text: `Job ${job.number} removed from project ${project?.number || job.projectId}.`,
+      recordType: 'job',
+      recordId: job.id,
+    });
+    return { job: { ...job, projectId: null }, project: project ? { id: project.id, number: project.number, name: project.name } : null };
+  },
+});
+
+defineAction({
+  name: 'delete_project',
+  title: 'Delete project',
+  description:
+    'Permanently delete a project. This cannot be undone. The jobs filed under it are not deleted — they are unfiled first. Mark the project Completed or Cancelled with update_project when the record should stay.',
+  permission: { module: 'Projects', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      project: str('Project number, name, customer or id.'),
+      reason: str('Why the project is being deleted.'),
+    },
+    ['project']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ project: reference, reason }) => {
+    const project = resolveOne('projects', reference, projectSearch).record;
+    const jobs = (store.getAll('jobs') || []).filter((job) => job.projectId === project.id);
+    for (const job of jobs) await store.update('jobs', job.id, { projectId: null });
+    const snapshot = { id: project.id, number: project.number || null, name: project.name || null, customerName: project.customerName || null };
+    await store.delete('projects', project.id);
+    logActivity({
+      type: 'project_deleted',
+      text: `Project ${snapshot.number || snapshot.name} deleted${reason ? ` — ${reason}` : ''}${jobs.length ? ` (${jobs.length} job${jobs.length === 1 ? '' : 's'} unfiled)` : ''}.`,
+      recordType: 'project',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted project ${snapshot.number || snapshot.name}${jobs.length ? `; ${jobs.length} job${jobs.length === 1 ? '' : 's'} unfiled and kept` : ''}.`,
+      project: snapshot,
+      unfiledJobs: jobs.map((job) => ({ id: job.id, number: job.number })),
+      reason: reason || null,
+    };
   },
 });

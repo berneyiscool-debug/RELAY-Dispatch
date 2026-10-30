@@ -418,3 +418,252 @@ defineAction({
     };
   },
 });
+
+defineAction({
+  name: 'delete_quote',
+  title: 'Delete quote',
+  description:
+    'Permanently delete a quote. This cannot be undone. Archive a declined quote with update_quote instead when the history matters, and never delete one a job or invoice was raised from.',
+  permission: { module: 'Quotes', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      quote: str('Quote number or a description of the job it covers.'),
+      reason: str('Why the quote is being deleted.'),
+    },
+    ['quote']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ quote: reference, reason }) => {
+    const quote = resolveQuote(reference);
+    const jobs = (store.getAll('jobs') || []).filter((job) => job.quoteId === quote.id).length;
+    const invoices = (store.getAll('invoices') || []).filter((invoice) => invoice.originalQuoteId === quote.id).length;
+    const snapshot = {
+      id: quote.id,
+      number: quote.number || null,
+      title: quote.title || null,
+      customerName: quote.customerName || null,
+      status: quote.status || null,
+      total: quote.total || 0,
+    };
+
+    await store.delete('quotes', quote.id);
+    await logActivity({
+      type: 'quote_deleted',
+      text: `Quote ${quoteLabel(quote)} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'quote',
+      recordId: quote.id,
+    });
+
+    const left = [jobs ? `${jobs} job${jobs === 1 ? '' : 's'}` : '', invoices ? `${invoices} invoice${invoices === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+    return {
+      summary: `Deleted quote ${snapshot.number || snapshot.title}${left ? `; ${left} left on file` : ''}.`,
+      quote: snapshot,
+      linked: { jobs, invoices },
+      reason: reason || null,
+    };
+  },
+});
+
+const templateLabel = (template) => (template ? template.name || template.id : '');
+
+export function resolveQuoteTemplate(query) {
+  return resolveOne('quoteTemplates', query, {
+    label: templateLabel,
+    searchFields: ['name', 'description'],
+    what: 'quote template',
+  }).record;
+}
+
+defineAction({
+  name: 'list_quote_templates',
+  title: 'List quote templates',
+  description: 'List the saved quote templates — reusable scope and price lines for common work.',
+  permission: { module: 'Quotes', key: 'view' },
+  readOnly: true,
+  inputSchema: objectSchema({}),
+  summarize: (input, result) => `${result.templates.length} quote template(s).`,
+  run: async () => ({
+    templates: (store.getAll('quoteTemplates') || []).map((template) => ({
+      id: template.id,
+      name: template.name,
+      description: template.description || '',
+      sections: (template.sections || []).length,
+      total: template.total || 0,
+    })),
+  }),
+});
+
+defineAction({
+  name: 'create_quote_template',
+  title: 'Create a quote template',
+  description:
+    'Save reusable price lines as a quote template, so a common job can be quoted again in one step. Use the same lines create_quote takes.',
+  permission: { module: 'Quotes', key: 'create' },
+  inputSchema: objectSchema(
+    {
+      name: str('Template name, e.g. "Switchboard upgrade — standard".'),
+      description: str('When to use it.'),
+      items: list(lineItemSchema(), 'The price lines the template starts with.'),
+    },
+    ['name', 'items']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ name, description, items }) => {
+    const sections = buildSections(items);
+    const totals = totalsFor(sections);
+    const template = store.create('quoteTemplates', {
+      name,
+      description: description || '',
+      sections,
+      ...totals,
+      createdAt: new Date().toISOString(),
+    });
+    return {
+      summary: `Created quote template "${template.name}" (${items.length} line${items.length === 1 ? '' : 's'}, $${totals.total.toFixed(2)} incl. GST).`,
+      template,
+    };
+  },
+  artifacts: (result) => [{ label: result.template.name, path: `/quotes/${result.template.id}?type=template` }],
+});
+
+defineAction({
+  name: 'update_quote_template',
+  title: 'Update a quote template',
+  description: 'Rename a quote template, change its description, or replace its price lines.',
+  permission: { module: 'Quotes', key: 'edit' },
+  inputSchema: objectSchema(
+    {
+      template: str('Template name or id.'),
+      name: str('New name.'),
+      description: str('New description.'),
+      items: list(lineItemSchema(), 'Replacement price lines. The existing lines are replaced.'),
+    },
+    ['template']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ template: reference, name, description, items }) => {
+    const template = resolveQuoteTemplate(reference);
+    const patch = {};
+    const fields = [];
+    if (name != null) { patch.name = name; fields.push('name'); }
+    if (description != null) { patch.description = description; fields.push('description'); }
+    if (items != null) {
+      const sections = buildSections(items);
+      patch.sections = sections;
+      Object.assign(patch, totalsFor(sections));
+      fields.push('items');
+    }
+    if (!fields.length) throw invalidInput('Nothing to update — pass at least one new value.');
+    await store.update('quoteTemplates', template.id, patch);
+    const updated = store.getById('quoteTemplates', template.id);
+    return { summary: `Updated quote template "${updated.name}" (${fields.join(', ')}).`, template: updated, fields };
+  },
+  artifacts: (result) => [{ label: result.template.name, path: `/quotes/${result.template.id}?type=template` }],
+});
+
+defineAction({
+  name: 'delete_quote_template',
+  title: 'Delete a quote template',
+  description: 'Permanently delete a saved quote template. Quotes already created from it are not affected.',
+  permission: { module: 'Quotes', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      template: str('Template name or id.'),
+      reason: str('Why the template is being deleted.'),
+    },
+    ['template']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ template: reference, reason }) => {
+    const template = resolveQuoteTemplate(reference);
+    const snapshot = { id: template.id, name: template.name, description: template.description || '' };
+    await store.delete('quoteTemplates', template.id);
+    await logActivity({
+      type: 'quote_template_deleted',
+      text: `Quote template "${snapshot.name}" deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'quote',
+      recordId: snapshot.id,
+    });
+    return { summary: `Deleted quote template "${snapshot.name}".`, template: snapshot, reason: reason || null };
+  },
+});
+
+defineAction({
+  name: 'create_quote_from_template',
+  title: 'Create a quote from a template',
+  description: 'Start a draft quote for a customer from a saved quote template, copying its sections and prices so they can be adjusted.',
+  permission: { module: 'Quotes', key: 'create' },
+  inputSchema: objectSchema(
+    {
+      template: str('Template name or id.'),
+      customer: str('Customer name, number or id.'),
+      title: str('Quote title. Defaults to the template name.'),
+      validUntil: dateish('How long the quote is valid.'),
+    },
+    ['template', 'customer']
+  ),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.quote.number, path: `/quotes/${result.quote.id}` }],
+  run: async ({ template: templateRef, customer: customerRef, title, validUntil }) => {
+    const template = resolveQuoteTemplate(templateRef);
+    const { customer } = resolveCustomer(customerRef, { create: false });
+    if (!customer) throw notFound('customer', customerRef);
+    const sections = (template.sections || []).map((section) => ({
+      ...section,
+      id: store.generateId(),
+      lineItems: (section.lineItems || []).map((line) => ({ ...line, id: store.generateId() })),
+    }));
+    const totals = totalsFor(sections);
+    const quote = store.create('quotes', {
+      number: store.getNextNumber('Q-', 'quotes'),
+      customerId: customer.id,
+      customerName: customerLabel(customer),
+      title: title || template.name,
+      status: 'Draft',
+      version: 1,
+      validUntil: validUntil ? parseDate(validUntil) : null,
+      sections,
+      ...totals,
+      createdAt: new Date().toISOString(),
+    });
+    logActivity({ type: 'quote_created', text: `Quote ${quote.number} created from template ${template.name} for ${quote.customerName}.`, recordType: 'quote', recordId: quote.id });
+    return { summary: `Created quote ${quote.number} from ${template.name} for ${quote.customerName} ($${totals.total.toFixed(2)} incl. GST).`, quote };
+  },
+});
+
+defineAction({
+  name: 'revise_quote',
+  title: 'Create a quote revision',
+  description:
+    'Archive the current quote and start a new draft version of it with the same sections and prices, ready to edit. Use it when a customer wants changes rather than editing an agreed quote in place.',
+  permission: { module: 'Quotes', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema({ quote: str('Quote number or a description of the job it covers.') }, ['quote']),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: `${result.quote.number} v${result.quote.version}`, path: `/quotes/${result.quote.id}` }],
+  run: async ({ quote: reference }) => {
+    const quote = resolveQuote(reference);
+    if (quote.status === 'Archived') throw invalidInput(`${quote.number} is already archived.`);
+    const copy = JSON.parse(JSON.stringify(quote));
+    delete copy.id;
+    copy.version = (quote.version || 1) + 1;
+    copy.status = 'Draft';
+    copy.createdAt = new Date().toISOString();
+    copy.emailStatus = null;
+    await store.update('quotes', quote.id, { status: 'Archived' });
+    const revision = store.create('quotes', copy);
+    logActivity({
+      type: 'quote_revised',
+      text: `Quote ${quote.number} archived and revision v${copy.version} drafted.`,
+      recordType: 'quote',
+      recordId: revision.id,
+    });
+    return {
+      summary: `Archived ${quote.number} and created revision v${copy.version} as a draft.`,
+      quote: revision,
+      previous: { id: quote.id, number: quote.number, status: 'Archived' },
+    };
+  },
+});

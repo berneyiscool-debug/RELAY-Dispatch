@@ -11,9 +11,9 @@
 import { store } from '../data/store.js';
 import { defineAction, executeAction } from './registry.js';
 import { resolveOne } from './resolve.js';
-import { objectSchema, str, num, int, enumOf } from './schema.js';
+import { objectSchema, str, num, int, enumOf, list, bool } from './schema.js';
 import { conflict, invalidInput } from './errors.js';
-import { logActivity } from './context.js';
+import { logActivity, assertCloudOnly } from './context.js';
 import { getStorageLocations } from '../utils/storageLocations.js';
 
 export const stockSearch = {
@@ -292,5 +292,348 @@ defineAction({
 
     if (!added.length && failed.length) throw invalidInput(`None of ${kit.name} could be added: ${failed[0].reason}`);
     return { kit: { id: kit.id, name: kit.name }, jobNumber, added, failed, labour };
+  },
+});
+
+// ── Kits ────────────────────────────────────────────────────────────────
+
+export function resolveKit(query) {
+  return resolveOne('kits', query, {
+    label: (kit) => kit.name || kit.id,
+    searchFields: ['name', 'category', 'description'],
+    what: 'kit',
+  }).record;
+}
+
+const kitItemSchema = () => {
+  return {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['material', 'labor'], description: 'Material parts the job uses, or a labour allowance. Defaults to material.' },
+      name: { type: 'string', description: 'Part or labour description.' },
+      stockItem: { type: 'string', description: 'Stock item to link this line to, so job use takes stock off the shelf.' },
+      quantity: { type: 'number', description: 'How many. Defaults to 1.' },
+      unit: { type: 'string', description: 'Unit, e.g. Each, m, Box.' },
+      costPrice: { type: 'number', description: 'Cost each, ex GST. Defaults to the stock item\'s cost.' },
+      unitPrice: { type: 'number', description: 'Sell price each, ex GST. Defaults to the stock item\'s price.' },
+    },
+    required: ['name'],
+    additionalProperties: false,
+  };
+};
+
+function buildKitItems(items) {
+  return (items || []).map((item) => {
+    const stock = item.stockItem ? resolveStockItem(item.stockItem) : null;
+    const qty = Number(item.quantity ?? 1) || 1;
+    return {
+      id: store.generateId(),
+      type: item.type === 'labor' ? 'labor' : 'material',
+      name: item.name || stock?.name || 'Item',
+      sku: stock?.sku || '',
+      qty,
+      unit: item.unit || stock?.unit || 'Each',
+      costPrice: Number(item.costPrice ?? stock?.costPrice ?? 0) || 0,
+      unitPrice: Number(item.unitPrice ?? stock?.unitPrice ?? 0) || 0,
+      ...(stock ? { stockId: stock.id } : {}),
+    };
+  });
+}
+
+/** The totals the kit screen shows, including the combined-rate margin override. */
+function kitTotals(items, { marginOverrideEnabled, marginOverride } = {}) {
+  const totalCost = (items || []).reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.costPrice) || 0), 0);
+  const listPrice = (items || []).reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
+  const override = Number(marginOverride);
+  const useOverride = !!marginOverrideEnabled && Number.isFinite(override) && override > 0 && override < 100;
+  return {
+    totalCost: Math.round(totalCost * 100) / 100,
+    totalPrice: Math.round((useOverride ? totalCost / (1 - override / 100) : listPrice) * 100) / 100,
+  };
+}
+
+defineAction({
+  name: 'list_kits',
+  title: 'List kits',
+  description: 'List the saved kits — bundles of parts and labour used on a job — with what each contains.',
+  permission: { module: 'Stock', key: 'view' },
+  readOnly: true,
+  inputSchema: objectSchema({}),
+  summarize: (input, result) => `${result.kits.length} kit(s).`,
+  run: async () => ({
+    kits: (store.getAll('kits') || []).map((kit) => ({
+      id: kit.id,
+      name: kit.name,
+      category: kit.category || '',
+      items: (kit.items || []).length,
+      totalCost: kit.totalCost || 0,
+      totalPrice: kit.totalPrice || 0,
+      active: kit.active !== false,
+    })),
+  }),
+});
+
+defineAction({
+  name: 'create_kit',
+  title: 'Create kit',
+  description:
+    'Build a saved kit — the parts and labour a standard job uses, e.g. "Split system install kit". Add it to a job with add_kit_to_job.',
+  permission: { module: 'Stock', key: 'create' },
+  inputSchema: objectSchema(
+    {
+      name: str('Kit name.'),
+      category: str('Category, e.g. Air Conditioning.'),
+      description: str('What the kit is for.'),
+      items: list(kitItemSchema(), 'The parts and labour lines in the kit.'),
+      marginOverrideEnabled: { type: 'boolean', description: 'Price the kit on a target margin instead of the sum of its sell prices.' },
+      marginOverride: num('Target margin percent, 0-99.9. Only used when marginOverrideEnabled is true.'),
+    },
+    ['name', 'items']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ name, category, description, items, marginOverrideEnabled, marginOverride }) => {
+    const kitItems = buildKitItems(items);
+    const totals = kitTotals(kitItems, { marginOverrideEnabled, marginOverride });
+    const kit = store.create('kits', {
+      name: name.trim(),
+      category: category || '',
+      description: description || '',
+      active: true,
+      items: kitItems,
+      marginOverrideEnabled: !!marginOverrideEnabled,
+      marginOverride: marginOverride ?? null,
+      ...totals,
+    });
+    logActivity({ type: 'kit_created', text: `Kit ${kit.name} created (${kitItems.length} line${kitItems.length === 1 ? '' : 's'}).`, recordType: 'kit', recordId: kit.id });
+    return {
+      summary: `Created kit ${kit.name} with ${kitItems.length} line${kitItems.length === 1 ? '' : 's'} ($${totals.totalPrice.toFixed(2)} sell, $${totals.totalCost.toFixed(2)} cost).`,
+      kit,
+    };
+  },
+  artifacts: (result) => [{ label: result.kit.name, path: `/kits/${result.kit.id}` }],
+});
+
+defineAction({
+  name: 'update_kit',
+  title: 'Update kit',
+  description: 'Rename a kit, change its category or description, mark it inactive, or replace its contents.',
+  permission: { module: 'Stock', key: 'edit' },
+  inputSchema: objectSchema(
+    {
+      kit: str('Kit name or id.'),
+      name: str('New name.'),
+      category: str('New category.'),
+      description: str('New description.'),
+      active: { type: 'boolean', description: 'false to stop offering the kit.' },
+      items: list(kitItemSchema(), 'Replacement contents. The existing lines are replaced.'),
+      marginOverrideEnabled: { type: 'boolean', description: 'Price on a target margin instead of sell prices.' },
+      marginOverride: num('Target margin percent, 0-99.9.'),
+    },
+    ['kit']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ kit: reference, name, category, description, active, items, marginOverrideEnabled, marginOverride }) => {
+    const kit = resolveKit(reference);
+    const patch = {};
+    const fields = [];
+    if (name != null) { patch.name = name.trim(); fields.push('name'); }
+    if (category != null) { patch.category = category; fields.push('category'); }
+    if (description != null) { patch.description = description; fields.push('description'); }
+    if (active != null) { patch.active = !!active; fields.push('active'); }
+    if (marginOverrideEnabled != null) { patch.marginOverrideEnabled = !!marginOverrideEnabled; fields.push('margin'); }
+    if (marginOverride !== undefined) { patch.marginOverride = marginOverride; fields.push('margin'); }
+    if (items != null) {
+      patch.items = buildKitItems(items);
+      fields.push('items');
+    }
+    if (!fields.length) throw invalidInput('Nothing to update — pass at least one new value.');
+    const next = { ...kit, ...patch };
+    Object.assign(patch, kitTotals(next.items, next));
+    await store.update('kits', kit.id, patch);
+    const updated = store.getById('kits', kit.id);
+    logActivity({ type: 'kit_updated', text: `Kit ${updated.name} updated (${fields.join(', ')}).`, recordType: 'kit', recordId: kit.id });
+    return { summary: `Updated kit ${updated.name} (${fields.join(', ')}).`, kit: updated, fields };
+  },
+  artifacts: (result) => [{ label: result.kit.name, path: `/kits/${result.kit.id}` }],
+});
+
+defineAction({
+  name: 'delete_kit',
+  title: 'Delete kit',
+  description: 'Permanently delete a saved kit. Jobs already given its parts are not affected. This cannot be undone.',
+  permission: { module: 'Stock', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      kit: str('Kit name or id.'),
+      reason: str('Why the kit is being deleted.'),
+    },
+    ['kit']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ kit: reference, reason }) => {
+    const kit = resolveKit(reference);
+    const snapshot = { id: kit.id, name: kit.name, items: (kit.items || []).length };
+    await store.delete('kits', kit.id);
+    logActivity({
+      type: 'kit_deleted',
+      text: `Kit ${snapshot.name} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'kit',
+      recordId: snapshot.id,
+    });
+    return { summary: `Deleted kit ${snapshot.name}.`, kit: snapshot, reason: reason || null };
+  },
+});
+
+defineAction({
+  name: 'delete_stock_item',
+  title: 'Delete stock item',
+  description:
+    'Permanently delete a part from the stock list. This cannot be undone. Job materials and kits that used it keep their line, but new stock movements will not find it. Use update_stock_item to stop using it without erasing the history.',
+  permission: { module: 'Stock', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      item: str('Stock item name or SKU.'),
+      reason: str('Why the item is being deleted.'),
+    },
+    ['item']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ item: reference, reason }) => {
+    const item = resolveStockItem(reference);
+    const kits = (store.getAll('kits') || []).filter((kit) => (kit.items || []).some((line) => line.stockId === item.id)).length;
+    const snapshot = { id: item.id, name: item.name, sku: item.sku || null, quantity: item.quantity || 0 };
+    await store.delete('stock', item.id);
+    logActivity({
+      type: 'stock_deleted',
+      text: `Stock item ${snapshot.name}${snapshot.sku ? ` (${snapshot.sku})` : ''} deleted${reason ? ` — ${reason}` : ''}.`,
+      recordType: 'stock',
+      recordId: snapshot.id,
+    });
+    return {
+      summary: `Deleted stock item ${snapshot.name}${snapshot.sku ? ` (${snapshot.sku})` : ''}${kits ? `; ${kits} kit${kits === 1 ? '' : 's'} still list it` : ''}.`,
+      item: snapshot,
+      usedByKits: kits,
+      reason: reason || null,
+    };
+  },
+});
+
+defineAction({
+  name: 'duplicate_kit',
+  title: 'Duplicate a kit',
+  description: 'Copy a kit and its contents into a new kit, so a variation can be built without changing the original.',
+  permission: { module: 'Stock', key: 'create' },
+  inputSchema: objectSchema(
+    {
+      kit: str('Kit name or id.'),
+      name: str('Name for the copy. Defaults to the original plus " (Copy)".'),
+    },
+    ['kit']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ kit: reference, name }) => {
+    const kit = resolveKit(reference);
+    const copy = JSON.parse(JSON.stringify(kit));
+    delete copy.id;
+    copy.name = name ? String(name).trim() : `${kit.name} (Copy)`;
+    copy.createdAt = new Date().toISOString();
+    copy.updatedAt = new Date().toISOString();
+    copy.items = (copy.items || []).map((item) => ({ ...item, id: store.generateId() }));
+    const created = store.create('kits', copy);
+    logActivity({ type: 'kit_created', text: `Kit ${created.name} duplicated from ${kit.name}.`, recordType: 'kit', recordId: created.id });
+    return { summary: `Created ${created.name} from ${kit.name}.`, kit: created };
+  },
+  artifacts: (result) => [{ label: result.kit.name, path: `/kits/${result.kit.id}` }],
+});
+
+defineAction({
+  name: 'bulk_update_stock',
+  title: 'Bulk update stock',
+  description:
+    'Change the category of several stock items at once, adjust their sell prices by a percentage, or do both. This is a bulk change, so it asks for approval first.',
+  permission: { module: 'Stock', key: 'edit' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      items: list(str('A stock item name or SKU.'), 'The items to change.'),
+      category: str('New category for every item.'),
+      pricePercent: num('Adjust the sell price by this percentage, e.g. 5 or -5.'),
+    },
+    ['items']
+  ),
+  summarize: (input, result) => result.summary,
+  run: async ({ items, category, pricePercent }) => {
+    if (category == null && pricePercent == null) throw invalidInput('Pass a category, a price percent, or both.');
+    if (pricePercent != null && !Number.isFinite(Number(pricePercent))) throw invalidInput('The price percent must be a number.');
+    const factor = 1 + (Number(pricePercent) || 0) / 100;
+    const changed = [];
+    const failed = [];
+    for (const reference of items) {
+      try {
+        const item = resolveStockItem(reference);
+        const patch = {};
+        if (category != null) patch.category = String(category).trim();
+        if (pricePercent != null) patch.unitPrice = Math.round((Number(item.unitPrice) || 0) * factor * 100) / 100;
+        await store.update('stock', item.id, patch);
+        changed.push({ id: item.id, name: item.name, category: patch.category ?? item.category, unitPrice: patch.unitPrice ?? item.unitPrice });
+      } catch (error) {
+        failed.push({ item: reference, reason: error.message });
+      }
+    }
+    if (!changed.length) throw invalidInput(`No stock items were updated${failed.length ? `: ${failed[0].reason}` : ''}.`);
+    logActivity({
+      type: 'stock_bulk_updated',
+      text: `${changed.length} stock item(s) updated${category != null ? ` to category ${category}` : ''}${pricePercent != null ? ` with prices ${pricePercent > 0 ? '+' : ''}${pricePercent}%` : ''}.`,
+    });
+    return {
+      summary: `Updated ${changed.length} stock item(s)${category != null ? ` to ${category}` : ''}${pricePercent != null ? ` with prices ${pricePercent > 0 ? '+' : ''}${pricePercent}%` : ''}${failed.length ? `; ${failed.length} could not be found` : ''}.`,
+      changed,
+      failed,
+    };
+  },
+});
+
+defineAction({
+  name: 'push_stock_to_xero',
+  title: 'Send stock to Xero',
+  description: 'Send stock items that are not in Xero yet, or update the ones that are. Check the result with get_xero_sync.',
+  permission: { module: 'Stock', key: 'edit' },
+  risky: true,
+  cloudOnly: true,
+  inputSchema: objectSchema({}),
+  summarize: (input, result) => result.summary,
+  run: async () => {
+    assertCloudOnly('Xero');
+    const { xeroEnabled, pushStockToXero } = await import('../utils/xero.js');
+    if (!xeroEnabled()) return { summary: 'Xero is not available on this account.', queued: 0 };
+    const queued = await pushStockToXero('missing');
+    logActivity({ type: 'xero_stock_push', text: queued ? `Queued ${queued} stock item(s) for Xero.` : 'Stock checked — everything is already in Xero.' });
+    return { summary: queued ? `Queued ${queued} stock item(s) for Xero.` : 'Every stock item is already in Xero or queued.', queued };
+  },
+});
+
+defineAction({
+  name: 'import_xero_items',
+  title: 'Import stock from Xero',
+  description: 'Preview or import Xero items as stock. Preview only counts; confirm links matching items by SKU then name and adds the rest at zero quantity.',
+  permission: { module: 'Stock', key: 'edit' },
+  risky: true,
+  cloudOnly: true,
+  inputSchema: objectSchema({ confirm: bool('Import for real. Leave false to preview the counts.') }),
+  summarize: (input, result) => result.summary,
+  run: async ({ confirm }) => {
+    assertCloudOnly('Xero');
+    const { importXeroItems } = await import('../utils/xero.js');
+    const result = await importXeroItems(confirm ? 'confirm' : 'preview');
+    logActivity({ type: 'xero_stock_import', text: `${confirm ? 'Imported' : 'Previewed'} Xero items (${result.linked || 0} linked, ${result.created || 0} new).` });
+    return {
+      summary: confirm
+        ? `Imported Xero items — ${result.linked || 0} linked to existing stock, ${result.created || 0} added.`
+        : `Preview: ${result.linked || 0} Xero items match existing stock and ${result.created || 0} would be added. Pass confirm to import.`,
+      import: result,
+      applied: !!result.applied,
+    };
   },
 });

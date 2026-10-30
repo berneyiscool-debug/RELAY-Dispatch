@@ -324,3 +324,66 @@ defineAction({
     return { templates: rows };
   },
 });
+
+defineAction({
+  name: 'delete_recurring_job',
+  title: 'Delete recurring job',
+  description:
+    'Permanently delete a recurring job template, so it stops creating new jobs. This cannot be undone. Jobs it has already created (and any work already booked) are kept unless `deleteFutureJobs` is set, which also removes the occurrences that have not started yet.',
+  permission: { module: 'Jobs', key: 'delete' },
+  risky: true,
+  inputSchema: objectSchema(
+    {
+      template: str('The recurring job: its T- number, title, customer or id.'),
+      deleteFutureJobs: bool('Also delete its unstarted future jobs. Defaults to false, matching the recurring templates page.'),
+      reason: str('Why the series is being deleted.'),
+    },
+    ['template']
+  ),
+  summarize: (input, result) => result.summary,
+  async run(input) {
+    const template = resolveTemplate(input.template);
+    const snapshot = {
+      id: template.id,
+      number: template.number,
+      title: template.title,
+      customerName: template.customerName,
+      schedule: describeRecurrence(template.recurringConfig),
+    };
+
+    const { collectTemplateChildren, occurrenceDateKey } = await import('../utils/maintenanceEngine.js');
+    const jobs = store.getAll('jobs') || [];
+    const children = collectTemplateChildren(template, jobs);
+    const today = todayLocalISO();
+    const future = children.filter((child) => {
+      if (child.status === 'Completed' || child.status === 'Invoiced') return false;
+      const date = occurrenceDateKey(child);
+      return !!date && date >= today;
+    });
+
+    const removed = [];
+    if (input.deleteFutureJobs) {
+      for (const child of future) {
+        removed.push({ id: child.id, number: child.number, status: child.status, date: occurrenceDateKey(child) });
+        await store.delete('jobs', child.id);
+      }
+    }
+
+    await store.delete('jobs', template.id);
+    await logActivity({
+      type: 'job_deleted',
+      text: `Recurring job ${template.number} deleted${input.reason ? ` — ${input.reason}` : ''}${removed.length ? `, with ${removed.length} unstarted occurrence${removed.length === 1 ? '' : 's'}` : ''}.`,
+      recordType: 'job',
+      recordId: template.id,
+    });
+
+    const kept = children.length - removed.length;
+    return {
+      summary: `Deleted recurring job ${template.number}${template.title ? ` ${template.title}` : ''}${kept ? `; ${kept} existing job${kept === 1 ? '' : 's'} kept` : ''}${removed.length ? `, ${removed.length} unstarted future job${removed.length === 1 ? '' : 's'} removed` : ''}.`,
+      template: snapshot,
+      removedJobs: removed,
+      keptJobs: kept,
+      reason: input.reason || null,
+    };
+  },
+});
