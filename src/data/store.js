@@ -181,6 +181,8 @@ const TABLE_COLUMNS = {
     "service_interval_months",
     "meter_unit",
     "assigned_to_id",
+    "warranty_expiry",
+    "compliance",
     "created_at",
     "updated_at"
   ],
@@ -2107,6 +2109,8 @@ class DataStore {
       if (record.service_interval_months !== undefined) { record.serviceIntervalMonths = numberOrNull(record.service_interval_months); delete record.service_interval_months; }
       if (record.meter_unit !== undefined) { record.meterUnit = record.meter_unit; delete record.meter_unit; }
       if (record.assigned_to_id !== undefined) { record.assignedToId = record.assigned_to_id || ''; delete record.assigned_to_id; }
+      if (record.warranty_expiry !== undefined) { record.warrantyExpiry = record.warranty_expiry || ''; delete record.warranty_expiry; }
+      if (record.compliance !== undefined) { record.compliance = Array.isArray(record.compliance) ? record.compliance : []; }
     }
     if (collection === 'maintenancePlans') {
       if (record.trigger_type !== undefined) { record.triggerType = record.trigger_type; delete record.trigger_type; }
@@ -2859,6 +2863,7 @@ class DataStore {
       if (record.serviceIntervalMonths !== undefined) { record.service_interval_months = numberOrNull(record.serviceIntervalMonths); delete record.serviceIntervalMonths; }
       if (record.meterUnit !== undefined) { record.meter_unit = record.meterUnit; delete record.meterUnit; }
       if (record.assignedToId !== undefined) { record.assigned_to_id = record.assignedToId || null; delete record.assignedToId; }
+      if (record.warrantyExpiry !== undefined) { record.warranty_expiry = record.warrantyExpiry || null; delete record.warrantyExpiry; }
     }
     if (collection === 'maintenancePlans') {
       if (record.triggerType !== undefined) { record.trigger_type = record.triggerType; delete record.triggerType; }

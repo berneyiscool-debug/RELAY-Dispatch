@@ -134,6 +134,11 @@ export function renderAssetForm(container, params) {
           </div>
 
           <div class="form-group">
+            <label class="form-label">Warranty Expiry</label>
+            <input type="date" id="warrantyExpiry" class="form-input" value="${escapeHTML(asset.warrantyExpiry || '')}" />
+          </div>
+
+          <div class="form-group">
             <label class="form-label">Status</label>
             <select id="status" class="form-select">
               ${['Active', 'In Maintenance', 'Commissioning', 'Decommissioned', 'Lost/Stolen'].map(s => `<option value="${s}" ${asset.status === s ? 'selected' : ''}>${s}</option>`).join('')}
@@ -209,6 +214,7 @@ export function renderAssetForm(container, params) {
       customerName: assetCust ? (assetCust.company || `${assetCust.firstName || ''} ${assetCust.lastName || ''}`.trim()) : null,
       site: container.querySelector('#site').value,
       installDate: container.querySelector('#installDate').value,
+      warrantyExpiry: container.querySelector('#warrantyExpiry').value,
       recoveryRate: parseFloat(container.querySelector('#recoveryRate')?.value || 0),
       serviceIntervalMonths: parseInt(container.querySelector('#serviceIntervalMonths').value || 6),
       currentMeter: parseFloat(container.querySelector('#currentMeter').value || 0),

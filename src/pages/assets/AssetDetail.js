@@ -11,6 +11,8 @@ import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
 import { assetServiceStatus, planLeadDays, DEFAULT_LEAD_DAYS } from '../../utils/maintenanceSchedule.js';
 import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 import { ASSET_CONDITIONS, CONDITION_BADGES, latestCondition } from '../../utils/assetCondition.js';
+import { COMPLIANCE_PRESETS, complianceItems, warrantyStatus, markComplianceDone } from '../../utils/assetCompliance.js';
+import { showModal } from '../../components/Modal.js';
 
 export function renderAssetDetail(container, { id, tab }) {
   const asset = store.getById('assets', id);
@@ -102,6 +104,8 @@ export function renderAssetDetail(container, { id, tab }) {
             </div>
           </div>
           ` : ''}
+
+          ${renderComplianceCard(currentAsset)}
         </div>
 
         <div class="card" style="grid-column: span 2">
@@ -128,6 +132,122 @@ export function renderAssetDetail(container, { id, tab }) {
     `;
 
     bindEvents(currentAsset);
+  }
+
+  function complianceBadge(state, labels = {}) {
+    const map = {
+      overdue: ['badge-danger', labels.overdue || 'Overdue'],
+      'due-soon': ['badge-warning', labels['due-soon'] || 'Due Soon'],
+      ok: ['badge-success', labels.ok || 'OK'],
+    };
+    const [cls, text] = map[state] || ['badge-neutral', '—'];
+    return `<span class="badge ${cls}">${text}</span>`;
+  }
+
+  function renderComplianceCard(currentAsset) {
+    const today = todayLocalISO();
+    const warranty = warrantyStatus(currentAsset, today);
+    const items = complianceItems(currentAsset, today);
+    const fmt = (key) => (key ? formatLocalDate(key, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+    const warrantyState = { expired: 'overdue', expiring: 'due-soon', ok: 'ok' }[warranty.state];
+    return `
+      <div class="card" id="compliance-card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+          <h4>Warranty & Compliance</h4>
+          <button class="btn btn-sm btn-ghost" id="btn-add-compliance"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Check</button>
+        </div>
+        <div class="card-body" style="display:flex; flex-direction:column; gap:10px; font-size:13px">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+            <span class="text-secondary">Warranty</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end">
+              ${warranty.dueKey ? `${complianceBadge(warrantyState, { overdue: 'Expired', 'due-soon': 'Expiring', ok: 'Covered' })}<span class="text-secondary" style="font-size:12px; white-space:nowrap">${fmt(warranty.dueKey)}</span>` : '<span class="text-tertiary">Not recorded</span>'}
+            </span>
+          </div>
+          ${items.length === 0 ? `<div class="text-tertiary" style="font-size:12px">No compliance checks. Add test & tag, emergency lighting or similar to track when they fall due.</div>` : items.map(({ item, state, dueKey }) => `
+            <div style="border-top:1px solid var(--border-color); padding-top:10px">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px">
+                <span style="font-weight:600; color:var(--text-primary)">${escapeHTML(item.name || 'Check')}</span>
+                ${state === 'none' ? '' : complianceBadge(state)}
+              </div>
+              <div class="text-secondary" style="font-size:12px; margin-top:2px">
+                Due ${fmt(dueKey)}${item.lastDone ? ` · last done ${fmt(item.lastDone)}` : ''}${item.intervalMonths ? ` · every ${item.intervalMonths} mo` : ''}
+              </div>
+              ${item.reference ? `<div class="text-tertiary" style="font-size:12px">${escapeHTML(item.reference)}</div>` : ''}
+              <div style="display:flex; gap:6px; margin-top:6px">
+                <button class="btn btn-sm btn-secondary btn-compliance-done" data-id="${escapeHTML(item.id)}" style="height:24px; font-size:12px">Mark Done</button>
+                <button class="btn btn-sm btn-ghost btn-compliance-edit" data-id="${escapeHTML(item.id)}" style="height:24px; font-size:12px">Edit</button>
+                <button class="btn btn-sm btn-ghost text-danger btn-compliance-delete" data-id="${escapeHTML(item.id)}" aria-label="Delete check" style="height:24px; padding:0 4px"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
+  function saveCompliance(compliance) {
+    store.update('assets', id, { compliance });
+    render();
+  }
+
+  function openComplianceModal(existing = null) {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Check *</label>
+        <input type="text" id="compliance-name" class="form-input" list="compliance-presets" value="${escapeHTML(existing?.name || '')}" placeholder="e.g. Test & tag (AS/NZS 3760)" />
+        <datalist id="compliance-presets">${COMPLIANCE_PRESETS.map(p => `<option value="${escapeHTML(p.name)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Every (months)</label>
+          <input type="number" id="compliance-interval" class="form-input" min="1" step="1" value="${escapeHTML(String(existing?.intervalMonths || ''))}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Done</label>
+          <input type="date" id="compliance-last" class="form-input" value="${escapeHTML(existing?.lastDone || '')}" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Due Date (overrides the interval)</label>
+          <input type="date" id="compliance-due" class="form-input" value="${escapeHTML(existing?.dueDate || '')}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reference</label>
+          <input type="text" id="compliance-ref" class="form-input" value="${escapeHTML(existing?.reference || '')}" placeholder="Certificate or tag no." />
+        </div>
+      </div>
+    `;
+    // Picking a preset fills in its usual interval.
+    content.querySelector('#compliance-name').addEventListener('change', (e) => {
+      const preset = COMPLIANCE_PRESETS.find(p => p.name === e.target.value);
+      const interval = content.querySelector('#compliance-interval');
+      if (preset && !interval.value) interval.value = preset.intervalMonths;
+    });
+    showModal({
+      title: existing ? 'Edit Compliance Check' : 'Add Compliance Check',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        { label: 'Save', className: 'btn-primary', onClick: c => {
+          const name = content.querySelector('#compliance-name').value.trim();
+          const intervalRaw = content.querySelector('#compliance-interval').value.trim();
+          const intervalMonths = intervalRaw === '' ? null : parseInt(intervalRaw, 10);
+          const lastDone = content.querySelector('#compliance-last').value || null;
+          const dueDate = content.querySelector('#compliance-due').value || null;
+          const reference = content.querySelector('#compliance-ref').value.trim();
+          if (!name) return showToast('Name the check', 'error');
+          if (intervalMonths !== null && (!Number.isFinite(intervalMonths) || intervalMonths < 1)) return showToast('Enter the interval in whole months', 'error');
+          if (!dueDate && !(lastDone && intervalMonths)) return showToast('Give a due date, or when it was last done and how often', 'error');
+          const item = { id: existing?.id || `cmp_${store.generateId()}`, name, intervalMonths, lastDone, dueDate, reference };
+          const list = [...(store.getById('assets', id).compliance || [])];
+          const at = list.findIndex(x => x.id === item.id);
+          if (at >= 0) list[at] = item; else list.push(item);
+          c();
+          saveCompliance(list);
+        }},
+      ]
+    });
   }
 
   function renderTabContent(currentAsset, logs, plans) {
@@ -358,6 +478,50 @@ export function renderAssetDetail(container, { id, tab }) {
     });
     container.querySelector('#btn-update-meter')?.addEventListener('click', () => {
       openUpdateMeterModal();
+    });
+
+    container.querySelector('#btn-add-compliance')?.addEventListener('click', () => openComplianceModal());
+    const complianceById = (itemId) => (store.getById('assets', id).compliance || []).find(x => x.id === itemId);
+    container.querySelectorAll('.btn-compliance-edit').forEach(btn => {
+      btn.addEventListener('click', () => { const item = complianceById(btn.dataset.id); if (item) openComplianceModal(item); });
+    });
+    container.querySelectorAll('.btn-compliance-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = complianceById(btn.dataset.id);
+        if (!item) return;
+        const modalContent = document.createElement('div');
+        modalContent.innerHTML = `<p>Remove the "${escapeHTML(item.name)}" check from this asset?</p>`;
+        showModal({
+          title: 'Remove Compliance Check',
+          content: modalContent,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Remove', className: 'btn-danger', onClick: c => {
+              c();
+              saveCompliance((store.getById('assets', id).compliance || []).filter(x => x.id !== item.id));
+            }},
+          ]
+        });
+      });
+    });
+    // Done today: the check moves on a period, and the service log records it.
+    container.querySelectorAll('.btn-compliance-done').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const latest = store.getById('assets', id);
+        const item = (latest.compliance || []).find(x => x.id === btn.dataset.id);
+        if (!item) return;
+        const today = todayLocalISO();
+        if (!item.intervalMonths) {
+          showToast('Set how often this check is due (Edit) so the next date can be worked out', 'error');
+          return;
+        }
+        store.update('assets', id, {
+          compliance: (latest.compliance || []).map(x => (x.id === item.id ? markComplianceDone(x, today) : x)),
+          logs: [...(latest.logs || []), { date: today, type: 'Inspection', meter: parseFloat(latest.currentMeter) || 0, cost: 0, notes: `${item.name} completed` }],
+        });
+        showToast(`${item.name} marked done`, 'success');
+        render();
+      });
     });
 
     container.querySelectorAll('.btn-edit-log').forEach(btn => {
