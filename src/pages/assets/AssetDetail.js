@@ -360,6 +360,9 @@ export function renderAssetDetail(container, { id, tab }) {
   }
 
   function openLogModal() {
+    // Read fresh: store.update replaces the record, so the asset captured when
+    // the page loaded would drop logs saved since then.
+    const asset = store.getById('assets', id);
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-row">
@@ -409,13 +412,14 @@ export function renderAssetDetail(container, { id, tab }) {
 
             if (!date) return;
 
+            const latest = store.getById('assets', id);
             const newLog = { date, type, meter, cost, notes };
-            const updatedLogs = [...(asset.logs || []), newLog];
-            
-            store.update('assets', asset.id, { 
+            const updatedLogs = [...(latest.logs || []), newLog];
+
+            store.update('assets', latest.id, {
               logs: updatedLogs,
               currentMeter: meter,
-              status: type === 'Repair' ? 'In Maintenance' : asset.status
+              status: type === 'Repair' ? 'In Maintenance' : latest.status
             });
             
             // If the meter changes, run maintenance checks immediately
@@ -431,6 +435,7 @@ export function renderAssetDetail(container, { id, tab }) {
   }
 
   function openUpdateMeterModal() {
+    const asset = store.getById('assets', id);
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-group" style="margin-top:8px">
@@ -465,6 +470,7 @@ export function renderAssetDetail(container, { id, tab }) {
   }
 
   function openPlanDrawer(existingPlan = null) {
+    const asset = store.getById('assets', id);
     const quotes = store.getAll('quotes') || [];
     const taskTemplates = store.getAll('taskTemplates') || [];
     const title = existingPlan ? 'Edit Maintenance Plan' : 'Configure Maintenance Plan';

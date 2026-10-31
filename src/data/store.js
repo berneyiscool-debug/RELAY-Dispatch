@@ -173,6 +173,13 @@ const TABLE_COLUMNS = {
     "recovery_rate",
     "status",
     "logs",
+    "description",
+    "identifier",
+    "site",
+    "install_date",
+    "service_interval_months",
+    "meter_unit",
+    "assigned_to_id",
     "created_at",
     "updated_at"
   ],
@@ -189,6 +196,11 @@ const TABLE_COLUMNS = {
     "priority",
     "frequency",
     "collision_merging",
+    "quote_id",
+    "task_template_id",
+    "merge_tasks",
+    "default_technician_id",
+    "last_notification_date",
     "created_at",
     "updated_at"
   ],
@@ -2087,6 +2099,33 @@ class DataStore {
       record.collisionMerging = record.collision_merging;
       delete record.collision_merging;
     }
+    if (collection === 'assets') {
+      if (record.install_date !== undefined) { record.installDate = record.install_date || ''; delete record.install_date; }
+      if (record.service_interval_months !== undefined) { record.serviceIntervalMonths = numberOrNull(record.service_interval_months); delete record.service_interval_months; }
+      if (record.meter_unit !== undefined) { record.meterUnit = record.meter_unit; delete record.meter_unit; }
+      if (record.assigned_to_id !== undefined) { record.assignedToId = record.assigned_to_id || ''; delete record.assigned_to_id; }
+    }
+    if (collection === 'maintenancePlans') {
+      if (record.trigger_type !== undefined) { record.triggerType = record.trigger_type; delete record.trigger_type; }
+      if (record.task_template_id !== undefined) { record.taskTemplateId = record.task_template_id; delete record.task_template_id; }
+      if (record.merge_tasks !== undefined) { record.mergeTasks = record.merge_tasks === true; delete record.merge_tasks; }
+      if (record.default_technician_id !== undefined) { record.defaultTechnicianId = record.default_technician_id; delete record.default_technician_id; }
+      if (record.last_notification_date !== undefined) { record.lastNotificationDate = record.last_notification_date; delete record.last_notification_date; }
+    }
+    // The maintenance engine's payload, which turns a "Recurring Job Due"
+    // notification into a job linked back to its plan(s).
+    if (collection === 'notifications') {
+      if (record.maintenance_plan_id !== undefined) { record.maintenancePlanId = record.maintenance_plan_id; delete record.maintenance_plan_id; }
+      if (record.merged_plan_ids !== undefined) { record.mergedPlanIds = record.merged_plan_ids || []; delete record.merged_plan_ids; }
+      if (record.task_template_id !== undefined) { record.taskTemplateId = record.task_template_id; delete record.task_template_id; }
+      if (record.merged_task_template_ids !== undefined) { record.mergedTaskTemplateIds = record.merged_task_template_ids || []; delete record.merged_task_template_ids; }
+      if (record.target_service_date !== undefined) { record.targetServiceDate = record.target_service_date; delete record.target_service_date; }
+      if (record.current_meter_at_trigger !== undefined) { record.currentMeterAtTrigger = numberOrNull(record.current_meter_at_trigger); delete record.current_meter_at_trigger; }
+      if (record.merged_materials_list !== undefined) { record.mergedMaterialsList = record.merged_materials_list || []; delete record.merged_materials_list; }
+      if (record.total_labor_hrs !== undefined) { record.totalLaborHrs = numberOrNull(record.total_labor_hrs) || 0; delete record.total_labor_hrs; }
+      if (record.total_labor_cost !== undefined) { record.totalLaborCost = numberOrNull(record.total_labor_cost) || 0; delete record.total_labor_cost; }
+      if (record.total_material_cost !== undefined) { record.totalMaterialCost = numberOrNull(record.total_material_cost) || 0; delete record.total_material_cost; }
+    }
     if (collection === 'schedule') {
       if (record.job_id !== undefined) { record.jobId = record.job_id; delete record.job_id; }
       if (record.job_number !== undefined) { record.jobNumber = record.job_number; delete record.job_number; }
@@ -2485,6 +2524,8 @@ class DataStore {
           if (meta.completedAt) record.completedAt = meta.completedAt;
           if (meta.isEmergency) record.isEmergency = true;
           if (meta.isCallback) record.isCallback = true;
+          if (meta.maintenancePlanId) record.maintenancePlanId = meta.maintenancePlanId;
+          if (meta.mergedPlanIds?.length) record.mergedPlanIds = meta.mergedPlanIds;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -2805,6 +2846,31 @@ class DataStore {
       record.collision_merging = record.collisionMerging;
       delete record.collisionMerging;
     }
+    if (collection === 'assets') {
+      if (record.installDate !== undefined) { record.install_date = record.installDate; delete record.installDate; }
+      if (record.serviceIntervalMonths !== undefined) { record.service_interval_months = numberOrNull(record.serviceIntervalMonths); delete record.serviceIntervalMonths; }
+      if (record.meterUnit !== undefined) { record.meter_unit = record.meterUnit; delete record.meterUnit; }
+      if (record.assignedToId !== undefined) { record.assigned_to_id = record.assignedToId || null; delete record.assignedToId; }
+    }
+    if (collection === 'maintenancePlans') {
+      if (record.triggerType !== undefined) { record.trigger_type = record.triggerType; delete record.triggerType; }
+      if (record.taskTemplateId !== undefined) { record.task_template_id = record.taskTemplateId || null; delete record.taskTemplateId; }
+      if (record.mergeTasks !== undefined) { record.merge_tasks = record.mergeTasks === true; delete record.mergeTasks; }
+      if (record.defaultTechnicianId !== undefined) { record.default_technician_id = record.defaultTechnicianId || null; delete record.defaultTechnicianId; }
+      if (record.lastNotificationDate !== undefined) { record.last_notification_date = record.lastNotificationDate; delete record.lastNotificationDate; }
+    }
+    if (collection === 'notifications') {
+      if (record.maintenancePlanId !== undefined) { record.maintenance_plan_id = record.maintenancePlanId || null; delete record.maintenancePlanId; }
+      if (record.mergedPlanIds !== undefined) { record.merged_plan_ids = record.mergedPlanIds || []; delete record.mergedPlanIds; }
+      if (record.taskTemplateId !== undefined) { record.task_template_id = record.taskTemplateId || null; delete record.taskTemplateId; }
+      if (record.mergedTaskTemplateIds !== undefined) { record.merged_task_template_ids = record.mergedTaskTemplateIds || []; delete record.mergedTaskTemplateIds; }
+      if (record.targetServiceDate !== undefined) { record.target_service_date = record.targetServiceDate; delete record.targetServiceDate; }
+      if (record.currentMeterAtTrigger !== undefined) { record.current_meter_at_trigger = numberOrNull(record.currentMeterAtTrigger); delete record.currentMeterAtTrigger; }
+      if (record.mergedMaterialsList !== undefined) { record.merged_materials_list = record.mergedMaterialsList || []; delete record.mergedMaterialsList; }
+      if (record.totalLaborHrs !== undefined) { record.total_labor_hrs = numberOrNull(record.totalLaborHrs) || 0; delete record.totalLaborHrs; }
+      if (record.totalLaborCost !== undefined) { record.total_labor_cost = numberOrNull(record.totalLaborCost) || 0; delete record.totalLaborCost; }
+      if (record.totalMaterialCost !== undefined) { record.total_material_cost = numberOrNull(record.totalMaterialCost) || 0; delete record.totalMaterialCost; }
+    }
     if (record.sections !== undefined && (collection === 'invoices' || collection === 'quotes')) {
       record.line_items = record.sections;
       delete record.sections;
@@ -3074,7 +3140,11 @@ class DataStore {
         // unfinished. Read it back from wherever the generic pass parked it.
         completedAt: record.completedAt || record.completed_at || null,
         isEmergency: record.isEmergency || false,
-        isCallback: record.isCallback || false
+        isCallback: record.isCallback || false,
+        // The plan(s) a maintenance job was raised for; completing the job
+        // advances them (handleJobCompletionSideEffects). Jobs have no column.
+        maintenancePlanId: record.maintenancePlanId || null,
+        mergedPlanIds: record.mergedPlanIds || []
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
       delete record.activityLog;

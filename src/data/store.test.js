@@ -597,6 +597,46 @@ describe('DataStore', () => {
       assert.strictEqual(cleared.credit_limit, null);
     });
 
+    // The maintenance engine skips a plan without its blueprint quote or trigger
+    // type, and a job raised from a plan advances it on completion only while it
+    // still carries the plan id. All of these used to be dropped on a cloud write.
+    test('asset, maintenance plan, notification and job maintenance fields round-trip', () => {
+      const roundTrip = (collection, record) =>
+        store.normalizeRecord(store.denormalizeRecord({ ...record }, collection), collection);
+
+      const asset = {
+        id: 'a1', name: 'Hino van', description: 'Service van', identifier: 'ABC123', serial: 'ABC123',
+        site: 'Depot', installDate: '2024-03-01', serviceIntervalMonths: 6, meterUnit: 'kmls', assignedToId: 'tech_1'
+      };
+      const assetRow = store.denormalizeRecord({ ...asset }, 'assets');
+      assert.strictEqual(assetRow.install_date, '2024-03-01');
+      assert.strictEqual(assetRow.assigned_to_id, 'tech_1');
+      assert.strictEqual(assetRow.meter_unit, 'kmls');
+      assert.deepStrictEqual({ ...roundTrip('assets', asset), logs: undefined }, { ...asset, logs: undefined });
+
+      const plan = {
+        id: 'p1', name: 'Quarterly filter clean', assetId: 'a1', quoteId: 'q1', triggerType: 'Calendar',
+        frequency: 'Quarterly', nextServiceDate: '2026-12-01', taskTemplateId: 'tt1', mergeTasks: true,
+        defaultTechnicianId: 'tech_1', lastNotificationDate: '2026-10-31T02:00:00.000Z'
+      };
+      const planRow = store.denormalizeRecord({ ...plan }, 'maintenancePlans');
+      assert.strictEqual(planRow.quote_id, 'q1');
+      assert.strictEqual(planRow.trigger_type, 'Calendar');
+      assert.deepStrictEqual(roundTrip('maintenancePlans', plan), plan);
+
+      const notification = {
+        id: 'n1', title: 'Maintenance Due', maintenancePlanId: 'p1', mergedPlanIds: ['p2'], taskTemplateId: 'tt1',
+        mergedTaskTemplateIds: [], targetServiceDate: '2026-12-01', currentMeterAtTrigger: 1200,
+        mergedMaterialsList: [{ name: 'Filter', quantity: 2 }], totalLaborHrs: 1.5, totalLaborCost: 150, totalMaterialCost: 40
+      };
+      assert.strictEqual(store.denormalizeRecord({ ...notification }, 'notifications').maintenance_plan_id, 'p1');
+      assert.deepStrictEqual(roundTrip('notifications', notification), notification);
+
+      const job = roundTrip('jobs', { id: 'j1', title: 'Filter clean', maintenancePlanId: 'p1', mergedPlanIds: ['p2'] });
+      assert.strictEqual(job.maintenancePlanId, 'p1');
+      assert.deepStrictEqual(job.mergedPlanIds, ['p2']);
+    });
+
     // A whitelist entry that lands before its migration must not turn every cloud
     // write into a failure, so the rejected column is dropped and the write retried.
     test('a write the database rejects for an unknown column is retried once without it', async () => {
