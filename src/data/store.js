@@ -2531,6 +2531,9 @@ class DataStore {
           if (meta.isCallback) record.isCallback = true;
           if (meta.maintenancePlanId) record.maintenancePlanId = meta.maintenancePlanId;
           if (meta.mergedPlanIds?.length) record.mergedPlanIds = meta.mergedPlanIds;
+          if (meta.completionMeter != null) record.completionMeter = meta.completionMeter;
+          if (meta.assetCondition) record.assetCondition = meta.assetCondition;
+          if (meta.assetConditionNotes) record.assetConditionNotes = meta.assetConditionNotes;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -3151,7 +3154,11 @@ class DataStore {
         // The plan(s) a maintenance job was raised for; completing the job
         // advances them (handleJobCompletionSideEffects). Jobs have no column.
         maintenancePlanId: record.maintenancePlanId || null,
-        mergedPlanIds: record.mergedPlanIds || []
+        mergedPlanIds: record.mergedPlanIds || [],
+        // The asset reading taken when the job was completed.
+        completionMeter: record.completionMeter ?? null,
+        assetCondition: record.assetCondition || null,
+        assetConditionNotes: record.assetConditionNotes || ''
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
       delete record.activityLog;
@@ -4002,19 +4009,24 @@ class DataStore {
         const logs = asset.logs || [];
         const logText = `Completed Maintenance Job #${job.number} - ${job.title}`;
         const hasLog = logs.some(l => l.notes === logText);
+        // The reading taken when the job was completed, when the tech gave one;
+        // a reading never moves the asset's meter backwards.
+        const completionMeter = parseFloat(job.completionMeter);
+        const meter = Number.isFinite(completionMeter) ? completionMeter : (parseFloat(asset.currentMeter) || 0);
 
         if (!hasLog) {
           logs.push({
             id: 'log_' + Date.now() + Math.random().toString(36).substr(2, 5),
             type: 'Service',
             date: todayLocalISO(),
-            meter: asset.currentMeter || 0,
+            meter,
             cost: (job.laborCost || 0) + (job.materialCost || 0),
             notes: logText,
             technicianName: job.technicianName || 'Unassigned',
-            jobNumber: job.number
+            jobNumber: job.number,
+            ...(job.assetCondition ? { condition: job.assetCondition, conditionNotes: job.assetConditionNotes || '' } : {})
           });
-          this.update('assets', asset.id, { logs });
+          this.update('assets', asset.id, { logs, currentMeter: Math.max(parseFloat(asset.currentMeter) || 0, meter) });
         }
 
         const planIds = [job.maintenancePlanId, ...(job.mergedPlanIds || [])].filter(Boolean);
@@ -4029,7 +4041,7 @@ class DataStore {
                 });
               } else if (plan.triggerType === 'Meter') {
                 this.update('maintenancePlans', plan.id, {
-                  lastTriggeredMeter: parseFloat(asset.currentMeter || 0)
+                  lastTriggeredMeter: meter
                 });
               }
             }

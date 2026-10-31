@@ -19,6 +19,7 @@ import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFoun
 import { findTechnician } from './leads.js';
 import { parseDate } from './dates.js';
 import { newHistoryEvent } from '../data/jobHistory.js';
+import { ASSET_CONDITIONS } from '../utils/assetCondition.js';
 
 export const JOB_STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
 export const JOB_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -785,13 +786,16 @@ defineAction({
 defineAction({
   name: 'complete_job',
   title: 'Complete job',
-  description: 'Mark a job as Completed. The reply lists any tasks that were still open so you can finish them off.',
+  description: 'Mark a job as Completed. For a job on an asset, pass the meter reading and the condition it was left in; they go on the asset\'s service log. The reply lists any tasks that were still open so you can finish them off.',
   permission: { module: 'Jobs', key: 'edit' },
   inputSchema: objectSchema(
     {
       job: str('Job number, title, customer or id.'),
       customer: str('Customer, to narrow the job down when the name is not unique.'),
       note: str('Optional completion note.'),
+      meter: num('For a job on an asset: the meter reading when the work was finished.'),
+      condition: enumOf(ASSET_CONDITIONS, 'For a job on an asset: the condition it was left in.'),
+      conditionNotes: str('Anything about the asset\'s condition the next visit should know.'),
     },
     ['job']
   ),
@@ -809,7 +813,13 @@ defineAction({
 
     const from = job.status;
     const entry = historyEntry(`Job status changed from "${from}" to "Completed"${input.note ? ` — ${input.note}` : ''}`);
-    await store.update('jobs', job.id, { status: 'Completed' });
+    if (input.meter != null && input.meter < 0) throw invalidInput('A meter reading cannot be negative.');
+    // The asset reading rides on the job; completing it writes the service log.
+    await store.update('jobs', job.id, {
+      status: 'Completed',
+      ...(job.assetId && input.meter != null ? { completionMeter: input.meter } : {}),
+      ...(job.assetId && input.condition ? { assetCondition: input.condition, assetConditionNotes: input.conditionNotes || '' } : {}),
+    });
     await recordHistory(job, entry, { from, to: 'Completed' });
     await logActivity({
       type: 'status_changed',
