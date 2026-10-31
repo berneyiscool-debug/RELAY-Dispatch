@@ -25,7 +25,7 @@ import { downloadDataSnapshot } from '../../utils/dataBackup.js';
 import { enterGuestDemo, takeSignupRequest } from '../../utils/demoSession.js';
 import { trackDemoEvent } from '../../utils/demoTracking.js';
 
-const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
+const logoLarge = new URL('../../assets/R_dispatch.png', import.meta.url).href;
 
 
 // Preset colors for local account avatars
