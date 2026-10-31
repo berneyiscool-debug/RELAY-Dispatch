@@ -1,7 +1,18 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { addFrequency, addMonths, nextDateAfter, daysUntil, passedMeterMilestone, isRetiredAsset, assetServiceStatus } from './maintenanceSchedule.js';
+import { addFrequency, addMonths, nextDateAfter, daysUntil, passedMeterMilestone, isRetiredAsset, assetServiceStatus, planLeadDays } from './maintenanceSchedule.js';
+
+test('planLeadDays uses the plan\'s own lead time, else 7', () => {
+  assert.equal(planLeadDays({ leadDays: 21 }), 21);
+  assert.equal(planLeadDays({ leadDays: 0 }), 0);
+  assert.equal(planLeadDays({ leadDays: '14' }), 14);
+  assert.equal(planLeadDays({ leadDays: 900 }), 365);
+  assert.equal(planLeadDays({ leadDays: null }), 7);
+  assert.equal(planLeadDays({ leadDays: -3 }), 7);
+  assert.equal(planLeadDays({}), 7);
+  assert.equal(planLeadDays(null), 7);
+});
 
 describe('addFrequency', () => {
   test('steps each frequency', () => {

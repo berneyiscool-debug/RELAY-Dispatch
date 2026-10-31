@@ -202,6 +202,8 @@ const TABLE_COLUMNS = {
     "merge_tasks",
     "default_technician_id",
     "last_notification_date",
+    "auto_create_job",
+    "lead_days",
     "created_at",
     "updated_at"
   ],
@@ -2112,6 +2114,8 @@ class DataStore {
       if (record.merge_tasks !== undefined) { record.mergeTasks = record.merge_tasks === true; delete record.merge_tasks; }
       if (record.default_technician_id !== undefined) { record.defaultTechnicianId = record.default_technician_id; delete record.default_technician_id; }
       if (record.last_notification_date !== undefined) { record.lastNotificationDate = record.last_notification_date; delete record.last_notification_date; }
+      if (record.auto_create_job !== undefined) { record.autoCreateJob = record.auto_create_job === true; delete record.auto_create_job; }
+      if (record.lead_days !== undefined) { record.leadDays = numberOrNull(record.lead_days); delete record.lead_days; }
     }
     // The maintenance engine's payload, which turns a "Recurring Job Due"
     // notification into a job linked back to its plan(s).
@@ -2859,6 +2863,8 @@ class DataStore {
       if (record.mergeTasks !== undefined) { record.merge_tasks = record.mergeTasks === true; delete record.mergeTasks; }
       if (record.defaultTechnicianId !== undefined) { record.default_technician_id = record.defaultTechnicianId || null; delete record.defaultTechnicianId; }
       if (record.lastNotificationDate !== undefined) { record.last_notification_date = record.lastNotificationDate; delete record.lastNotificationDate; }
+      if (record.autoCreateJob !== undefined) { record.auto_create_job = record.autoCreateJob === true; delete record.autoCreateJob; }
+      if (record.leadDays !== undefined) { record.lead_days = numberOrNull(record.leadDays); delete record.leadDays; }
     }
     if (collection === 'notifications') {
       if (record.maintenancePlanId !== undefined) { record.maintenance_plan_id = record.maintenancePlanId || null; delete record.maintenancePlanId; }

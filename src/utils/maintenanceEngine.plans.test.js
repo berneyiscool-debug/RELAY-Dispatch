@@ -163,6 +163,71 @@ describe('maintenance engine', () => {
     assert.ok(raised.every((n) => n.mergedPlanIds.length === 0));
   });
 
+  test('a plan\'s own lead time decides how early calendar work is raised', () => {
+    seed({
+      plans: [
+        { id: 'p_early', name: 'Annual fire test', triggerType: 'Calendar', frequency: 'Annually', nextServiceDate: '2026-11-25', leadDays: 30 },
+        { id: 'p_default', name: 'Quarterly service', quoteId: QUOTE_B.id, triggerType: 'Calendar', frequency: 'Quarterly', nextServiceDate: '2026-11-25' },
+        { id: 'p_sameday', name: 'Monthly check', triggerType: 'Calendar', frequency: 'Monthly', nextServiceDate: '2026-11-01', leadDays: 0 },
+      ],
+    });
+
+    assert.deepEqual(raiseDueMaintenance(TODAY).map((n) => n.maintenancePlanId), ['p_early']);
+    assert.deepEqual(raiseDueMaintenance('2026-11-01').map((n) => n.maintenancePlanId), ['p_sameday']);
+  });
+
+  test('a plan set to create its job raises the job straight away', () => {
+    store.save('technicians', [{ id: 'tech_1', name: 'Dale Whitford', active: true }]);
+    seed({
+      asset: { site: 'Depot' },
+      plans: [{ id: 'p1', name: 'Quarterly service', triggerType: 'Calendar', frequency: 'Quarterly', nextServiceDate: '2026-11-05', autoCreateJob: true, defaultTechnicianId: 'tech_1' }],
+    });
+    const jobsBefore = store.getAll('jobs').length;
+
+    const [n] = raiseDueMaintenance(TODAY);
+
+    assert.equal(n.status, 'Converted');
+    const jobs = store.getAll('jobs');
+    assert.equal(jobs.length, jobsBefore + 1);
+    const job = jobs.find((j) => n.convertedTo === `Job ${j.number}`);
+    assert.ok(job, 'the notification names the job it became');
+    assert.equal(job.maintenancePlanId, 'p1');
+    assert.equal(job.assetId, 'asset_1');
+    assert.equal(job.quoteId, QUOTE.id);
+    assert.equal(job.scheduledDate, '2026-11-05');
+    assert.equal(job.technicianId, 'tech_1');
+    assert.equal(job.status, 'Scheduled');
+    assert.deepEqual(job.materials.map((m) => [m.name, m.quantity]), [['Air filter', 2]]);
+    assert.equal(job.laborCost, 150);
+
+    // Converted notifications still count as raised: nothing doubles up.
+    assert.equal(raiseDueMaintenance(TODAY).length, 0);
+    assert.equal(store.getAll('jobs').length, jobsBefore + 1);
+  });
+
+  test('plans left on the default only raise a notification', () => {
+    seed({ plans: [{ id: 'p1', name: 'Quarterly service', triggerType: 'Calendar', frequency: 'Quarterly', nextServiceDate: '2026-11-05' }] });
+    const jobsBefore = store.getAll('jobs').length;
+    const [n] = raiseDueMaintenance(TODAY);
+    assert.equal(n.status, 'Pending');
+    assert.equal(store.getAll('jobs').length, jobsBefore);
+  });
+
+  test('a merged group creates one job when its leading plan says so', () => {
+    seed({
+      plans: [
+        { id: 'p_low', name: 'Filter Plan', quoteId: QUOTE_B.id, triggerType: 'Calendar', frequency: 'Monthly', nextServiceDate: '2026-11-02', collisionMerging: true, priority: 3 },
+        { id: 'p_high', name: 'Major service', triggerType: 'Calendar', frequency: 'Annually', nextServiceDate: '2026-11-03', collisionMerging: true, priority: 9, autoCreateJob: true },
+      ],
+    });
+    const jobsBefore = store.getAll('jobs').length;
+    const raised = raiseDueMaintenance(TODAY);
+    assert.equal(raised.length, 1);
+    assert.equal(store.getAll('jobs').length, jobsBefore + 1);
+    const job = store.getAll('jobs').find((j) => j.maintenancePlanId === 'p_high');
+    assert.deepEqual(job.mergedPlanIds, ['p_low']);
+  });
+
   test('a plan without its blueprint quote raises nothing', () => {
     seed({ plans: [{ id: 'p1', name: 'Orphan', quoteId: 'q_missing', triggerType: 'Calendar', frequency: 'Monthly', nextServiceDate: '2026-11-01' }] });
     assert.equal(raiseDueMaintenance(TODAY).length, 0);

@@ -8,7 +8,7 @@ import { todayLocalISO, toDateKey, formatLocalDate } from '../../utils/dateUtils
 import { JOB_STATUS_BADGES } from '../../utils/statusColors.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
-import { assetServiceStatus } from '../../utils/maintenanceSchedule.js';
+import { assetServiceStatus, planLeadDays, DEFAULT_LEAD_DAYS } from '../../utils/maintenanceSchedule.js';
 import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 
 export function renderAssetDetail(container, { id, tab }) {
@@ -256,7 +256,8 @@ export function renderAssetDetail(container, { id, tab }) {
                 ${overdueBadge}
               </div>
               <div style="font-size:13px; color:var(--text-secondary); display:flex; flex-direction:column; gap:4px">
-                <span>Trigger Rule: <strong>${p.triggerType}</strong> ${p.triggerType === 'Calendar' ? `(${p.frequency})` : `(Every ${p.meterInterval} ${currentAsset.meterUnit || 'hrs'})`}</span>
+                <span>Trigger Rule: <strong>${p.triggerType}</strong> ${p.triggerType === 'Calendar' ? `(${p.frequency}, raised ${planLeadDays(p)} day${planLeadDays(p) === 1 ? '' : 's'} ahead)` : `(Every ${p.meterInterval} ${currentAsset.meterUnit || 'hrs'})`}</span>
+                <span>When Due: <strong>${p.autoCreateJob === true ? 'Creates the job' : 'Raises a notification'}</strong></span>
                 <span>${scheduleDetail}</span>
                 <span>Blueprint Template: <a href="#/quotes/${p.quoteId}" class="cell-link font-medium">Quote ${escapeHTML(quoteNum)}</a></span>
               </div>
@@ -540,9 +541,13 @@ export function renderAssetDetail(container, { id, tab }) {
               <option value="Annually" ${existingPlan?.frequency === 'Annually' ? 'selected' : ''}>Annually</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" style="margin-bottom:16px">
             <label class="form-label">Next Service Date *</label>
             <input type="date" class="form-input" id="plan-next-date" value="${existingPlan?.nextServiceDate || todayLocalISO()}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Raise the Work (days before it's due)</label>
+            <input type="number" class="form-input" id="plan-lead-days" min="0" max="365" step="1" value="${planLeadDays(existingPlan)}" />
           </div>
         </div>
 
@@ -602,6 +607,14 @@ export function renderAssetDetail(container, { id, tab }) {
           </select>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">When It Comes Due</label>
+          <select class="form-select" id="plan-auto-create-job">
+            <option value="notify" ${existingPlan?.autoCreateJob === true ? '' : 'selected'}>Raise a notification to review</option>
+            <option value="job" ${existingPlan?.autoCreateJob === true ? 'selected' : ''}>Create the job straight away</option>
+          </select>
+        </div>
+
         <div style="display:flex; align-items:center; gap:10px; margin:14px 0 8px 0; padding-left:2px;">
           <input type="checkbox" id="plan-collision-merging" ${existingPlan?.collisionMerging === true ? 'checked' : ''} style="width:18px; height:18px; margin:0; cursor:pointer; accent-color:var(--primary);" />
           <label for="plan-collision-merging" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Enable Collision Merging (auto-merge with other due plans)</label>
@@ -655,10 +668,16 @@ export function renderAssetDetail(container, { id, tab }) {
           const mergeTasks = content.querySelector('#plan-merge-tasks').checked;
           const taskTemplateId = content.querySelector('#plan-task-template-id').value || null;
           const defaultTechnicianId = content.querySelector('#plan-technician-id').value || null;
+          const autoCreateJob = content.querySelector('#plan-auto-create-job').value === 'job';
+          const leadDaysRaw = content.querySelector('#plan-lead-days').value.trim();
+          const leadDays = leadDaysRaw === '' ? DEFAULT_LEAD_DAYS : parseInt(leadDaysRaw, 10);
           const status = content.querySelector('#plan-status').value;
 
           if (!name) return showToast('Plan Name is required', 'error');
           if (!quoteId) return showToast('Please select a blueprint quote', 'error');
+          if (triggerType === 'Calendar' && (!Number.isFinite(leadDays) || leadDays < 0 || leadDays > 365)) {
+            return showToast('Raise the work between 0 and 365 days before it is due', 'error');
+          }
 
           const planData = {
             name,
@@ -671,6 +690,8 @@ export function renderAssetDetail(container, { id, tab }) {
             mergeTasks,
             taskTemplateId,
             defaultTechnicianId,
+            autoCreateJob,
+            leadDays: triggerType === 'Calendar' ? leadDays : (existingPlan?.leadDays ?? null),
             frequency: triggerType === 'Calendar' ? frequency : null,
             nextServiceDate: triggerType === 'Calendar' ? nextServiceDate : null,
             meterInterval: triggerType === 'Meter' ? meterInterval : null,

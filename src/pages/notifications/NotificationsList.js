@@ -7,10 +7,10 @@ import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
-import { todayLocalISO } from '../../utils/dateUtils.js';
 import { filterSystemNotifications, countByStatus, emptyStateMessage } from '../../utils/notificationVisibility.js';
 import { getHideSystemNotifications, setHideSystemNotifications, loadHideSystemNotifications, onNotificationPrefChanged } from '../../utils/notificationPrefs.js';
 import { getSessionUser } from '../auth/session.js';
+import { convertNotificationToJob } from '../../utils/notificationJobs.js';
 const STATUS_FILTERS = ['Pending', 'Converted', 'Dismissed'];
 
 // Only one notifications page is mounted at a time, so the previous subscription
@@ -756,8 +756,11 @@ export function renderNotificationsList(container, params) {
       actions: (() => {
         const linkedJobId = n.jobId || (n.link && n.link.startsWith('/jobs/') ? n.link.split('/').pop() : null);
         const linkedQuoteId = n.quoteId || (n.link && n.link.startsWith('/quotes/') ? n.link.split('/').pop() : null);
+        const isMaintenanceNotif = n.type === 'Recurring Job Due' || n.maintenancePlanId;
 
-        if (n.status === 'Converted' || linkedJobId || linkedQuoteId) {
+        // A maintenance notification's quote is the plan's blueprint, not a
+        // quote it was turned into, so it still needs dispatching.
+        if (n.status === 'Converted' || linkedJobId || (linkedQuoteId && !isMaintenanceNotif)) {
           const acts = [{ label: 'Close', className: 'btn-secondary', onClick: close => close() }];
           if (linkedQuoteId) {
             acts.push({ label: 'View Quote', className: 'btn-secondary', onClick: close => { close(); router.navigate(`/quotes/${linkedQuoteId}`); } });
@@ -767,8 +770,6 @@ export function renderNotificationsList(container, params) {
           }
           return acts;
         }
-
-        const isMaintenanceNotif = n.type === 'Recurring Job Due' || n.maintenancePlanId;
 
         return [
           { label: 'Close', className: 'btn-secondary', onClick: close => close() },
@@ -845,264 +846,8 @@ export function renderNotificationsList(container, params) {
   }
 
   function convertToJob(id) {
-    const n = store.getById('notifications', id);
-    if (!n) return;
-    
-    function compileJobTasks(mainTemplateId, mergedTemplateIds = []) {
-      const allTasks = [];
-      const templateIds = [mainTemplateId, ...mergedTemplateIds].filter(Boolean);
-      
-      templateIds.forEach(tid => {
-        const template = store.getById('taskTemplates', tid);
-        if (template && template.tasks) {
-          const clonedTasks = JSON.parse(JSON.stringify(template.tasks));
-          clonedTasks.forEach(task => {
-            task.id = store.generateId();
-            task.status = 'Not Started';
-            task.progress = 0;
-            task.startDate = new Date().toISOString();
-            task.technicians = [];
-            if (task.subTasks) {
-              task.subTasks.forEach(st => {
-                st.id = store.generateId();
-                st.status = 'Not Started';
-                st.progress = 0;
-                st.startDate = new Date().toISOString();
-                st.technicians = [];
-              });
-            }
-          });
-          allTasks.push(...clonedTasks);
-        }
-      });
-      return allTasks;
-    }
-
-    function cleanTitle(title) {
-      let t = title || '';
-      t = t.replace(/^(Usage\s+)?Maintenance\s+Due:\s*/i, '');
-      t = t.replace(/\s+-\s+/g, ' — ');
-      
-      const parts = t.split(' — ');
-      if (parts.length >= 2) {
-        const assetName = parts[0].trim();
-        let planName = parts[1].trim();
-        
-        const assetWords = assetName.toLowerCase().split(/\s+/);
-        const planWords = planName.split(/\s+/);
-        let matchCount = 0;
-        for (let i = 0; i < Math.min(assetWords.length, planWords.length); i++) {
-          if (assetWords[i] === planWords[i].toLowerCase()) {
-            matchCount++;
-          } else {
-            break;
-          }
-        }
-        if (matchCount > 0) {
-          planName = planWords.slice(matchCount).join(' ');
-        }
-        planName = planName.replace(/\s+(Plan|Service Plan)$/i, '');
-        t = `${assetName} — ${planName}`;
-      }
-      return t;
-    }
-
-    const cleanedTitle = cleanTitle(n.title);
-
-    const assignedTechId = n.technicianId || (n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId)?.defaultTechnicianId : null);
-    const techObj = assignedTechId ? store.getById('technicians', assignedTechId) : null;
-
-    let jobData = {
-      number: store.getNextNumber('J-', 'jobs'),
-      title: cleanedTitle,
-      description: n.description,
-      priority: n.priority || 'Normal',
-      status: assignedTechId ? 'Scheduled' : 'Pending',
-      technicianId: assignedTechId || undefined,
-      technicianName: techObj ? techObj.name : '',
-      technicians: assignedTechId ? [{ id: assignedTechId, name: techObj ? techObj.name : '' }] : [],
-      scheduledDate: n.targetServiceDate || n.dueDate || todayLocalISO(),
-      notes: `Generated from Notification: ${n.title}\n\n${n.description}`,
-      createdAt: new Date().toISOString()
-    };
-
-    if (n.mergedMaterialsList && n.mergedMaterialsList.length > 0) {
-      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
-      const customer = asset ? store.getById('customers', asset.customerId) : null;
-      
-      const jobMaterials = n.mergedMaterialsList.map(item => ({
-        stockId: item.stockId || null,
-        name: item.name,
-        quantity: item.quantity,
-        unitCost: item.unitCost || 0,
-        fromQuote: true
-      }));
-
-      jobData = {
-        ...jobData,
-        customerId: asset ? (asset.customerId || '') : '',
-        customerName: customer ? customer.company : 'Internal',
-        contactName: customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned',
-        siteAddress: asset ? (asset.site || 'Main Office') : 'Main Office',
-        assetId: asset ? asset.id : undefined,
-        quoteId: n.quoteId || undefined,
-        quoteNumber: n.quoteId ? (store.getById('quotes', n.quoteId)?.number || '') : '',
-        materials: jobMaterials,
-        laborCost: parseFloat(n.totalLaborCost || 0),
-        materialCost: parseFloat(n.totalMaterialCost || 0),
-        estimatedLaborCost: parseFloat(n.totalLaborCost || 0),
-        estimatedMaterialCost: parseFloat(n.totalMaterialCost || 0),
-        maintenancePlanId: n.maintenancePlanId || undefined,
-        mergedPlanIds: n.mergedPlanIds || []
-      };
-    } else if (n.quoteId) {
-      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
-      const quote = store.getById('quotes', n.quoteId);
-      if (quote) {
-        const customer = quote.customerId ? store.getById('customers', quote.customerId) : (asset ? store.getById('customers', asset.customerId) : null);
-        
-        let laborCost = 0;
-        let materialCost = 0;
-        const items = [];
-
-        if (quote.sections) {
-          quote.sections.forEach(sec => {
-            if (sec.lineItems) items.push(...sec.lineItems);
-          });
-        } else if (quote.lineItems) {
-          items.push(...quote.lineItems);
-        }
-
-        const jobMaterials = [];
-        items.forEach(item => {
-          if (item.type === 'material') {
-            const sMatch = store.getAll('stock').find(s => s.name === item.description);
-            jobMaterials.push({
-              stockId: sMatch ? sMatch.id : null,
-              name: item.description || 'Unknown Material',
-              quantity: item.qty || 1,
-              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-              fromQuote: true
-            });
-            materialCost += item.total || 0;
-          } else if (item.type === 'labor') {
-            laborCost += item.total || 0;
-          }
-        });
-
-        jobData = {
-          ...jobData,
-          customerId: quote.customerId || (asset ? asset.customerId : ''),
-          customerName: customer ? customer.company : (quote.customerName || 'Internal'),
-          contactName: customer ? `${customer.firstName} ${customer.lastName}` : (quote.contactName || 'Unassigned'),
-          siteAddress: asset ? (asset.site || 'Main Office') : 'Main Office',
-          assetId: asset ? asset.id : undefined,
-          quoteId: quote.id,
-          quoteNumber: quote.number,
-          materials: jobMaterials,
-          laborCost,
-          materialCost,
-          estimatedLaborCost: laborCost,
-          estimatedMaterialCost: materialCost,
-          maintenancePlanId: n.maintenancePlanId || undefined,
-          mergedPlanIds: n.mergedPlanIds || []
-        };
-      }
-    } else if (n.maintenancePlanId) {
-      const asset = store.getById('assets', n.assetId);
-      if (asset) {
-        const customer = store.getById('customers', asset.customerId);
-        jobData = {
-          ...jobData,
-          customerId: asset.customerId || '',
-          customerName: customer ? customer.company : 'Internal',
-          contactName: customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned',
-          siteAddress: asset.site || 'Main Office',
-          assetId: asset.id,
-          maintenancePlanId: n.maintenancePlanId,
-          mergedPlanIds: []
-        };
-      }
-    } else if (n.jobId) {
-      const parentJob = store.getById('jobs', n.jobId);
-      if (parentJob) {
-        const jobMaterials = parentJob.materials ? JSON.parse(JSON.stringify(parentJob.materials)) : [];
-        const jobTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
-        jobTasks.forEach(task => {
-          task.id = store.generateId();
-          task.status = 'Not Started';
-          task.progress = 0;
-          task.startDate = new Date().toISOString();
-          task.technicians = [];
-          if (task.subTasks) {
-            task.subTasks.forEach(st => {
-              st.id = store.generateId();
-              st.status = 'Not Started';
-              st.progress = 0;
-              st.startDate = new Date().toISOString();
-              st.technicians = [];
-            });
-          }
-        });
-
-        jobData = {
-          ...jobData,
-          title: parentJob.title || parentJob.number,
-          parentJobId: parentJob.id,
-          customerId: parentJob.customerId || '',
-          customerName: parentJob.customerName || '',
-          contactName: parentJob.contactName || '',
-          siteAddress: parentJob.siteAddress || '',
-          assetId: parentJob.assetId || undefined,
-          priority: parentJob.priority || 'Normal',
-          description: parentJob.description || '',
-          materials: jobMaterials,
-          laborCost: parentJob.laborCost || 0,
-          materialCost: parentJob.materialCost || 0,
-          estimatedLaborCost: parentJob.estimatedLaborCost || 0,
-          estimatedMaterialCost: parentJob.estimatedMaterialCost || 0,
-          isRecurring: false,
-          recurringConfig: null,
-          tasks: jobTasks,
-        };
-      }
-    } else if (n.customerId) {
-      const customer = store.getById('customers', n.customerId);
-      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
-      let siteAddress = 'Main Office';
-      if (n.siteName && customer && customer.sites) {
-        const matchingSite = customer.sites.find(s => s.name === n.siteName);
-        if (matchingSite) siteAddress = matchingSite.address || matchingSite.name;
-      }
-      jobData = {
-        ...jobData,
-        customerId: n.customerId,
-        customerName: customer ? customer.company : (n.customerName || 'Internal'),
-        contactName: n.contactName || (customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned'),
-        siteAddress: siteAddress,
-        siteName: n.siteName || '',
-        assetId: n.assetId || undefined
-      };
-    }
-
-    let tasks = [];
-    if (n.taskTemplateId || (n.mergedTaskTemplateIds && n.mergedTaskTemplateIds.length > 0)) {
-      tasks = compileJobTasks(n.taskTemplateId, n.mergedTaskTemplateIds || []);
-    }
-    if (tasks.length > 0) {
-      jobData.tasks = tasks;
-    }
-
-    if (n.dueDate) {
-      jobData.scheduledDate = n.dueDate;
-    }
-
-    // Create Job directly
-    const job = store.create('jobs', jobData);
-
-    // Update Notification status
-    store.update('notifications', id, { status: 'Converted', convertedTo: `Job ${job.number}` });
-    
+    const job = convertNotificationToJob(id);
+    if (!job) return;
     showToast('Converted to Job successfully', 'success');
     router.navigate(`/jobs/${job.id}`);
   }
