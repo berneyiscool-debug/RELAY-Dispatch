@@ -1,5 +1,6 @@
 import { store } from '../data/store.js';
 import { parsePreferredTime, toDateKey, todayLocalISO } from './dateUtils.js';
+import { daysUntil, isRetiredAsset, nextDateAfter, passedMeterMilestone } from './maintenanceSchedule.js';
 import { supabase } from './supabase.js';
 import { checkPaymentReminders } from './paymentReminders.js';
 
@@ -68,453 +69,233 @@ export async function checkMaintenancePlans() {
   }
 }
 
-async function runEngineCore(userId, isCloud) {
+function getPriorityScore(p) {
+  if (typeof p === 'number') return p;
+  if (!p) return 5;
+  const score = parseInt(p);
+  if (!isNaN(score)) return score;
+  if (p === 'Minor') return 2;
+  if (p === 'Standard') return 5;
+  if (p === 'Major') return 8;
+  return 5;
+}
 
-  try {
-    const plans = store.getAll('maintenancePlans') || [];
-    const assets = store.getAll('assets') || [];
-    const quotes = store.getAll('quotes') || [];
-    const notifications = store.getAll('notifications') || [];
-    const stock = store.getAll('stock') || [];
+function mapNumericToTextPriority(p) {
+  const num = getPriorityScore(p);
+  if (num <= 3) return 'Low';
+  if (num <= 7) return 'Normal';
+  if (num <= 9) return 'High';
+  return 'Urgent';
+}
 
-    let storeUpdated = false;
+function quoteLineItems(quote) {
+  if (quote.sections) return quote.sections.flatMap(sec => sec.lineItems || []);
+  return quote.lineItems || [];
+}
 
-  function getPriorityScore(p) {
-    if (typeof p === 'number') return p;
-    if (!p) return 5;
-    const score = parseInt(p);
-    if (!isNaN(score)) return score;
-    if (p === 'Minor') return 2;
-    if (p === 'Standard') return 5;
-    if (p === 'Major') return 8;
-    return 5;
+/** Materials and labour a set of plans' blueprint quotes add up to. */
+function summarisePlanWork(plans, quotes) {
+  const materials = [];
+  let laborHrs = 0;
+  let laborCost = 0;
+  let materialCost = 0;
+  plans.forEach(plan => {
+    const quote = quotes.find(q => q.id === plan.quoteId);
+    if (!quote) return;
+    quoteLineItems(quote).forEach(item => {
+      if (item.type === 'material') {
+        materials.push({
+          description: item.description,
+          qty: parseFloat(item.qty || 0),
+          rate: parseFloat(item.rate || 0),
+          total: parseFloat(item.total || 0)
+        });
+        materialCost += parseFloat(item.total || 0);
+      } else if (item.type === 'labor') {
+        laborHrs += parseFloat(item.qty || 0);
+        laborCost += parseFloat(item.total || 0);
+      }
+    });
+  });
+  return { materials, laborHrs, laborCost, materialCost };
+}
+
+/** Combine material lines with the same description (merged plans share parts). */
+function combineMaterials(materials) {
+  const byName = {};
+  materials.forEach(m => {
+    const key = String(m.description || '').trim().toLowerCase();
+    if (byName[key]) {
+      byName[key].qty += m.qty;
+      byName[key].total += m.total;
+    } else {
+      byName[key] = { ...m };
+    }
+  });
+  return Object.values(byName);
+}
+
+function toJobMaterial(m, stock) {
+  const sMatch = stock.find(s => s.name === m.description);
+  return {
+    stockId: sMatch ? sMatch.id : null,
+    name: m.description,
+    quantity: m.qty,
+    unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : m.rate,
+    fromQuote: true
+  };
+}
+
+function planDescription(title, plan, asset, materials, laborHrs) {
+  const unit = asset.meterUnit || 'hrs';
+  const partsText = materials.map(m => `${m.qty}x ${m.description}`).join(', ') || 'No specific parts required';
+  const when = plan.triggerType === 'Calendar'
+    ? `Due Date: ${plan.nextServiceDate}`
+    : `Meter Reading: ${parseFloat(asset.currentMeter || 0)} ${unit} (Milestone: ${parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0)} ${unit})`;
+  return `Service Plan: ${title}\nAsset: ${asset.name} (${asset.type || 'Equipment'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || '—'}\n${when}\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
+}
+
+/** Whether an active plan should raise work now. */
+function isPlanDue(plan, asset, notifications, todayKey) {
+  const raisedFor = (n) => n.maintenancePlanId === plan.id || (n.mergedPlanIds || []).includes(plan.id);
+  if (plan.triggerType === 'Calendar') {
+    const dueKey = toDateKey(plan.nextServiceDate);
+    if (!dueKey || daysUntil(todayKey, dueKey) > 7) return false;
+    // Not already raised for this plan and target date
+    return !notifications.some(n => raisedFor(n) && n.targetServiceDate === plan.nextServiceDate);
   }
-
-  function mapNumericToTextPriority(p) {
-    const num = getPriorityScore(p);
-    if (num <= 3) return 'Low';
-    if (num <= 7) return 'Normal';
-    if (num <= 9) return 'High';
-    return 'Urgent';
+  if (plan.triggerType === 'Meter') {
+    const interval = parseFloat(plan.meterInterval || 0);
+    if (interval <= 0) return false;
+    if (parseFloat(asset.currentMeter || 0) < parseFloat(plan.lastTriggeredMeter || 0) + interval) return false;
+    return !notifications.some(n => raisedFor(n) && n.status === 'Pending' && n.type === 'Recurring Job Due');
   }
+  return false;
+}
 
-  // Group active plans by assetId
+/** Move a plan past the service it just raised. */
+function advancePlan(plan, asset, todayKey) {
+  if (plan.triggerType === 'Calendar') {
+    plan.nextServiceDate = nextDateAfter(plan.nextServiceDate, plan.frequency, todayKey) || plan.nextServiceDate;
+  } else if (plan.triggerType === 'Meter') {
+    plan.lastTriggeredMeter = passedMeterMilestone(plan.lastTriggeredMeter, plan.meterInterval, asset.currentMeter);
+  }
+  plan.lastNotificationDate = new Date().toISOString();
+}
+
+/**
+ * One "Recurring Job Due" notification for a group of due plans on one asset.
+ * The first plan leads (its name, priority, quote and trigger); any others are
+ * merged into it, with their parts combined.
+ */
+function buildPlanNotification(group, asset, quotes, stock) {
+  const [lead, ...merged] = group;
+  const work = summarisePlanWork(group, quotes);
+  const materials = merged.length ? combineMaterials(work.materials) : work.materials;
+
+  let title;
+  let planTitle = lead.name;
+  if (merged.length) {
+    const mergedNames = merged.map(p => p.name.replace(/\s+(Plan|Service Plan)$/i, '')).join(' + ');
+    title = planTitle = `${lead.name} (includes ${mergedNames} tasks)`;
+  } else {
+    title = lead.triggerType === 'Calendar' ? `Maintenance Due: ${asset.name} - ${lead.name}` : `Usage Maintenance Due: ${asset.name} - ${lead.name}`;
+  }
+  const description = planDescription(planTitle, lead, asset, materials, work.laborHrs);
+
+  return {
+    id: 'notif_maint_' + Date.now() + Math.random().toString(36).substr(2, 5),
+    title,
+    description,
+    message: description,
+    status: 'Pending',
+    type: 'Recurring Job Due',
+    priority: mapNumericToTextPriority(lead.priority),
+    createdAt: new Date().toISOString(),
+    createdBy: 'System Engine',
+    origin: 'system',
+    maintenancePlanId: lead.id,
+    mergedPlanIds: merged.map(p => p.id),
+    taskTemplateId: lead.taskTemplateId || null,
+    mergedTaskTemplateIds: lead.mergeTasks === true
+      ? merged.filter(p => p.mergeTasks === true).map(p => p.taskTemplateId).filter(Boolean)
+      : [],
+    quoteId: lead.quoteId,
+    assetId: asset.id,
+    targetServiceDate: lead.triggerType === 'Calendar' ? lead.nextServiceDate : null,
+    currentMeterAtTrigger: lead.triggerType === 'Meter' ? parseFloat(asset.currentMeter || 0) : null,
+    mergedMaterialsList: materials.map(m => toJobMaterial(m, stock)),
+    totalLaborHrs: work.laborHrs,
+    totalLaborCost: work.laborCost,
+    totalMaterialCost: work.materialCost
+  };
+}
+
+/**
+ * Raise a "Recurring Job Due" notification for every active plan that has come
+ * due, and move each plan on to its next service. Plans set to collision-merge
+ * that fall due together on one asset are raised as a single job, led by the
+ * highest priority; plans sharing a blueprint quote are never merged. Retired
+ * (Decommissioned, Lost/Stolen) assets raise nothing.
+ *
+ * @param {string} [todayKey] YYYY-MM-DD; defaults to today (local)
+ * @returns {object[]} the notifications raised
+ */
+export function raiseDueMaintenance(todayKey = todayLocalISO()) {
+  const plans = store.getAll('maintenancePlans') || [];
+  const assets = store.getAll('assets') || [];
+  const quotes = store.getAll('quotes') || [];
+  const notifications = store.getAll('notifications') || [];
+  const stock = store.getAll('stock') || [];
+  const raised = [];
+
   const activePlansByAsset = {};
   plans.forEach(plan => {
     if (plan.status !== 'Active') return;
-    if (!activePlansByAsset[plan.assetId]) {
-      activePlansByAsset[plan.assetId] = [];
-    }
-    activePlansByAsset[plan.assetId].push(plan);
+    (activePlansByAsset[plan.assetId] ||= []).push(plan);
   });
 
   Object.entries(activePlansByAsset).forEach(([assetId, assetPlans]) => {
     const asset = assets.find(a => a.id === assetId);
-    if (!asset) return;
+    if (!asset || isRetiredAsset(asset)) return;
 
-    // Check which active plans in this group are "due"
-    const mergableDuePlans = [];
-    const standaloneDuePlans = [];
+    const duePlans = assetPlans.filter(plan =>
+      quotes.some(q => q.id === plan.quoteId) && isPlanDue(plan, asset, notifications, todayKey)
+    );
 
-    assetPlans.forEach(plan => {
-      const quote = quotes.find(q => q.id === plan.quoteId);
-      if (!quote) return;
-
-      let isDue = false;
-
-      if (plan.triggerType === 'Calendar') {
-        if (!plan.nextServiceDate) return;
-        const nextDate = new Date(plan.nextServiceDate);
-        const today = new Date();
-        const diffTime = nextDate - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays <= 7) {
-          // Double check we haven't already notified for this specific plan and target date
-          const hasNotif = notifications.some(n => 
-            (n.maintenancePlanId === plan.id && n.targetServiceDate === plan.nextServiceDate) ||
-            (n.mergedPlanIds && n.mergedPlanIds.includes(plan.id) && n.targetServiceDate === plan.nextServiceDate)
-          );
-          if (!hasNotif) {
-            isDue = true;
-          }
-        }
-      } else if (plan.triggerType === 'Meter') {
-        const currentMeter = parseFloat(asset.currentMeter || 0);
-        const lastTriggered = parseFloat(plan.lastTriggeredMeter || 0);
-        const interval = parseFloat(plan.meterInterval || 0);
-
-        if (currentMeter >= lastTriggered + interval) {
-          const hasPendingNotif = notifications.some(n => 
-            (n.maintenancePlanId === plan.id && n.status === 'Pending' && n.type === 'Recurring Job Due') ||
-            (n.mergedPlanIds && n.mergedPlanIds.includes(plan.id) && n.status === 'Pending' && n.type === 'Recurring Job Due')
-          );
-          if (!hasPendingNotif) {
-            isDue = true;
-          }
-        }
-      }
-
-      if (isDue) {
-        if (plan.collisionMerging === true) {
-          mergableDuePlans.push(plan);
-        } else {
-          standaloneDuePlans.push(plan);
-        }
-      }
-    });
-
-    // Quote-based collision filtering: Plans sharing the same quoteId must not merge
+    // Plans sharing a blueprint quote must not merge
     const quoteIdCounts = {};
-    mergableDuePlans.forEach(p => {
-      if (p.quoteId) {
-        quoteIdCounts[p.quoteId] = (quoteIdCounts[p.quoteId] || 0) + 1;
-      }
+    duePlans.forEach(p => {
+      if (p.collisionMerging === true) quoteIdCounts[p.quoteId] = (quoteIdCounts[p.quoteId] || 0) + 1;
     });
-
-    const finalMergableDuePlans = [];
-    mergableDuePlans.forEach(p => {
-      if (p.quoteId && quoteIdCounts[p.quoteId] > 1) {
-        standaloneDuePlans.push(p);
-      } else {
-        finalMergableDuePlans.push(p);
-      }
-    });
-
-    // 1. Process all Standalone Due Plans (independent notifications, independent schedule advancement)
-    standaloneDuePlans.forEach(plan => {
-      const quote = quotes.find(q => q.id === plan.quoteId);
-      const items = [];
-      if (quote.sections) {
-        quote.sections.forEach(sec => {
-          if (sec.lineItems) items.push(...sec.lineItems);
-        });
-      } else if (quote.lineItems) {
-        items.push(...quote.lineItems);
-      }
-
-      const planMaterials = [];
-      let laborHrs = 0;
-      let laborCost = 0;
-      let materialCost = 0;
-
-      items.forEach(item => {
-        if (item.type === 'material') {
-          const sMatch = stock.find(s => s.name === item.description);
-          planMaterials.push({
-            stockId: sMatch ? sMatch.id : null,
-            name: item.description,
-            quantity: parseFloat(item.qty || 0),
-            unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : parseFloat(item.rate || 0),
-            fromQuote: true
-          });
-          materialCost += parseFloat(item.total || 0);
-        } else if (item.type === 'labor') {
-          laborHrs += parseFloat(item.qty || 0);
-          laborCost += parseFloat(item.total || 0);
-        }
-      });
-
-      const partsText = planMaterials.map(m => `${m.quantity}x ${m.name}`).join(', ') || 'No specific parts required';
-      
-      let standaloneDesc = '';
-      if (plan.triggerType === 'Calendar') {
-        standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${plan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
-      } else {
-        const currentMeter = parseFloat(asset.currentMeter || 0);
-        const targetMilestone = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-        standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
-      }
-
-      const notif = {
-        id: 'notif_maint_' + Date.now() + Math.random().toString(36).substr(2, 5),
-        title: plan.triggerType === 'Calendar' ? `Maintenance Due: ${asset.name} - ${plan.name}` : `Usage Maintenance Due: ${asset.name} - ${plan.name}`,
-        description: standaloneDesc,
-        message: standaloneDesc,
-        status: 'Pending',
-        type: 'Recurring Job Due',
-        priority: mapNumericToTextPriority(plan.priority),
-        createdAt: new Date().toISOString(),
-        createdBy: 'System Engine',
-        origin: 'system',
-        maintenancePlanId: plan.id,
-        mergedPlanIds: [],
-        taskTemplateId: plan.taskTemplateId || null,
-        mergedTaskTemplateIds: [],
-        quoteId: plan.quoteId,
-        assetId: asset.id,
-        targetServiceDate: plan.triggerType === 'Calendar' ? plan.nextServiceDate : null,
-        currentMeterAtTrigger: plan.triggerType === 'Meter' ? parseFloat(asset.currentMeter || 0) : null,
-        
-        mergedMaterialsList: planMaterials,
-        totalLaborHrs: laborHrs,
-        totalLaborCost: laborCost,
-        totalMaterialCost: materialCost
-      };
-
-      notifications.push(notif);
-      store.save('notifications', notifications);
-
-      // Advance schedule timer immediately for standalone plan
-      if (plan.triggerType === 'Calendar') {
-        const currentNext = new Date(plan.nextServiceDate);
-        if (plan.frequency === 'Weekly') {
-          currentNext.setDate(currentNext.getDate() + 7);
-        } else if (plan.frequency === 'Monthly') {
-          currentNext.setMonth(currentNext.getMonth() + 1);
-        } else if (plan.frequency === 'Quarterly') {
-          currentNext.setMonth(currentNext.getMonth() + 3);
-        } else if (plan.frequency === 'Semi-Annually') {
-          currentNext.setMonth(currentNext.getMonth() + 6);
-        } else if (plan.frequency === 'Annually') {
-          currentNext.setFullYear(currentNext.getFullYear() + 1);
-        }
-        plan.nextServiceDate = currentNext.toISOString().split('T')[0];
-      } else if (plan.triggerType === 'Meter') {
-        plan.lastTriggeredMeter = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-      }
-      plan.lastNotificationDate = new Date().toISOString();
-      storeUpdated = true;
-    });
-
-    // 2. Process Collision Mergeable Due Plans (only merge if multiple mergables trigger, else trigger standalone)
-    if (finalMergableDuePlans.length > 0) {
-      if (finalMergableDuePlans.length === 1) {
-        const plan = finalMergableDuePlans[0];
-        const quote = quotes.find(q => q.id === plan.quoteId);
-        const items = [];
-        if (quote.sections) {
-          quote.sections.forEach(sec => {
-            if (sec.lineItems) items.push(...sec.lineItems);
-          });
-        } else if (quote.lineItems) {
-          items.push(...quote.lineItems);
-        }
-
-        const planMaterials = [];
-        let laborHrs = 0;
-        let laborCost = 0;
-        let materialCost = 0;
-
-        items.forEach(item => {
-          if (item.type === 'material') {
-            const sMatch = stock.find(s => s.name === item.description);
-            planMaterials.push({
-              stockId: sMatch ? sMatch.id : null,
-              name: item.description,
-              quantity: parseFloat(item.qty || 0),
-              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : parseFloat(item.rate || 0),
-              fromQuote: true
-            });
-            materialCost += parseFloat(item.total || 0);
-          } else if (item.type === 'labor') {
-            laborHrs += parseFloat(item.qty || 0);
-            laborCost += parseFloat(item.total || 0);
-          }
-        });
-
-        const partsText = planMaterials.map(m => `${m.quantity}x ${m.name}`).join(', ') || 'No specific parts required';
-        
-        let standaloneDesc = '';
-        if (plan.triggerType === 'Calendar') {
-          standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${plan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
-        } else {
-          const currentMeter = parseFloat(asset.currentMeter || 0);
-          const targetMilestone = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-          standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
-        }
-
-        const notif = {
-          id: 'notif_maint_' + Date.now() + Math.random().toString(36).substr(2, 5),
-          title: plan.triggerType === 'Calendar' ? `Maintenance Due: ${asset.name} - ${plan.name}` : `Usage Maintenance Due: ${asset.name} - ${plan.name}`,
-          description: standaloneDesc,
-          message: standaloneDesc,
-          status: 'Pending',
-          type: 'Recurring Job Due',
-          priority: mapNumericToTextPriority(plan.priority),
-          createdAt: new Date().toISOString(),
-          createdBy: 'System Engine',
-          origin: 'system',
-          maintenancePlanId: plan.id,
-          mergedPlanIds: [],
-          taskTemplateId: plan.taskTemplateId || null,
-          mergedTaskTemplateIds: [],
-          quoteId: plan.quoteId,
-          assetId: asset.id,
-          targetServiceDate: plan.triggerType === 'Calendar' ? plan.nextServiceDate : null,
-          currentMeterAtTrigger: plan.triggerType === 'Meter' ? parseFloat(asset.currentMeter || 0) : null,
-          
-          mergedMaterialsList: planMaterials,
-          totalLaborHrs: laborHrs,
-          totalLaborCost: laborCost,
-          totalMaterialCost: materialCost
-        };
-
-        notifications.push(notif);
-        store.save('notifications', notifications);
-
-        // Advance schedule timer immediately
-        if (plan.triggerType === 'Calendar') {
-          const currentNext = new Date(plan.nextServiceDate);
-          if (plan.frequency === 'Weekly') {
-            currentNext.setDate(currentNext.getDate() + 7);
-          } else if (plan.frequency === 'Monthly') {
-            currentNext.setMonth(currentNext.getMonth() + 1);
-          } else if (plan.frequency === 'Quarterly') {
-            currentNext.setMonth(currentNext.getMonth() + 3);
-          } else if (plan.frequency === 'Semi-Annually') {
-            currentNext.setMonth(currentNext.getMonth() + 6);
-          } else if (plan.frequency === 'Annually') {
-            currentNext.setFullYear(currentNext.getFullYear() + 1);
-          }
-          plan.nextServiceDate = currentNext.toISOString().split('T')[0];
-        } else if (plan.triggerType === 'Meter') {
-          plan.lastTriggeredMeter = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-        }
-        plan.lastNotificationDate = new Date().toISOString();
-        storeUpdated = true;
-      } else {
-        // Group collision resolution for multiple mergable plans
-        finalMergableDuePlans.sort((a, b) => getPriorityScore(b.priority) - getPriorityScore(a.priority));
-
-        const triggeredPlan = finalMergableDuePlans[0];
-        const suppressedPlans = finalMergableDuePlans.slice(1);
-
-        const allMaterials = [];
-        let totalLaborHrs = 0;
-        let totalLaborCost = 0;
-        let totalMaterialCost = 0;
-
-        finalMergableDuePlans.forEach(plan => {
-          const quote = quotes.find(q => q.id === plan.quoteId);
-          if (!quote) return;
-          const items = [];
-          if (quote.sections) {
-            quote.sections.forEach(sec => {
-              if (sec.lineItems) items.push(...sec.lineItems);
-            });
-          } else if (quote.lineItems) {
-            items.push(...quote.lineItems);
-          }
-
-          items.forEach(item => {
-            if (item.type === 'material') {
-              allMaterials.push({
-                description: item.description,
-                qty: parseFloat(item.qty || 0),
-                rate: parseFloat(item.rate || 0),
-                total: parseFloat(item.total || 0)
-              });
-              totalMaterialCost += parseFloat(item.total || 0);
-            } else if (item.type === 'labor') {
-              totalLaborHrs += parseFloat(item.qty || 0);
-              totalLaborCost += parseFloat(item.total || 0);
-            }
-          });
-        });
-
-        const mergedMaterialsMap = {};
-        allMaterials.forEach(m => {
-          const descLower = m.description.trim().toLowerCase();
-          if (mergedMaterialsMap[descLower]) {
-            mergedMaterialsMap[descLower].qty += m.qty;
-            mergedMaterialsMap[descLower].total += m.total;
-          } else {
-            mergedMaterialsMap[descLower] = { ...m };
-          }
-        });
-        const mergedMaterialsList = Object.values(mergedMaterialsMap);
-
-        const suppressedNames = suppressedPlans.map(p => p.name.replace(/\s+(Plan|Service Plan)$/i, '')).join(' + ');
-        const mergedTitle = `${triggeredPlan.name} (includes ${suppressedNames} tasks)`;
-
-        const partsText = mergedMaterialsList.map(m => `${m.qty}x ${m.description}`).join(', ') || 'No specific parts required';
-
-        let mergedDescription = '';
-        if (triggeredPlan.triggerType === 'Calendar') {
-          mergedDescription = `Service Plan: ${mergedTitle}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${triggeredPlan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${totalLaborHrs} hrs.`;
-        } else {
-          const currentMeter = parseFloat(asset.currentMeter || 0);
-          const targetMilestone = parseFloat(triggeredPlan.lastTriggeredMeter || 0) + parseFloat(triggeredPlan.meterInterval || 0);
-          mergedDescription = `Service Plan: ${mergedTitle}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${totalLaborHrs} hrs.`;
-        }
-
-        const notif = {
-          id: 'notif_maint_' + Date.now() + Math.random().toString(36).substr(2, 5),
-          title: mergedTitle,
-          description: mergedDescription,
-          message: mergedDescription,
-          status: 'Pending',
-          type: 'Recurring Job Due',
-          priority: mapNumericToTextPriority(triggeredPlan.priority),
-          createdAt: new Date().toISOString(),
-          createdBy: 'System Engine',
-          origin: 'system',
-          maintenancePlanId: triggeredPlan.id,
-          mergedPlanIds: suppressedPlans.map(p => p.id),
-          taskTemplateId: triggeredPlan.taskTemplateId || null,
-          mergedTaskTemplateIds: triggeredPlan.mergeTasks === true
-            ? suppressedPlans.filter(p => p.mergeTasks === true).map(p => p.taskTemplateId).filter(Boolean)
-            : [],
-          quoteId: triggeredPlan.quoteId,
-          assetId: asset.id,
-          targetServiceDate: triggeredPlan.triggerType === 'Calendar' ? triggeredPlan.nextServiceDate : null,
-          currentMeterAtTrigger: triggeredPlan.triggerType === 'Meter' ? parseFloat(asset.currentMeter || 0) : null,
-          
-          mergedMaterialsList: mergedMaterialsList.map(m => {
-            const sMatch = stock.find(s => s.name === m.description);
-            return {
-              stockId: sMatch ? sMatch.id : null,
-              name: m.description,
-              quantity: m.qty,
-              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : m.rate,
-              fromQuote: true
-            };
-          }),
-          totalLaborHrs,
-          totalLaborCost,
-          totalMaterialCost
-        };
-
-        notifications.push(notif);
-        store.save('notifications', notifications);
-
-        finalMergableDuePlans.forEach(plan => {
-          if (plan.triggerType === 'Calendar') {
-            const currentNext = new Date(plan.nextServiceDate);
-            if (plan.frequency === 'Weekly') {
-              currentNext.setDate(currentNext.getDate() + 7);
-            } else if (plan.frequency === 'Monthly') {
-              currentNext.setMonth(currentNext.getMonth() + 1);
-            } else if (plan.frequency === 'Quarterly') {
-              currentNext.setMonth(currentNext.getMonth() + 3);
-            } else if (plan.frequency === 'Semi-Annually') {
-              currentNext.setMonth(currentNext.getMonth() + 6);
-            } else if (plan.frequency === 'Annually') {
-              currentNext.setFullYear(currentNext.getFullYear() + 1);
-            }
-            plan.nextServiceDate = currentNext.toISOString().split('T')[0];
-          } else if (plan.triggerType === 'Meter') {
-            plan.lastTriggeredMeter = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-          }
-          plan.lastNotificationDate = new Date().toISOString();
-        });
-
-        storeUpdated = true;
-      }
+    const mergeable = duePlans.filter(p => p.collisionMerging === true && quoteIdCounts[p.quoteId] === 1);
+    const groups = duePlans.filter(p => !mergeable.includes(p)).map(p => [p]);
+    if (mergeable.length) {
+      groups.push([...mergeable].sort((a, b) => getPriorityScore(b.priority) - getPriorityScore(a.priority)));
     }
+
+    groups.forEach(group => {
+      raised.push(buildPlanNotification(group, asset, quotes, stock));
+      group.forEach(plan => advancePlan(plan, asset, todayKey));
+    });
   });
 
-  if (storeUpdated) {
+  if (raised.length) {
+    store.save('notifications', [...notifications, ...raised]);
     store.save('maintenancePlans', plans);
   }
+  return raised;
+}
 
-  // Run recurring jobs check
-  checkRecurringJobs();
+async function runEngineCore(userId, isCloud) {
+  try {
+    raiseDueMaintenance();
 
-  // v1.3 #5 — automatic payment reminders (cloud + email-configured only; no-ops otherwise)
-  await checkPaymentReminders();
+    // Run recurring jobs check
+    checkRecurringJobs();
 
+    // v1.3 #5 — automatic payment reminders (cloud + email-configured only; no-ops otherwise)
+    await checkPaymentReminders();
   } finally {
     // Release the Supabase lock if in cloud mode
     // (If local mode, Web Locks API automatically releases the lock when the async callback finishes)

@@ -3,6 +3,7 @@
 // ============================================
 import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
+import { addFrequency } from '../utils/maintenanceSchedule.js';
 import { prebuiltForms } from './prebuiltForms.js';
 import { activityFromRow, activityToRow } from './activityRecord.js';
 import { jobEventFromRow, jobEventToRow } from './jobEventRecord.js';
@@ -4016,15 +4017,9 @@ class DataStore {
             const plan = this.getById('maintenancePlans', pid);
             if (plan) {
               if (plan.triggerType === 'Calendar') {
-                const compDate = new Date();
-                if (plan.frequency === 'Weekly') compDate.setDate(compDate.getDate() + 7);
-                else if (plan.frequency === 'Monthly') compDate.setMonth(compDate.getMonth() + 1);
-                else if (plan.frequency === 'Quarterly') compDate.setMonth(compDate.getMonth() + 3);
-                else if (plan.frequency === 'Semi-Annually') compDate.setMonth(compDate.getMonth() + 6);
-                else if (plan.frequency === 'Annually') compDate.setFullYear(compDate.getFullYear() + 1);
-                
+                // The next service is one period after the work was done.
                 this.update('maintenancePlans', plan.id, {
-                  nextServiceDate: todayLocalISO(compDate)
+                  nextServiceDate: addFrequency(todayLocalISO(), plan.frequency) || plan.nextServiceDate
                 });
               } else if (plan.triggerType === 'Meter') {
                 this.update('maintenancePlans', plan.id, {
