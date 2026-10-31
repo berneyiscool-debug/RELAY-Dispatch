@@ -6,7 +6,7 @@ import { escapeHTML } from '../utils/security.js';
 import { store } from '../data/store.js';
 import { fontFaceCss } from '../utils/fonts.js';
 import { DOC_STATUS_COLORS } from '../utils/statusColors.js';
-const logoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
+const logoLarge = new URL('../assets/R_dispatch.png', import.meta.url).href;
 
 
 export function showPrintPreview({ type, data }) {

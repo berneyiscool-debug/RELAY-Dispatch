@@ -69,7 +69,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "electron/icons/icon.png"
+      "icon": "electron/icons/icon.ico"
     },
     "nsis": {
       "oneClick": false,

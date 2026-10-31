@@ -16,8 +16,8 @@ import { getSessionUser } from '../pages/auth/session.js';
 // company?" check in the app answers no and cloud features stay switched off.
 export const DEMO_COMPANY_ID = 'acct_demo';
 
-const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
-const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
+const defaultLogoLarge = new URL('../assets/R_dispatch.png', import.meta.url).href;
+const defaultLogoSmall = new URL('../assets/R_icon.png', import.meta.url).href;
 
 // Structural comparison for the jsonb-backed columns (tasks, line_items, the packed
 // `notes` meta blob), which are objects and arrays rather than scalars.
