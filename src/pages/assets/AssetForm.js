@@ -3,6 +3,7 @@ import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showAlert } from '../../utils/confirmDialog.js';
 import { newCustomerOptionHtml, wireNewCustomerOption } from '../../components/QuickCustomer.js';
+import { parentOptions, isValidParent } from '../../utils/assetHierarchy.js';
 
 export function renderAssetForm(container, params) {
   const isNew = params.id === 'new';
@@ -20,6 +21,21 @@ export function renderAssetForm(container, params) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Asset not found</h3></div>`;
     return;
   }
+
+  // "Add Component" on an asset page opens /assets/new/edit?parent=<id>: the new
+  // asset starts inside it, with the same owner and site.
+  const parentParam = params.parent || new URLSearchParams((window.location.hash.split('?')[1]) || '').get('parent');
+  const presetParent = isNew && parentParam ? store.getById('assets', parentParam) : null;
+  if (presetParent) {
+    asset = {
+      ...asset,
+      parentAssetId: presetParent.id,
+      ownerType: presetParent.ownerType || 'Business',
+      customerId: presetParent.customerId || null,
+      site: presetParent.site || '',
+    };
+  }
+  const allAssets = store.getAll('assets') || [];
 
   const staff = store.getAll('technicians').filter(s => !s.deactivated || asset.assignedToId === s.id);
   const customers = store.getAll('customers');
@@ -69,6 +85,12 @@ export function renderAssetForm(container, params) {
                 ${newCustomerOptionHtml()}
               </select>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Part Of (optional)</label>
+            <select id="parentAssetId" class="form-select"></select>
+            <div class="form-help">The asset this sits inside, e.g. a breaker in a switchboard. Only assets with the same owner are listed.</div>
           </div>
 
           <div class="form-row">
@@ -174,6 +196,19 @@ export function renderAssetForm(container, params) {
     updateSiteOptions(e.target.value);
   });
 
+  // "Part of" lists assets with the same owner as the form currently has.
+  const parentSelect = container.querySelector('#parentAssetId');
+  function updateParentOptions() {
+    const owner = { id: asset.id, ownerType: ownerTypeSelect.value, customerId: ownerTypeSelect.value === 'Customer' ? customerSelect.value : null };
+    const keep = parentSelect.value || asset.parentAssetId || '';
+    const options = parentOptions(allAssets, owner);
+    parentSelect.innerHTML = '<option value="">-- Not part of another asset --</option>' +
+      options.map(a => `<option value="${escapeHTML(a.id)}"${a.id === keep ? ' selected' : ''}>${escapeHTML(a.name || 'Unnamed asset')}${a.serial ? ` (${escapeHTML(a.serial)})` : ''}</option>`).join('');
+  }
+  updateParentOptions();
+  ownerTypeSelect.addEventListener('change', updateParentOptions);
+  customerSelect.addEventListener('change', updateParentOptions);
+
   function updateSiteOptions(customerId) {
     if (!customerId) {
       siteSelect.innerHTML = '<option value="">-- No specific site --</option>';
@@ -218,11 +253,16 @@ export function renderAssetForm(container, params) {
       recoveryRate: parseFloat(container.querySelector('#recoveryRate')?.value || 0),
       serviceIntervalMonths: parseInt(container.querySelector('#serviceIntervalMonths').value || 6),
       currentMeter: parseFloat(container.querySelector('#currentMeter').value || 0),
-      meterUnit: container.querySelector('#meterUnit').value
+      meterUnit: container.querySelector('#meterUnit').value,
+      parentAssetId: container.querySelector('#parentAssetId').value || ''
     };
 
     if (!data.name) {
       await showAlert('Asset Name is required.', { title: 'Missing Information' });
+      return;
+    }
+    if (!isValidParent(allAssets, { id: asset.id, ownerType: data.ownerType, customerId: data.customerId }, data.parentAssetId)) {
+      await showAlert('An asset can only sit inside another asset with the same owner, and never inside one of its own components.', { title: 'Check "Part Of"' });
       return;
     }
 
@@ -235,6 +275,8 @@ export function renderAssetForm(container, params) {
 
     if (params.customerId) {
       router.navigate(`/people/${params.customerId}?tab=assets`);
+    } else if (presetParent) {
+      router.navigate(`/assets/${presetParent.id}`);
     } else {
       router.navigate('/assets');
     }

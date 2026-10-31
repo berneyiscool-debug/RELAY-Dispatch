@@ -20,6 +20,7 @@ import { resolveQuote } from './quotes.js';
 import { parseDate, todayLocalISO } from './dates.js';
 import { ASSET_CONDITIONS } from '../utils/assetCondition.js';
 import { complianceDueKey, markComplianceDone } from '../utils/assetCompliance.js';
+import { isValidParent } from '../utils/assetHierarchy.js';
 
 export const ASSET_TYPES = ['Vehicle', 'Plant & Equipment', 'Specialized Tool', 'Fixed Asset (HVAC/Solar/Fire)', 'Other'];
 export const ASSET_STATUSES = ['Active', 'In Maintenance', 'Commissioning', 'Decommissioned', 'Lost/Stolen'];
@@ -80,7 +81,16 @@ const assetFields = {
   meterUnit: enumOf(METER_UNITS, 'What the meter counts: hours (hrs) or kilometres (kmls).'),
   currentMeter: num('Current meter reading.'),
   assignedTo: str('Staff member the asset is assigned to, e.g. the driver of a van.'),
+  partOf: str('The asset this one sits inside (name, serial or id), e.g. the switchboard a breaker is in. Pass "none" to make it top-level.'),
 };
+
+/** Check a new parent against the asset's (resulting) owner; throws when it can't hold it. */
+function checkParent(asset) {
+  if (!asset.parentAssetId) return;
+  if (!isValidParent(store.getAll('assets') || [], asset, asset.parentAssetId)) {
+    throw invalidInput('That asset can\'t contain this one: it must have the same owner, and an asset can\'t sit inside one of its own components.');
+  }
+}
 
 function fieldPatch(input) {
   const patch = ownerPatch(input);
@@ -91,6 +101,10 @@ function fieldPatch(input) {
   if (input.serviceIntervalMonths != null) patch.serviceIntervalMonths = input.serviceIntervalMonths;
   if (input.currentMeter != null) patch.currentMeter = input.currentMeter;
   if (input.assignedTo != null) patch.assignedToId = findTechnician(input.assignedTo)?.id || '';
+  if (input.partOf != null) {
+    const ref = String(input.partOf).trim();
+    patch.parentAssetId = !ref || ref.toLowerCase() === 'none' ? '' : resolveAsset(ref).id;
+  }
   return patch;
 }
 
@@ -104,7 +118,7 @@ defineAction({
   summarize: (input, result) => `Registered asset ${result.asset.name}${result.asset.customerName ? ` for ${result.asset.customerName}` : ''}.`,
   artifacts: (result) => [{ label: result.asset.name, path: `/assets/${result.asset.id}` }],
   async run(input) {
-    const asset = store.create('assets', {
+    const record = {
       name: input.name.trim(),
       description: '',
       serial: '',
@@ -123,7 +137,9 @@ defineAction({
       meterUnit: 'hrs',
       ...fieldPatch(input),
       logs: [],
-    });
+    };
+    checkParent(record);
+    const asset = store.create('assets', record);
     logActivity({ type: 'asset_created', text: `Asset ${asset.name} registered.`, recordType: 'asset', recordId: asset.id });
     return { asset };
   },
@@ -147,6 +163,10 @@ defineAction({
     if (input.status != null) patch.status = input.status;
     const fields = Object.keys(patch);
     if (!fields.length) throw invalidInput('Nothing to update — pass at least one new value.');
+    // A move to another owner or parent must still leave a valid tree.
+    if (patch.parentAssetId !== undefined || patch.ownerType !== undefined || patch.customerId !== undefined) {
+      checkParent({ ...asset, ...patch });
+    }
     await store.update('assets', asset.id, patch);
     logActivity({ type: 'asset_updated', text: `Asset ${patch.name || asset.name} updated (${fields.join(', ')}).`, recordType: 'asset', recordId: asset.id });
     if (patch.currentMeter != null) await checkPlans();

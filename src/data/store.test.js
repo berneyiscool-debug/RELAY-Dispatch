@@ -607,7 +607,8 @@ describe('DataStore', () => {
       const asset = {
         id: 'a1', name: 'Hino van', description: 'Service van', identifier: 'ABC123', serial: 'ABC123',
         site: 'Depot', installDate: '2024-03-01', serviceIntervalMonths: 6, meterUnit: 'kmls', assignedToId: 'tech_1',
-        warrantyExpiry: '2027-03-01', compliance: [{ id: 'cmp_1', name: 'Registration', intervalMonths: 12, lastDone: '2026-03-01', dueDate: null, reference: 'XQG-123' }]
+        warrantyExpiry: '2027-03-01', compliance: [{ id: 'cmp_1', name: 'Registration', intervalMonths: 12, lastDone: '2026-03-01', dueDate: null, reference: 'XQG-123' }],
+        parentAssetId: 'a0'
       };
       const assetRow = store.denormalizeRecord({ ...asset }, 'assets');
       assert.strictEqual(assetRow.install_date, '2024-03-01');

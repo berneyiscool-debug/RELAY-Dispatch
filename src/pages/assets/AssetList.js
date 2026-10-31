@@ -95,10 +95,14 @@ export function renderAssetList(container, params) {
 
   // Next service comes from the asset's maintenance plans, as on the asset page.
   const plans = store.getAll('maintenancePlans') || [];
+  const assetById = new Map(allAssets.map(a => [a.id, a]));
   const today = todayLocalISO();
 
   const columns = [
-    { key: 'name', label: 'Asset', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
+    { key: 'name', label: 'Asset', render: (r) => {
+        const parent = r.parentAssetId ? assetById.get(r.parentAssetId) : null;
+        return `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>${parent ? `<div class="text-tertiary" style="font-size:11px">in ${escapeHTML(parent.name || 'another asset')}</div>` : ''}`;
+      }, width: '24%' },
     { key: 'owner', label: 'Owner', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
           const cust = store.getById('customers', r.customerId);
