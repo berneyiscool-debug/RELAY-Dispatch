@@ -19,6 +19,7 @@ import { findTechnician } from './leads.js';
 import { resolveQuote } from './quotes.js';
 import { parseDate, todayLocalISO } from './dates.js';
 import { ASSET_CONDITIONS } from '../utils/assetCondition.js';
+import { complianceDueKey, markComplianceDone } from '../utils/assetCompliance.js';
 
 export const ASSET_TYPES = ['Vehicle', 'Plant & Equipment', 'Specialized Tool', 'Fixed Asset (HVAC/Solar/Fire)', 'Other'];
 export const ASSET_STATUSES = ['Active', 'In Maintenance', 'Commissioning', 'Decommissioned', 'Lost/Stolen'];
@@ -74,6 +75,7 @@ const assetFields = {
   customer: str('The customer who owns it, when it is equipment you service for them. Leave out for the business\'s own vehicles, plant and tools.'),
   site: str('Which of the customer\'s sites it is installed at.'),
   installDate: dateish('Date it was installed or bought.'),
+  warrantyExpiry: dateish('Date its warranty runs out.'),
   serviceIntervalMonths: int('Months between routine services.'),
   meterUnit: enumOf(METER_UNITS, 'What the meter counts: hours (hrs) or kilometres (kmls).'),
   currentMeter: num('Current meter reading.'),
@@ -85,6 +87,7 @@ function fieldPatch(input) {
   ['description', 'type', 'meterUnit'].forEach((key) => { if (input[key] != null) patch[key] = input[key]; });
   if (input.serial != null) { patch.serial = input.serial; patch.identifier = input.serial; }
   if (input.installDate != null) patch.installDate = parseDate(input.installDate);
+  if (input.warrantyExpiry != null) patch.warrantyExpiry = parseDate(input.warrantyExpiry);
   if (input.serviceIntervalMonths != null) patch.serviceIntervalMonths = input.serviceIntervalMonths;
   if (input.currentMeter != null) patch.currentMeter = input.currentMeter;
   if (input.assignedTo != null) patch.assignedToId = findTechnician(input.assignedTo)?.id || '';
@@ -290,6 +293,56 @@ defineAction({
     await store.delete('maintenancePlans', plan.id);
     logActivity({ type: 'maintenance_plan', text: `Maintenance plan "${plan.name}" deleted from ${asset.name}${reason ? ` — ${reason}` : ''}.`, recordType: 'asset', recordId: asset.id });
     return { summary: `Deleted the ${plan.name} plan from ${asset.name}.`, asset: { id: asset.id, name: asset.name }, plan: { id: plan.id, name: plan.name }, reason: reason || null };
+  },
+});
+
+defineAction({
+  name: 'set_compliance_check',
+  title: 'Set a compliance check',
+  description:
+    'Track a recurring compliance check on an asset (test & tag, emergency lighting, fire equipment inspection, registration…): how often it is due and when it was last done, or a fixed due date. A check with the same name on the asset is updated. Pass done: true to record it done today, which moves it on a period and logs an Inspection.',
+  permission: { module: 'Assets', key: 'edit' },
+  inputSchema: objectSchema(
+    {
+      asset: str('Asset name, serial, customer or id.'),
+      name: str('The check, e.g. "Test & tag (AS/NZS 3760)".'),
+      intervalMonths: int('Months between checks.', { minimum: 1 }),
+      lastDone: dateish('When it was last done.'),
+      dueDate: dateish('A fixed due date, instead of working it out from the interval.'),
+      reference: str('Certificate or tag number.'),
+      done: bool('true to record the check as done today.'),
+    },
+    ['asset', 'name']
+  ),
+  summarize: (input, result) => result.summary,
+  artifacts: (result) => [{ label: result.asset.name, path: `/assets/${result.asset.id}` }],
+  async run(input) {
+    const asset = resolveAsset(input.asset);
+    const list = [...(asset.compliance || [])];
+    const at = list.findIndex((item) => String(item.name || '').toLowerCase() === input.name.trim().toLowerCase());
+    const existing = at >= 0 ? list[at] : null;
+    let item = {
+      id: existing?.id || `cmp_${store.generateId()}`,
+      name: input.name.trim(),
+      intervalMonths: input.intervalMonths ?? existing?.intervalMonths ?? null,
+      lastDone: input.lastDone != null ? parseDate(input.lastDone) : (existing?.lastDone ?? null),
+      dueDate: input.dueDate != null ? parseDate(input.dueDate) : (existing?.dueDate ?? null),
+      reference: input.reference ?? existing?.reference ?? '',
+    };
+    const today = todayLocalISO();
+    if (input.done) {
+      if (!item.intervalMonths) throw invalidInput('Recording a check as done needs intervalMonths, so the next due date can be worked out.');
+      item = markComplianceDone(item, today);
+    }
+    if (!complianceDueKey(item)) throw invalidInput('Give a dueDate, or lastDone with intervalMonths, so the check has a due date.');
+    if (at >= 0) list[at] = item; else list.push(item);
+
+    const patch = { compliance: list };
+    if (input.done) patch.logs = [...(asset.logs || []), { date: today, type: 'Inspection', meter: parseFloat(asset.currentMeter) || 0, cost: 0, notes: `${item.name} completed` }];
+    await store.update('assets', asset.id, patch);
+    logActivity({ type: 'asset_updated', text: `Compliance check "${item.name}" ${input.done ? 'recorded done' : existing ? 'updated' : 'added'} on ${asset.name}.`, recordType: 'asset', recordId: asset.id });
+    const due = complianceDueKey(item);
+    return { summary: `${input.done ? 'Recorded' : existing ? 'Updated' : 'Added'} ${item.name} on ${asset.name} — next due ${due}.`, asset: store.getById('assets', asset.id), item, due };
   },
 });
 

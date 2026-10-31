@@ -8,7 +8,8 @@ import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
-import { assetServiceStatus } from '../../utils/maintenanceSchedule.js';
+import { assetServiceStatus, isRetiredAsset } from '../../utils/maintenanceSchedule.js';
+import { hasComplianceDue, warrantyStatus } from '../../utils/assetCompliance.js';
 import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 
 export function renderAssetList(container, params) {
@@ -29,6 +30,11 @@ export function renderAssetList(container, params) {
   }
 
   let assets = customerId ? allAssets.filter(a => a.customerId === customerId) : allAssets;
+  // A compliance check overdue or due within 30 days, or the warranty
+  // running out, on an asset that's still in service.
+  const complianceToday = todayLocalISO();
+  const complianceDue = (a) => !isRetiredAsset(a)
+    && (hasComplianceDue(a, complianceToday) || warrantyStatus(a, complianceToday).state === 'expiring');
 
   let activeFilter = 'all';
   let searchTerm = '';
@@ -46,6 +52,8 @@ export function renderAssetList(container, params) {
       result = result.filter(a => a.ownerType === 'Customer');
     } else if (activeFilter === 'In Maintenance') {
       result = result.filter(a => a.status === 'In Maintenance');
+    } else if (activeFilter === 'Compliance Due') {
+      result = result.filter(complianceDue);
     }
 
     // Apply search. A scanned label carries the serial, or the record id for
@@ -73,6 +81,7 @@ export function renderAssetList(container, params) {
           <option value="My Business">My Business (${assets.filter(a => a.ownerType === 'Business').length})</option>
           <option value="Customer Owned">Customer Owned (${assets.filter(a => a.ownerType === 'Customer').length})</option>
           <option value="In Maintenance">In Maintenance (${assets.filter(a => a.status === 'In Maintenance').length})</option>
+          <option value="Compliance Due">Compliance Due (${assets.filter(complianceDue).length})</option>
         </select>
         <button class="btn btn-primary btn-sm" id="btn-new-asset" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
           <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Add Asset</span>
