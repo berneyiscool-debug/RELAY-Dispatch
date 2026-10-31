@@ -206,6 +206,7 @@ defineAction({
       meterInterval: num('Meter plans: hours or km between services.'),
       lastServiceMeter: num('Meter plans: the reading at the last service. Defaults to the current reading.'),
       priority: int('1-10, higher wins when two plans fall due together. Defaults to 5.'),
+      technician: str('Technician the raised job is assigned to by default.'),
       status: enumOf(['Active', 'Paused'], 'Defaults to Active.'),
     },
     ['asset', 'name']
@@ -220,6 +221,9 @@ defineAction({
     const quoteRef = input.quote || null;
     if (!quoteRef && !existing?.quoteId) throw invalidInput('A maintenance plan needs a blueprint quote — the priced standard service. Create one with create_quote first if there is none.');
     const quoteId = quoteRef ? resolveQuote(quoteRef).id : existing.quoteId;
+
+    const technician = input.technician ? findTechnician(input.technician) : null;
+    if (input.technician && !technician) throw notFound('technician', input.technician);
 
     const triggerType = input.trigger || existing?.triggerType || 'Calendar';
     if (triggerType === 'Meter' && !(input.meterInterval || existing?.meterInterval)) {
@@ -236,6 +240,7 @@ defineAction({
       collisionMerging: existing?.collisionMerging ?? false,
       mergeTasks: existing?.mergeTasks ?? false,
       taskTemplateId: existing?.taskTemplateId ?? null,
+      defaultTechnicianId: technician ? technician.id : (existing?.defaultTechnicianId ?? null),
       frequency: triggerType === 'Calendar' ? (input.frequency || existing?.frequency || 'Quarterly') : null,
       nextServiceDate: triggerType === 'Calendar'
         ? (input.nextServiceDate ? parseDate(input.nextServiceDate) : (existing?.nextServiceDate || todayLocalISO()))

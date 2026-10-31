@@ -26,11 +26,11 @@ export const KPI_TABLES = {
   technicians:      { table: 'profiles', columns: 'id,role,pay_rate,deactivated' },
   jobMaterials:     { table: 'job_materials', columns: 'id,job_id,quantity,unit_cost,total_cost,date' },
   purchaseOrders:   { table: 'purchase_orders', columns: 'id,job_id,status,total,issue_date' },
-  maintenancePlans: { table: 'maintenance_plans', columns: 'id,asset_id,status,next_service_date,trigger_type' },
-  assets:           { table: 'assets', columns: 'id,status' },
+  maintenancePlans: { table: 'maintenance_plans', columns: 'id,asset_id,status,next_service_date,trigger_type,meter_interval,last_triggered_meter' },
+  assets:           { table: 'assets', columns: 'id,status,current_meter' },
 };
 
-const NUMERIC = new Set(['subtotal', 'tax', 'total', 'payRate', 'materialCost', 'quantity', 'unitCost', 'totalCost', 'hours', 'startHour', 'endHour', 'creditLimit']);
+const NUMERIC = new Set(['subtotal', 'tax', 'total', 'payRate', 'materialCost', 'quantity', 'unitCost', 'totalCost', 'hours', 'startHour', 'endHour', 'creditLimit', 'meterInterval', 'lastTriggeredMeter', 'currentMeter']);
 
 const camel = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 

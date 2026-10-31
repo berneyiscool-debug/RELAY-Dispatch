@@ -453,13 +453,37 @@ describe('extended cards', () => {
   });
 
   test('maintenance due counts the next 7 days and calls out overdue plans', () => {
-    const plan = (nextServiceDate, status = 'Active') => ({ assetId: 'a', status, nextServiceDate });
-    const r = run('maintenance_due', { maintenancePlans: [
+    const plan = (nextServiceDate, status = 'Active') => ({ assetId: 'a', status, triggerType: 'Calendar', nextServiceDate });
+    const r = run('maintenance_due', { assets: [{ id: 'a', status: 'Active' }], maintenancePlans: [
       plan('2026-10-08'), plan('2026-10-14'), plan('2026-10-15'), plan('2026-10-01'), plan('2026-10-02', 'Paused'), plan(null),
     ] }, { now });
     assert.equal(r.maintenance_due.value, 2);
     assert.equal(kpiSubline('maintenance_due', r.maintenance_due), '+1 overdue');
     assert.equal(r.maintenance_due.extra.subAlert, true);
+  });
+
+  // Same rule as the asset list: meter plans by reading, retired assets never.
+  test('maintenance due counts meter plans near their milestone and skips retired assets', () => {
+    const meter = (assetId, lastTriggeredMeter) => ({ assetId, status: 'Active', triggerType: 'Meter', meterInterval: 500, lastTriggeredMeter });
+    const r = run('maintenance_due', {
+      assets: [
+        { id: 'van', status: 'Active', currentMeter: 980 },
+        { id: 'gen', status: 'Active', currentMeter: 1200 },
+        { id: 'old', status: 'Decommissioned', currentMeter: 9999 },
+        { id: 'lost', status: 'Lost/Stolen' },
+      ],
+      maintenancePlans: [
+        meter('van', 500),   // 20 to go of 500: due
+        meter('gen', 500),   // past 1000: overdue
+        meter('van', 0),     // past 500: overdue
+        meter('old', 0),
+        { assetId: 'lost', status: 'Active', triggerType: 'Calendar', nextServiceDate: '2026-10-01' },
+        { assetId: 'gone', status: 'Active', triggerType: 'Calendar', nextServiceDate: '2026-10-01' },
+        { assetId: 'van', status: 'Active', triggerType: 'Meter', meterInterval: 0, lastTriggeredMeter: 0 },
+      ],
+    }, { now });
+    assert.equal(r.maintenance_due.value, 1);
+    assert.equal(r.maintenance_due.extra.overdue, 2);
   });
 
   test('durations under a day read in hours', () => {

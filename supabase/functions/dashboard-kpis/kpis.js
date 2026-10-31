@@ -389,14 +389,36 @@ export function revenueByCustomer(invoices, r) {
   return m;
 }
 
-// Active calendar plans due in the next 7 days, or already overdue.
-function maintenanceStatus(plan, today) {
+// Retired assets raise no maintenance (src/utils/maintenanceSchedule.js,
+// RETIRED_ASSET_STATUSES; this file takes no imports).
+const RETIRED_ASSET_STATUSES = ['Decommissioned', 'Lost/Stolen'];
+// A meter plan within this share of its interval counts as due, as on the
+// asset list (maintenanceSchedule.js, DUE_SOON_METER_SHARE).
+const METER_DUE_SHARE = 0.1;
+
+// Active plans due in the next 7 days, or already overdue: calendar plans by
+// date, meter plans by the asset's reading against the next milestone. A plan
+// on a retired or deleted asset counts for nothing.
+function maintenanceStatus(plan, today, assetsById) {
   if (plan.status && plan.status !== 'Active') return null;
+  const asset = assetsById ? assetsById.get(String(plan.assetId)) : null;
+  if (assetsById && (!asset || RETIRED_ASSET_STATUSES.includes(asset.status))) return null;
+
+  if (plan.triggerType === 'Meter') {
+    const interval = num(plan.meterInterval);
+    if (!asset || interval <= 0) return null;
+    const remaining = num(plan.lastTriggeredMeter) + interval - num(asset.currentMeter);
+    if (remaining <= 0) return 'overdue';
+    return remaining <= interval * METER_DUE_SHARE ? 'due' : null;
+  }
+
   const d = toDate(plan.nextServiceDate || plan.nextDue);
   if (!d) return null;
   if (d < today) return 'overdue';
   return d < addDays(today, 7) ? 'due' : null;
 }
+
+const assetIndex = (assets) => new Map((assets || []).map(a => [String(a.id), a]));
 
 export const KPI_FILTERS = {
   invoices: {
@@ -538,7 +560,8 @@ export const KPI_FILTERS = {
     'maintenance-due': {
       label: 'Maintenance due', periodic: false, needs: ['assets', 'maintenancePlans'],
       build: (d, { today }) => {
-        const ids = new Set((d.maintenancePlans || []).filter(p => maintenanceStatus(p, today)).map(p => String(p.assetId)));
+        const assetsById = assetIndex(d.assets);
+        const ids = new Set((d.maintenancePlans || []).filter(p => maintenanceStatus(p, today, assetsById)).map(p => String(p.assetId)));
         return a => ids.has(String(a.id));
       },
     },
@@ -1062,15 +1085,16 @@ export const KPIS = {
   },
   maintenance_due: {
     group: 'customers', label: 'Maintenance due', type: 'snapshot', format: 'count', upIsGood: false, launch: false,
-    description: 'Plans due in the next 7 days',
+    description: 'Plans due in the next 7 days, or near their meter milestone',
     empty: 'Set up a maintenance plan to see this',
     needs: ['maintenancePlans', 'assets'],
     perm: ['Assets', 'view'],
-    compute: ({ maintenancePlans = [] }, { today }) => {
+    compute: ({ maintenancePlans = [], assets = [] }, { today }) => {
       if (!maintenancePlans.length) return null;
+      const assetsById = assetIndex(assets);
       let due = 0, overdue = 0;
       maintenancePlans.forEach(p => {
-        const s = maintenanceStatus(p, today);
+        const s = maintenanceStatus(p, today, assetsById);
         if (s === 'due') due++;
         else if (s === 'overdue') overdue++;
       });
