@@ -122,7 +122,11 @@ const DUE_SOON_METER_SHARE = 0.1;
 
 const STATE_RANK = { overdue: 0, 'due-soon': 1, ok: 2 };
 
-function planServiceStatus(plan, asset, todayKey) {
+/**
+ * One plan's next service: state, and the date (calendar) or reading (meter)
+ * it falls due at. Null for a plan with no usable date or interval.
+ */
+export function planServiceStatus(plan, asset, todayKey) {
   if (plan.triggerType === 'Calendar') {
     const dueKey = toDateKey(plan.nextServiceDate);
     if (!dueKey) return null;

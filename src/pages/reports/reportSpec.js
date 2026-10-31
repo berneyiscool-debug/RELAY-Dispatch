@@ -6,6 +6,8 @@
 // export draws these blocks, and the export dialog lists them so the user can
 // pick exactly what goes in. No DOM, no store: everything comes in as arguments.
 
+import { buildAssetReport, SPEND_TYPES } from '../../utils/assetReport.js';
+
 export const REPORTS = [
   { id: 'overview', label: 'Business Overview' },
   { id: 'revenue', label: 'Revenue & Profit' },
@@ -30,9 +32,30 @@ export const hrs = (n, digits = 1) => `${(Number(n) || 0).toFixed(digits)} hrs`;
 
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const dayLabel = (v) => {
-  const d = v instanceof Date ? v : (v ? new Date(v) : null);
+  // A plain 'YYYY-MM-DD' is a local day; new Date() would read it as UTC.
+  const key = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').map(Number) : null;
+  const d = v instanceof Date ? v : key ? new Date(key[0], key[1] - 1, key[2]) : (v ? new Date(v) : null);
   return d && !isNaN(d) ? d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 };
+
+/** Asset report figures for a buildReport() result: spend in its range, what's due from its today. */
+export function assetReportFor(r) {
+  return buildAssetReport(r.scoped, r.range, isoDay(r.ctx.today));
+}
+
+/** The asset report's CSV: one row per asset, its spend in the range by type, and when it is next due. */
+export const ASSET_CSV_HEADERS = ['Asset', 'Serial', 'Customer', 'Status', 'Service', 'Repair', 'Inspection', 'Other', 'Total spend', 'Next due', 'Due status'];
+export function assetCsvRows(r) {
+  const ar = assetReportFor(r);
+  const due = new Map();
+  ar.plansDue.forEach(p => { if (!due.has(p.asset.id)) due.set(p.asset.id, p); });
+  return ar.rows.map(x => {
+    const p = due.get(x.asset.id);
+    return [x.asset.name || '', x.asset.serial || '', x.asset.customerName || '', x.asset.status || 'Active',
+      x.Service, x.Repair, x.Inspection, x.Other, x.total,
+      p ? (p.dueKey || `${p.meterTarget} ${x.asset.meterUnit || 'hrs'}`) : '', p ? (p.state === 'overdue' ? 'Overdue' : 'Due soon') : ''];
+  });
+}
 
 // ── Shared record helpers ────────────────────────────────────────────────────
 
@@ -343,21 +366,37 @@ function blocksFor(id, r) {
     }
 
     case 'assets_maintenance': {
-      const costs = d.assets.map(a => [a.name || '', assetServiceCost(a)]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+      const ar = assetReportFor(r);
+      const assetById = new Map(d.assets.map(a => [a.id, a]));
       const logs = [];
       d.assets.forEach(a => (a.logs || []).forEach(l => { if (l.type === 'Service') logs.push({ ...l, asset: a }); }));
       logs.sort((a, b) => new Date(b.date) - new Date(a.date));
+      const dueLabel = (p) => (p.dueKey ? dayLabel(p.dueKey) : `at ${p.meterTarget} ${p.asset.meterUnit || 'hrs'}`);
       return [
         kpis('headline', 'Headline figures', [
           { label: 'Total assets', value: String(d.assets.length) },
           { label: 'Active agreements', value: String(d.maintenancePlans.filter(pl => pl.status === 'Active').length) },
-          { label: 'Service actions logged', value: String(logs.length) },
-          { label: 'Total service cost', value: wholeMoney(costs.reduce((s, [, c]) => s + c, 0)) },
+          { label: 'Maintenance spend', value: wholeMoney(ar.total), sub: 'logged in this range' },
+          { label: 'Spent on repairs', value: pct(ar.repairShare, 0), sub: ar.total > 0 ? `${wholeMoney(ar.byType.Repair)} of breakdowns` : '' },
+          { label: 'Plans due or overdue', value: String(ar.plansDue.length), sub: ar.plansDue.filter(p => p.state === 'overdue').length ? `${ar.plansDue.filter(p => p.state === 'overdue').length} overdue` : '' },
+          { label: 'Compliance due', value: String(ar.complianceDue.length) },
         ]),
+        chart('spend-by-type', 'Spend by type', moneyRows(SPEND_TYPES.map(t => [t, ar.byType[t]]).filter(([, v]) => v > 0))),
+        table('cost-per-asset', 'Cost per asset', ['Asset', 'Serial', R('Service'), R('Repair'), R('Inspection'), R('Other'), R('Total')],
+          ar.rows.filter(x => x.total > 0).map(x => [x.asset.name || '', x.asset.serial || '', money(x.Service), money(x.Repair), money(x.Inspection), money(x.Other), money(x.total)]),
+          'No maintenance spend logged in this range'),
+        table('coming-due', 'Plans coming due', ['Plan', 'Asset', 'Customer', 'Due', 'Status'],
+          ar.plansDue.map(p => [p.plan.name || '', p.asset.name || '', p.asset.customerName || '', dueLabel(p), p.state === 'overdue' ? 'Overdue' : 'Due soon']),
+          'Nothing due in the next 30 days'),
+        table('compliance-due', 'Compliance coming due', ['Check', 'Asset', 'Customer', 'Due', 'Status'],
+          ar.complianceDue.map(c => [c.item.name || '', c.asset.name || '', c.asset.customerName || '', dayLabel(c.dueKey), c.state === 'overdue' ? 'Overdue' : 'Due soon']),
+          'No compliance checks due'),
         table('agreements', 'Maintenance agreements', ['Agreement plan', 'Asset', 'Customer', R('Priority'), 'Next due'],
-          d.maintenancePlans.map(pl => [pl.name || '', pl.assetName || '', pl.customerName || '', String(pl.priority || 5), pl.nextServiceDate || pl.nextDue || '']),
+          d.maintenancePlans.map(pl => {
+            const asset = assetById.get(pl.assetId);
+            return [pl.name || '', asset?.name || '', asset?.customerName || '', String(pl.priority || 5), pl.nextServiceDate ? dayLabel(pl.nextServiceDate) : (pl.triggerType === 'Meter' ? 'By meter' : '')];
+          }),
           'No maintenance plans'),
-        chart('cost-by-asset', 'Service cost by asset', moneyRows(costs.slice(0, 10))),
         table('history', 'Service history', ['Date', 'Asset', 'Serial', 'Technician', 'Job', R('Cost'), 'Notes'],
           logs.map(l => [dayLabel(l.date), l.asset.name || '', l.asset.serial || '', l.technicianName || '', l.jobNumber || '', money(l.cost), l.notes || '']),
           'No service logs registered yet'),
