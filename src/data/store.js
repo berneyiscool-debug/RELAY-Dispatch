@@ -183,6 +183,7 @@ const TABLE_COLUMNS = {
     "assigned_to_id",
     "warranty_expiry",
     "compliance",
+    "parent_asset_id",
     "created_at",
     "updated_at"
   ],
@@ -2110,6 +2111,7 @@ class DataStore {
       if (record.meter_unit !== undefined) { record.meterUnit = record.meter_unit; delete record.meter_unit; }
       if (record.assigned_to_id !== undefined) { record.assignedToId = record.assigned_to_id || ''; delete record.assigned_to_id; }
       if (record.warranty_expiry !== undefined) { record.warrantyExpiry = record.warranty_expiry || ''; delete record.warranty_expiry; }
+      if (record.parent_asset_id !== undefined) { record.parentAssetId = record.parent_asset_id || ''; delete record.parent_asset_id; }
       if (record.compliance !== undefined) { record.compliance = Array.isArray(record.compliance) ? record.compliance : []; }
     }
     if (collection === 'maintenancePlans') {
@@ -2864,6 +2866,7 @@ class DataStore {
       if (record.meterUnit !== undefined) { record.meter_unit = record.meterUnit; delete record.meterUnit; }
       if (record.assignedToId !== undefined) { record.assigned_to_id = record.assignedToId || null; delete record.assignedToId; }
       if (record.warrantyExpiry !== undefined) { record.warranty_expiry = record.warrantyExpiry || null; delete record.warrantyExpiry; }
+      if (record.parentAssetId !== undefined) { record.parent_asset_id = record.parentAssetId || null; delete record.parentAssetId; }
     }
     if (collection === 'maintenancePlans') {
       if (record.triggerType !== undefined) { record.trigger_type = record.triggerType; delete record.triggerType; }
@@ -3948,6 +3951,12 @@ class DataStore {
     (CASCADES[collection] || []).forEach(([childCol, fk]) => {
       (this.cache[childCol] || []).filter(c => c[fk] === id).forEach(c => this.delete(childCol, c.id));
     });
+    // An asset's components are assets in their own right: they move up to
+    // the top level rather than going with it.
+    if (collection === 'assets') {
+      (this.cache.assets || []).filter(a => a.parentAssetId === id && a.id !== id)
+        .forEach(a => this.update('assets', a.id, { parentAssetId: '' }));
+    }
   }
 
   delete(collection, id) {

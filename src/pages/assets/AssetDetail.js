@@ -12,6 +12,7 @@ import { assetServiceStatus, planLeadDays, DEFAULT_LEAD_DAYS } from '../../utils
 import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 import { ASSET_CONDITIONS, CONDITION_BADGES, latestCondition } from '../../utils/assetCondition.js';
 import { COMPLIANCE_PRESETS, complianceItems, warrantyStatus, markComplianceDone } from '../../utils/assetCompliance.js';
+import { ancestorsOf, childrenOf } from '../../utils/assetHierarchy.js';
 import { showModal } from '../../components/Modal.js';
 
 export function renderAssetDetail(container, { id, tab }) {
@@ -58,6 +59,10 @@ export function renderAssetDetail(container, { id, tab }) {
     // Same rule as the Service column on the asset list.
     const serviceStatus = assetServiceStatus(currentAsset, plans, todayLocalISO());
     const condition = latestCondition(currentAsset);
+    const allAssets = store.getAll('assets') || [];
+    const ancestors = ancestorsOf(allAssets, currentAsset);
+    const components = childrenOf(allAssets, currentAsset.id);
+    const allPlans = store.getAll('maintenancePlans') || [];
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -86,6 +91,7 @@ export function renderAssetDetail(container, { id, tab }) {
                 ${r('Owner', currentAsset.customerId ? entityLink({ kind: 'customer', id: currentAsset.customerId, name: ownerName }) : escapeHTML(ownerName))}
                 ${r('Assigned To', escapeHTML(assigneeName))}
                 ${r('Location', escapeHTML(currentAsset.site || ''))}
+                ${ancestors.length ? r('Part Of', ancestors.map(a => `<a href="#/assets/${encodeURIComponent(a.id)}" class="cell-link">${escapeHTML(a.name || 'Asset')}</a>`).join(' › ')) : ''}
                 ${r('Next Service', serviceStatusHtml(serviceStatus, currentAsset))}
                 ${r('Condition', condition ? `<span class="badge ${CONDITION_BADGES[condition.condition]}">${escapeHTML(condition.condition)}</span>${condition.date ? ` <span class="text-tertiary" style="font-size:12px">${escapeHTML(formatLocalDate(condition.date))}</span>` : ''}` : '')}
                 ${hasActivePlan ? '' : r('Interval', currentAsset.serviceIntervalMonths ? `${currentAsset.serviceIntervalMonths} Months` : '')}
@@ -106,6 +112,25 @@ export function renderAssetDetail(container, { id, tab }) {
           ` : ''}
 
           ${renderComplianceCard(currentAsset)}
+
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+              <h4>Components</h4>
+              <button class="btn btn-sm btn-ghost" id="btn-add-component"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Component</button>
+            </div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:8px; font-size:13px">
+              ${components.length === 0 ? `<div class="text-tertiary" style="font-size:12px">Nothing is recorded inside this asset. Add the parts you service separately, e.g. breakers in a switchboard.</div>` : components.map(c => `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+                  <span style="min-width:0">
+                    <a href="#/assets/${encodeURIComponent(c.id)}" class="cell-link font-medium">${escapeHTML(c.name || 'Asset')}</a>
+                    ${c.serial ? `<span class="text-tertiary" style="font-size:11px; font-family:var(--font-mono)"> ${escapeHTML(c.serial)}</span>` : ''}
+                    ${childrenOf(allAssets, c.id).length ? `<span class="text-tertiary" style="font-size:11px"> · ${childrenOf(allAssets, c.id).length} inside</span>` : ''}
+                  </span>
+                  ${serviceStatusHtml(assetServiceStatus(c, allPlans, todayLocalISO()), c)}
+                </div>
+              `).join('')}
+            </div>
+          </div>
         </div>
 
         <div class="card" style="grid-column: span 2">
@@ -481,6 +506,7 @@ export function renderAssetDetail(container, { id, tab }) {
     });
 
     container.querySelector('#btn-add-compliance')?.addEventListener('click', () => openComplianceModal());
+    container.querySelector('#btn-add-component')?.addEventListener('click', () => router.navigate(`/assets/new/edit?parent=${encodeURIComponent(id)}`));
     const complianceById = (itemId) => (store.getById('assets', id).compliance || []).find(x => x.id === itemId);
     container.querySelectorAll('.btn-compliance-edit').forEach(btn => {
       btn.addEventListener('click', () => { const item = complianceById(btn.dataset.id); if (item) openComplianceModal(item); });
