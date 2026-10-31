@@ -8,6 +8,10 @@ import { roundCurrency } from '../../utils/pricing.js';
 import { applyTheme } from '../../utils/theme.js';
 import { loadPortal, portalAction } from '../../utils/portalClient.js';
 import { getSessionUser } from '../auth/session.js';
+import { todayLocalISO, formatLocalDate } from '../../utils/dateUtils.js';
+import { assetServiceStatus } from '../../utils/maintenanceSchedule.js';
+import { latestCondition, CONDITION_BADGES } from '../../utils/assetCondition.js';
+import { complianceItems, warrantyStatus } from '../../utils/assetCompliance.js';
 export async function renderCustomerPortal(container, params) {
   const token = params.token;
 
@@ -232,6 +236,8 @@ export async function renderCustomerPortal(container, params) {
 
   // Staged request confirmation status
   let requestSubmitted = false;
+  // "Report a problem" on an asset opens the request form with it chosen.
+  let requestPreset = null;
 
   // `portalLastAccessed` used to be stamped here by saving the WHOLE customers
   // collection, which from this page meant writing one customer's partial cache back
@@ -1441,7 +1447,19 @@ export async function renderCustomerPortal(container, params) {
           
           // Get completed jobs/maintenance against this asset
           const maintenanceJobs = store.getAll('jobs').filter(j => j.assetId === asset.id && j.status === 'Completed');
-          const plans = store.getAll('maintenancePlans').filter(p => p.assetId === asset.id);
+          // Only plans that are running; the customer sees when service is next
+          // due, by the same rule as the office's asset list.
+          const allPlans = store.getAll('maintenancePlans') || [];
+          const plans = allPlans.filter(p => p.assetId === asset.id && p.status === 'Active');
+          const today = todayLocalISO();
+          const next = assetServiceStatus(asset, allPlans, today);
+          const unit = escapeHTML(asset.meterUnit || 'hrs');
+          const fmtDate = (key) => (key ? formatLocalDate(key, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+          const condition = latestCondition(asset);
+          const checks = complianceItems(asset, today).filter(c => c.state !== 'none');
+          const warranty = warrantyStatus(asset, today);
+          const assetBadge = asset.status === 'Active' || !asset.status ? 'badge-success' : (asset.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral');
+          const stateBadge = { overdue: ['badge-danger', 'Overdue'], 'due-soon': ['badge-warning', 'Due soon'], ok: ['badge-success', 'Up to date'] };
 
           return `
             <div class="portal-card" style="margin-bottom:0;">
@@ -1452,11 +1470,12 @@ export async function renderCustomerPortal(container, params) {
                   <div style="min-width:0; flex:1;">
                     <div style="display:flex; align-items:center; gap:8px;">
                       <strong style="font-size:15px; color:var(--text-primary);">${escapeHTML(asset.name)}</strong>
-                      <span class="badge badge-success">Active</span>
+                      <span class="badge ${assetBadge}">${escapeHTML(asset.status || 'Active')}</span>
                     </div>
-                    <div style="font-size:12px; color:var(--text-secondary); margin-top:4px; display:flex; align-items:center; gap:16px;">
+                    <div style="font-size:12px; color:var(--text-secondary); margin-top:4px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
                       <span>Serial: <strong>${escapeHTML(asset.serial || '—')}</strong></span>
-                      <span>Location: <strong>${escapeHTML(asset.site || 'Main Site')}</strong></span>
+                      <span>Location: <strong>${escapeHTML(asset.site || '—')}</strong></span>
+                      ${next.state in stateBadge ? `<span>Next service: <strong>${next.dueKey ? fmtDate(next.dueKey) : `at ${next.meterTarget} ${unit}`}</strong></span>` : ''}
                     </div>
                   </div>
                 </div>
@@ -1477,10 +1496,27 @@ export async function renderCustomerPortal(container, params) {
                         <div style="display:flex; flex-direction:column; gap:10px; font-size:12px;">
                           <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Identifier Code</span><strong>${escapeHTML(asset.identifier || asset.serial || '—')}</strong></div>
                           <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Asset Category</span><strong>${escapeHTML(asset.type || 'Equipment')}</strong></div>
-                          <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Current Meter</span><strong>${asset.currentMeter || 0} hrs</strong></div>
-                          <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Installation Site</span><strong>${escapeHTML(asset.site || 'Main Site')}</strong></div>
+                          <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Current Meter</span><strong>${parseFloat(asset.currentMeter) || 0} ${unit}</strong></div>
+                          <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Installation Site</span><strong>${escapeHTML(asset.site || '—')}</strong></div>
+                          ${condition ? `<div style="display:flex; justify-content:space-between; align-items:center;"><span style="color:var(--text-secondary);">Condition</span><span><span class="badge ${CONDITION_BADGES[condition.condition]}">${escapeHTML(condition.condition)}</span> <span style="color:var(--text-tertiary);">${fmtDate(condition.date)}</span></span></div>` : ''}
+                          ${warranty.dueKey ? `<div style="display:flex; justify-content:space-between;"><span style="color:var(--text-secondary);">Warranty</span><strong>${warranty.state === 'expired' ? 'Expired' : 'Until'} ${fmtDate(warranty.dueKey)}</strong></div>` : ''}
                         </div>
+                        <button type="button" class="btn btn-secondary btn-sm btn-report-asset" data-id="${escapeHTML(asset.id)}" style="margin-top:14px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+                          <span class="material-icons-outlined" style="font-size:16px;">report_problem</span> Report a problem
+                        </button>
                       </div>
+
+                      ${checks.length ? `
+                      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:16px;">
+                        <h4 style="margin-top:0; margin-bottom:12px; font-size:13px; font-weight:600; border-bottom:1px solid var(--border-color); padding-bottom:8px;">Compliance</h4>
+                        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
+                          ${checks.map(({ item, state, dueKey }) => `
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                              <span>${escapeHTML(item.name || 'Check')}<br><span style="color:var(--text-tertiary); font-size:11px;">Due ${fmtDate(dueKey)}</span></span>
+                              <span class="badge ${stateBadge[state][0]}">${stateBadge[state][1]}</span>
+                            </div>`).join('')}
+                        </div>
+                      </div>` : ''}
 
                       <!-- Active Maintenance Plans -->
                       <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:16px;">
@@ -1489,14 +1525,13 @@ export async function renderCustomerPortal(container, params) {
                           <div style="font-size:11px; color:var(--text-tertiary); text-align:center; padding:10px 0;">No active maintenance agreement linked.</div>
                         ` : plans.map(p => `
                           <div style="font-size:12px; display:flex; flex-direction:column; gap:6px;">
-                            <div style="display:flex; justify-content:space-between;"><strong>${escapeHTML(p.name)}</strong><span class="badge badge-success">${p.status}</span></div>
-                            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Trigger Type</span><strong>${p.triggerType}</strong></div>
+                            <div style="display:flex; justify-content:space-between;"><strong>${escapeHTML(p.name)}</strong><span class="badge badge-success">Active</span></div>
                             ${p.triggerType === 'Calendar' ? `
-                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Interval</span><strong>${p.frequency}</strong></div>
-                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Next Due Date</span><strong style="color:var(--color-primary);">${p.nextServiceDate}</strong></div>
+                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>How often</span><strong>${escapeHTML(p.frequency || '—')}</strong></div>
+                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Next due</span><strong style="color:var(--color-primary);">${fmtDate(p.nextServiceDate)}</strong></div>
                             ` : `
-                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Milestone</span><strong>Every ${p.meterInterval} hrs</strong></div>
-                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Target Meter</span><strong style="color:var(--color-primary);">${(parseFloat(p.lastTriggeredMeter || 0) + parseFloat(p.meterInterval)).toFixed(0)} hrs</strong></div>
+                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>How often</span><strong>Every ${escapeHTML(String(p.meterInterval))} ${unit}</strong></div>
+                              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);"><span>Next due at</span><strong style="color:var(--color-primary);">${(parseFloat(p.lastTriggeredMeter || 0) + parseFloat(p.meterInterval || 0)).toFixed(0)} ${unit}</strong></div>
                             `}
                           </div>
                         `).join('')}
@@ -1595,7 +1630,7 @@ export async function renderCustomerPortal(container, params) {
               <label class="form-label" style="font-weight:600;">Select Site (Optional)</label>
               <select class="form-select" name="siteName">
                 <option value="">-- General / No specific site --</option>
-                ${(customer.sites || []).map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)} ${s.address ? `(${escapeHTML(s.address)})` : ''}</option>`).join('')}
+                ${(customer.sites || []).map(s => `<option value="${escapeHTML(s.name)}"${requestPreset?.siteName === s.name ? ' selected' : ''}>${escapeHTML(s.name)} ${s.address ? `(${escapeHTML(s.address)})` : ''}</option>`).join('')}
               </select>
               <p class="text-tertiary" style="font-size:11px; margin-top:4px;">Select which of your registered site locations this callout applies to.</p>
             </div>
@@ -1604,7 +1639,7 @@ export async function renderCustomerPortal(container, params) {
               <label class="form-label" style="font-weight:600;">Select Site Asset (Optional)</label>
               <select class="form-select" name="assetId">
                 <option value="">-- No specific asset / General Site Service --</option>
-                ${assets.map(a => `<option value="${a.id}">${escapeHTML(a.name)} — S/N: ${escapeHTML(a.serial || '—')}</option>`).join('')}
+                ${assets.map(a => `<option value="${escapeHTML(a.id)}"${requestPreset?.assetId === a.id ? ' selected' : ''}>${escapeHTML(a.name)} — S/N: ${escapeHTML(a.serial || '—')}</option>`).join('')}
               </select>
               <p class="text-tertiary" style="font-size:11px; margin-top:4px;">Select the specific generator, UPS, or ATS panel requiring service.</p>
             </div>
@@ -1647,6 +1682,7 @@ export async function renderCustomerPortal(container, params) {
     portalShell.querySelectorAll('.portal-nav-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeTab = tab.dataset.tab;
+        requestPreset = null;
         render();
       });
     });
@@ -1763,6 +1799,16 @@ export async function renderCustomerPortal(container, params) {
 
     // 4. Accordion Toggle Click Interceptors
     portalShell.addEventListener('click', (e) => {
+      const reportBtn = e.target.closest('.btn-report-asset');
+      if (reportBtn) {
+        const asset = store.getById('assets', reportBtn.dataset.id);
+        requestPreset = asset ? { assetId: asset.id, siteName: asset.site || '' } : null;
+        requestSubmitted = false;
+        activeTab = 'requests';
+        render();
+        return;
+      }
+
       // Main accordion headers (Jobs, Quotes, Invoices, Assets)
       const header = e.target.closest('.accordion-header');
       if (header) {
@@ -2041,6 +2087,7 @@ export async function renderCustomerPortal(container, params) {
         });
 
         requestSubmitted = true;
+        requestPreset = null;
         render();
       });
     }
