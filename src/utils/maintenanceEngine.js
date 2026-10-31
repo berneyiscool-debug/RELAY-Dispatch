@@ -175,13 +175,15 @@ function isPlanDue(plan, asset, notifications, todayKey) {
 }
 
 /** Move a plan past the service it just raised. */
-function advancePlan(plan, asset, todayKey) {
+/** The fields that move a plan past the service it just raised. */
+function advancePatch(plan, asset, todayKey, nowIso) {
+  const patch = { lastNotificationDate: nowIso };
   if (plan.triggerType === 'Calendar') {
-    plan.nextServiceDate = nextDateAfter(plan.nextServiceDate, plan.frequency, todayKey) || plan.nextServiceDate;
+    patch.nextServiceDate = nextDateAfter(plan.nextServiceDate, plan.frequency, todayKey) || plan.nextServiceDate;
   } else if (plan.triggerType === 'Meter') {
-    plan.lastTriggeredMeter = passedMeterMilestone(plan.lastTriggeredMeter, plan.meterInterval, asset.currentMeter);
+    patch.lastTriggeredMeter = passedMeterMilestone(plan.lastTriggeredMeter, plan.meterInterval, asset.currentMeter);
   }
-  plan.lastNotificationDate = new Date().toISOString();
+  return patch;
 }
 
 /**
@@ -249,12 +251,40 @@ function buildPlanNotification(group, asset, quotes, stock) {
  */
 export function raiseDueMaintenance(todayKey = todayLocalISO()) {
   const plans = store.getAll('maintenancePlans') || [];
-  const assets = store.getAll('assets') || [];
-  const quotes = store.getAll('quotes') || [];
   const notifications = store.getAll('notifications') || [];
-  const stock = store.getAll('stock') || [];
+  const result = planDueMaintenance({
+    plans,
+    assets: store.getAll('assets') || [],
+    quotes: store.getAll('quotes') || [],
+    notifications,
+    stock: store.getAll('stock') || [],
+  }, todayKey);
+
+  if (!result.notifications.length) return [];
+  const patches = new Map(result.planPatches.map(({ id, patch }) => [id, patch]));
+  store.save('notifications', [...notifications, ...result.notifications]);
+  store.save('maintenancePlans', plans.map(p => (patches.has(p.id) ? { ...p, ...patches.get(p.id) } : p)));
+  // After the save, so the conversion finds the notification it marks Converted.
+  result.autoConvert.forEach(id => convertNotificationToJob(id));
+  return result.notifications.map(n => store.getById('notifications', n.id) || n);
+}
+
+/**
+ * The engine's decisions, with no store: what to raise, how each raised plan
+ * moves on, and which notifications become jobs straight away. The app applies
+ * them through the store (raiseDueMaintenance); a server runner can apply the
+ * same result to the database (docs/MAINTENANCE_ENGINE_SERVER_PLAN.md).
+ * Nothing passed in is modified.
+ *
+ * @param {{plans?: object[], assets?: object[], quotes?: object[], notifications?: object[], stock?: object[]}} data
+ * @param {string} todayKey YYYY-MM-DD in the business's local time
+ * @param {string} [nowIso] stamped on each advanced plan as lastNotificationDate
+ * @returns {{notifications: object[], planPatches: {id: string, patch: object}[], autoConvert: string[]}}
+ */
+export function planDueMaintenance({ plans = [], assets = [], quotes = [], notifications = [], stock = [] } = {}, todayKey, nowIso = new Date().toISOString()) {
   const raised = [];
   const autoJobs = [];
+  const planPatches = [];
 
   const activePlansByAsset = {};
   plans.forEach(plan => {
@@ -285,16 +315,11 @@ export function raiseDueMaintenance(todayKey = todayLocalISO()) {
       const notification = buildPlanNotification(group, asset, quotes, stock);
       raised.push(notification);
       if (group[0].autoCreateJob === true) autoJobs.push(notification.id);
-      group.forEach(plan => advancePlan(plan, asset, todayKey));
+      group.forEach(plan => planPatches.push({ id: plan.id, patch: advancePatch(plan, asset, todayKey, nowIso) }));
     });
   });
 
-  if (!raised.length) return raised;
-  store.save('notifications', [...notifications, ...raised]);
-  store.save('maintenancePlans', plans);
-  // After the save, so the conversion finds the notification it marks Converted.
-  autoJobs.forEach(id => convertNotificationToJob(id));
-  return raised.map(n => store.getById('notifications', n.id) || n);
+  return { notifications: raised, planPatches, autoConvert: autoJobs };
 }
 
 async function runEngineCore(userId, isCloud) {
