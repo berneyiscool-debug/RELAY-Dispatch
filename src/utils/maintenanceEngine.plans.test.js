@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { store, DEMO_COMPANY_ID } from '../data/store.js';
 import { supabase } from './supabase.js';
-import { raiseDueMaintenance } from './maintenanceEngine.js';
+import { raiseDueMaintenance, planDueMaintenance } from './maintenanceEngine.js';
 
 const TODAY = '2026-10-31';
 
@@ -231,5 +231,36 @@ describe('maintenance engine', () => {
   test('a plan without its blueprint quote raises nothing', () => {
     seed({ plans: [{ id: 'p1', name: 'Orphan', quoteId: 'q_missing', triggerType: 'Calendar', frequency: 'Monthly', nextServiceDate: '2026-11-01' }] });
     assert.equal(raiseDueMaintenance(TODAY).length, 0);
+  });
+});
+
+// The store-free core a server runner would use: same decisions, nothing changed in place.
+describe('planDueMaintenance', () => {
+  const asset = { id: 'a', name: 'Generator', status: 'Active', currentMeter: 1210 };
+  const plans = [
+    { id: 'cal', name: 'Quarterly', assetId: 'a', quoteId: QUOTE.id, status: 'Active', triggerType: 'Calendar', frequency: 'Quarterly', nextServiceDate: '2026-11-03', autoCreateJob: true },
+    { id: 'met', name: '500 hr', assetId: 'a', quoteId: QUOTE_B.id, status: 'Active', triggerType: 'Meter', meterInterval: 500, lastTriggeredMeter: 500 },
+    { id: 'far', name: 'Annual', assetId: 'a', quoteId: QUOTE.id, status: 'Active', triggerType: 'Calendar', frequency: 'Annually', nextServiceDate: '2027-06-01' },
+  ];
+
+  test('returns what to raise, how each plan moves on, and which become jobs', () => {
+    const input = { plans, assets: [asset], quotes: [QUOTE, QUOTE_B], notifications: [], stock: [] };
+    const before = JSON.stringify(input);
+
+    const r = planDueMaintenance(input, TODAY, '2026-10-31T00:00:00.000Z');
+
+    assert.deepEqual(r.notifications.map(n => n.maintenancePlanId).sort(), ['cal', 'met']);
+    assert.deepEqual(Object.fromEntries(r.planPatches.map(p => [p.id, p.patch])), {
+      cal: { lastNotificationDate: '2026-10-31T00:00:00.000Z', nextServiceDate: '2027-02-03' },
+      met: { lastNotificationDate: '2026-10-31T00:00:00.000Z', lastTriggeredMeter: 1000 },
+    });
+    assert.deepEqual(r.autoConvert, [r.notifications.find(n => n.maintenancePlanId === 'cal').id]);
+    assert.equal(JSON.stringify(input), before, 'inputs are left untouched');
+  });
+
+  test('already-raised work is not raised again', () => {
+    const first = planDueMaintenance({ plans, assets: [asset], quotes: [QUOTE, QUOTE_B] }, TODAY);
+    const again = planDueMaintenance({ plans, assets: [asset], quotes: [QUOTE, QUOTE_B], notifications: first.notifications }, TODAY);
+    assert.equal(again.notifications.length, 0);
   });
 });

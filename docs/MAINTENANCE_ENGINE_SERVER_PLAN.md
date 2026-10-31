@@ -19,10 +19,10 @@ Steps 1–3 are pure apart from the store reads. Step 4 and the saves go through
 
 ## Proposed design
 
-### 1. Split the engine into a pure core and a store adapter (no behaviour change)
-- **Pure core:** `planDueMaintenance({ plans, assets, quotes, notifications, stock }, todayKey)` returns `{ notifications, planPatches: [{ id, patch }], autoConvert: [notificationId] }`. It takes no store and no Date.
-- **Store adapter:** `raiseDueMaintenance()` in the app becomes a thin wrapper that applies the result to the store, as it does today.
-- **Tests:** the existing engine tests keep passing unchanged, and the core gets direct tests.
+### 1. Split the engine into a pure core and a store adapter (no behaviour change) — **done in this PR**
+- **Core:** `planDueMaintenance({ plans, assets, quotes, notifications, stock }, todayKey, nowIso)` returns `{ notifications, planPatches: [{ id, patch }], autoConvert: [notificationId] }`. It takes no store and changes nothing passed in. It still mints notification ids and `createdAt` itself.
+- **Store adapter:** `raiseDueMaintenance()` in the app is now a thin wrapper that applies the result to the store, exactly as before.
+- **Tests:** the existing engine tests pass unchanged, and the core has direct tests (its decisions, untouched inputs, no repeats).
 
 ### 2. Share the row mapping with the server
 The server must write rows exactly as the store would. Two options:
@@ -45,13 +45,13 @@ The lock and the deduplication in step 1 make browser runs and server runs safe 
 
 | Step | Change | Sign-off needed |
 | --- | --- | --- |
-| 1 | Pure core + adapter | None (code only) |
+| 1 | Pure core + adapter | None (code only) — done |
 | 2 | Shared row-mapping module | None (code only) |
 | 3 | `next_job_number` SQL function | Migration on live |
 | 4 | `maintenance-engine` edge function | Deploy + a secret |
 | 5 | pg_cron schedule | Change on live |
 
-Steps 1–2 can land as a normal PR. Steps 3–5 are one small PR plus three live changes, best done together in the daytime with someone watching the first few runs.
+Step 2 can land as a normal PR. Steps 3–5 are one small PR plus three live changes, best done together in the daytime with someone watching the first few runs.
 
 ## Risks
 - **Double-raising** if the lock or dedup is wrong. The lock already exists. The engine tests cover dedup (a second run raises nothing) and should be run against the server path too.
