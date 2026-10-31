@@ -10,6 +10,7 @@ import { entityLink } from '../../components/EntityLink.js';
 import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
 import { assetServiceStatus, planLeadDays, DEFAULT_LEAD_DAYS } from '../../utils/maintenanceSchedule.js';
 import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
+import { ASSET_CONDITIONS, CONDITION_BADGES, latestCondition } from '../../utils/assetCondition.js';
 
 export function renderAssetDetail(container, { id, tab }) {
   const asset = store.getById('assets', id);
@@ -54,6 +55,7 @@ export function renderAssetDetail(container, { id, tab }) {
     const hasActivePlan = plans.some(p => p.status === 'Active');
     // Same rule as the Service column on the asset list.
     const serviceStatus = assetServiceStatus(currentAsset, plans, todayLocalISO());
+    const condition = latestCondition(currentAsset);
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -83,6 +85,7 @@ export function renderAssetDetail(container, { id, tab }) {
                 ${r('Assigned To', escapeHTML(assigneeName))}
                 ${r('Location', escapeHTML(currentAsset.site || ''))}
                 ${r('Next Service', serviceStatusHtml(serviceStatus, currentAsset))}
+                ${r('Condition', condition ? `<span class="badge ${CONDITION_BADGES[condition.condition]}">${escapeHTML(condition.condition)}</span>${condition.date ? ` <span class="text-tertiary" style="font-size:12px">${escapeHTML(formatLocalDate(condition.date))}</span>` : ''}` : '')}
                 ${hasActivePlan ? '' : r('Interval', currentAsset.serviceIntervalMonths ? `${currentAsset.serviceIntervalMonths} Months` : '')}
                 ${r('Meter', `${escapeHTML(String(parseFloat(currentAsset.currentMeter) || 0))} ${escapeHTML(currentAsset.meterUnit || 'hrs')} <button class="btn btn-ghost btn-sm" id="btn-update-meter" style="padding:0 6px; height:22px; font-size:12px;">Update</button>`)}
                 ${r('Maintenance Spend', totalMaintCost > 0 ? `$${totalMaintCost.toFixed(2)}` : '', { amount: true })}
@@ -199,7 +202,11 @@ export function renderAssetDetail(container, { id, tab }) {
                       ${escapeHTML(log.type)}
                     </span>
                   </td>
-                  <td><span class="text-secondary" style="font-size:13px">${escapeHTML(log.notes || '—')}</span></td>
+                  <td>
+                    ${log.condition ? `<span class="badge ${CONDITION_BADGES[log.condition] || 'badge-neutral'}" style="margin-right:6px">${escapeHTML(log.condition)}</span>` : ''}
+                    <span class="text-secondary" style="font-size:13px">${escapeHTML(log.notes || '—')}</span>
+                    ${log.conditionNotes ? `<div class="text-tertiary" style="font-size:12px; margin-top:2px">${escapeHTML(log.conditionNotes)}</div>` : ''}
+                  </td>
                   <td style="text-align:right">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
                   <td style="text-align:right; white-space:nowrap">
                     <button class="btn btn-ghost btn-sm btn-edit-log" data-index="${index}" aria-label="Edit log" style="padding:0 4px"><span class="material-icons-outlined" style="font-size:16px">edit</span></button>
@@ -425,6 +432,19 @@ export function renderAssetDetail(container, { id, tab }) {
         <label class="form-label">Notes</label>
         <textarea id="log-notes" class="form-input" rows="3" placeholder="Describe the work performed...">${escapeHTML(existing?.notes || '')}</textarea>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Condition</label>
+          <select id="log-condition" class="form-select">
+            <option value="">Not recorded</option>
+            ${ASSET_CONDITIONS.map(c => `<option value="${c}"${existing?.condition === c ? ' selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Condition Notes</label>
+          <input type="text" id="log-condition-notes" class="form-input" value="${escapeHTML(existing?.conditionNotes || '')}" />
+        </div>
+      </div>
     `;
 
     import('../../components/Modal.js').then(({ showModal }) => {
@@ -448,7 +468,11 @@ export function renderAssetDetail(container, { id, tab }) {
 
             const latest = store.getById('assets', id);
             const logs = [...(latest.logs || [])];
+            const condition = content.querySelector('#log-condition').value;
+            const conditionNotes = content.querySelector('#log-condition-notes').value.trim();
             const log = { ...(existing || {}), date, type, meter, cost, notes };
+            if (condition) { log.condition = condition; log.conditionNotes = conditionNotes; }
+            else { delete log.condition; delete log.conditionNotes; }
             if (existing) logs[editIndex] = log; else logs.push(log);
 
             // A log can record an earlier service, so it only ever moves the

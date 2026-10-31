@@ -18,6 +18,7 @@ import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFoun
 import { findTechnician } from './leads.js';
 import { resolveQuote } from './quotes.js';
 import { parseDate, todayLocalISO } from './dates.js';
+import { ASSET_CONDITIONS } from '../utils/assetCondition.js';
 
 export const ASSET_TYPES = ['Vehicle', 'Plant & Equipment', 'Specialized Tool', 'Fixed Asset (HVAC/Solar/Fire)', 'Other'];
 export const ASSET_STATUSES = ['Active', 'In Maintenance', 'Commissioning', 'Decommissioned', 'Lost/Stolen'];
@@ -164,6 +165,8 @@ defineAction({
       meter: num('Meter reading at the time. Defaults to the current reading.'),
       cost: num('What it cost, ex GST.'),
       notes: str('What was done or found.'),
+      condition: enumOf(ASSET_CONDITIONS, 'The condition the asset was left in.'),
+      conditionNotes: str('Anything about its condition the next visit should know.'),
     },
     ['asset']
   ),
@@ -177,6 +180,7 @@ defineAction({
       meter: input.meter != null ? input.meter : (parseFloat(asset.currentMeter) || 0),
       cost: input.cost != null ? input.cost : 0,
       notes: input.notes || '',
+      ...(input.condition ? { condition: input.condition, conditionNotes: input.conditionNotes || '' } : {}),
     };
     await store.update('assets', asset.id, {
       logs: [...(asset.logs || []), log],

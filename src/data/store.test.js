@@ -633,9 +633,15 @@ describe('DataStore', () => {
       assert.strictEqual(store.denormalizeRecord({ ...notification }, 'notifications').maintenance_plan_id, 'p1');
       assert.deepStrictEqual(roundTrip('notifications', notification), notification);
 
-      const job = roundTrip('jobs', { id: 'j1', title: 'Filter clean', maintenancePlanId: 'p1', mergedPlanIds: ['p2'] });
+      const job = roundTrip('jobs', {
+        id: 'j1', title: 'Filter clean', maintenancePlanId: 'p1', mergedPlanIds: ['p2'],
+        completionMeter: 1212.5, assetCondition: 'Fair', assetConditionNotes: 'Hose perished'
+      });
       assert.strictEqual(job.maintenancePlanId, 'p1');
       assert.deepStrictEqual(job.mergedPlanIds, ['p2']);
+      assert.strictEqual(job.completionMeter, 1212.5);
+      assert.strictEqual(job.assetCondition, 'Fair');
+      assert.strictEqual(job.assetConditionNotes, 'Hose perished');
     });
 
     // A whitelist entry that lands before its migration must not turn every cloud

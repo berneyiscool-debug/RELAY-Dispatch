@@ -40,6 +40,7 @@ import { getSessionUser } from '../auth/session.js';
 import { dueDateForCustomer } from '../../utils/customerTerms.js';
 import { confirmOverCreditLimit } from '../../utils/creditLimitPrompt.js';
 import { mergeJobHistory, newHistoryEvent } from '../../data/jobHistory.js';
+import { ASSET_CONDITIONS } from '../../utils/assetCondition.js';
 
 // History entries are appended as their own jobEvents rows rather than written
 // back into the job, so a concurrent save elsewhere can't erase them.
@@ -4873,12 +4874,16 @@ export function renderJobDetail(container, { id, tab, form }) {
 
     container.querySelector('#header-job-status-select')?.addEventListener('change', (e) => {
       const newStatus = e.target.value;
-      if (job.status !== newStatus) {
+      if (job.status === newStatus) return;
+      const applyStatus = (extra = {}) => {
         const currentUser = getSessionUser() || {};
         const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
         const from = job.status;
+        // Update the store before touching `job`: it is the cached record, and
+        // the store compares against it to run the completion side effects
+        // (service log, maintenance plan) only on the change to Completed.
+        store.update('jobs', id, { status: newStatus, ...extra });
         job.status = newStatus;
-        store.update('jobs', id, { status: newStatus });
         recordJobHistory(id, {
           action: 'status_changed',
           author: authorName,
@@ -4887,8 +4892,64 @@ export function renderJobDetail(container, { id, tab, form }) {
         });
         showToast(`Job status updated to ${newStatus}`, 'success');
         render();
+      };
+      const asset = job.assetId ? store.getById('assets', job.assetId) : null;
+      // Completing work on an asset asks for its reading and condition, which
+      // the completion log, the meter and any meter plan then use.
+      if (newStatus === 'Completed' && asset) {
+        openCompletionReadingModal(asset, applyStatus, () => { e.target.value = job.status; });
+      } else {
+        applyStatus();
       }
     });
+
+    function openCompletionReadingModal(asset, onDone, onCancel) {
+      const unit = asset.meterUnit || 'hrs';
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <p class="text-secondary" style="margin:0 0 14px; font-size:13px">Record how you left <strong>${escapeHTML(asset.name || 'the asset')}</strong>. This goes on its service log.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Meter Reading (${escapeHTML(unit)})</label>
+            <input type="number" id="completion-meter" class="form-input" min="0" step="any" value="${parseFloat(asset.currentMeter) || 0}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Condition</label>
+            <select id="completion-condition" class="form-select">
+              <option value="">Not recorded</option>
+              ${ASSET_CONDITIONS.map(c => `<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Condition Notes</label>
+          <textarea id="completion-condition-notes" class="form-input" rows="2" placeholder="Anything the next visit should know"></textarea>
+        </div>
+      `;
+      let settled = false;
+      showModal({
+        title: 'Complete Job — Asset Reading',
+        content,
+        onClose: () => { if (!settled) onCancel(); },
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Skip', className: 'btn-secondary', onClick: (close) => { settled = true; close(); onDone(); } },
+          { label: 'Complete Job', className: 'btn-primary', onClick: (close) => {
+            const meterRaw = content.querySelector('#completion-meter').value.trim();
+            const meter = meterRaw === '' ? null : parseFloat(meterRaw);
+            if (meter !== null && (!Number.isFinite(meter) || meter < 0)) return showToast('Enter a valid meter reading', 'error');
+            const condition = content.querySelector('#completion-condition').value || null;
+            const notes = content.querySelector('#completion-condition-notes').value.trim();
+            settled = true;
+            close();
+            onDone({
+              ...(meter !== null ? { completionMeter: meter } : {}),
+              ...(condition ? { assetCondition: condition, assetConditionNotes: notes } : {}),
+            });
+          } },
+        ],
+      });
+    }
 
     container.querySelector('#btn-header-generate-invoice')?.addEventListener('click', () => {
       triggerInvoiceGenerationFlow('Standard');
