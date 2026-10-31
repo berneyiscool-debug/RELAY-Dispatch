@@ -10,6 +10,7 @@ import { escapeHTML } from '../utils/security.js';
 import { openHelpCenter } from './HelpCenter.js';
 import { mountTrialChip, TRIAL_SLOT_ID } from './TrialChip.js';
 import { getSessionUser } from '../pages/auth/session.js';
+import { assetLabelCode, findAssetByCode } from '../utils/assetLabels.js';
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
 function buildBrandHtml() {
@@ -110,6 +111,20 @@ export function createTopBar() {
 
   searchInput.addEventListener('blur', () => {
     setTimeout(hideSearchResults, 200);
+  });
+
+  // A barcode scanner types an asset label's code and presses Enter: go
+  // straight to that asset, from any page, instead of leaving a result list.
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const asset = findAssetByCode(store.getAll('assets'), searchInput.value);
+    if (!asset) return;
+    e.preventDefault();
+    clearTimeout(searchTimeout);
+    hideSearchResults();
+    searchInput.value = '';
+    getListSearch()?.('');
+    router.navigate(`/assets/${asset.id}`);
   });
 
   // Notices logic
@@ -413,12 +428,12 @@ function showSearchResults(query) {
     }
   });
 
-  // Search assets
+  // Search assets — by name or serial, or the exact code on a scanned label
   (storeObj.getAll('assets') || []).forEach(ast => {
     const name = ast.name || '';
-    const tag = ast.assetTag || '';
-    if (name.toLowerCase().includes(q) || tag.toLowerCase().includes(q)) {
-      results.push({ type: 'Asset', label: `${tag ? `${tag} — ` : ''}${name}`, icon: 'precision_manufacturing', path: `/assets/${ast.id}` });
+    const serial = ast.serial || ast.identifier || '';
+    if (name.toLowerCase().includes(q) || serial.toLowerCase().includes(q) || assetLabelCode(ast).toLowerCase() === q.trim()) {
+      results.push({ type: 'Asset', label: `${serial ? `${serial} — ` : ''}${name}`, icon: 'precision_manufacturing', path: `/assets/${ast.id}` });
     }
   });
 

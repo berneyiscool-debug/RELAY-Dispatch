@@ -15,9 +15,8 @@ import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
 import { kitTypeLabel, kitTypeOptionsHtml, kitTypeGrouping, NO_KIT_TYPE_LABEL } from '../../utils/kitTypes.js';
-import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml, fitLabelNames } from '../../utils/stockLabels.js';
-import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
+import { LABEL_FIELDS, LABEL_SIZES, loadLabelOptions, saveLabelOptions, buildLabelSheetHtml } from '../../utils/stockLabels.js';
+import { renderLabelCodes, openLabelWindow, printLabelSheet } from '../../utils/labelPrint.js';
 import { xeroEnabled, getXeroStatusCached, cachedXeroStatus, fetchStockSyncJobs, cachedStockSyncJobs, xeroStockBadgeHtml, pushStockToXero } from '../../utils/xero.js';
 
 export function renderStockList(container, params) {
@@ -584,56 +583,17 @@ export function renderStockList(container, params) {
           saveLabelOptions(options);
           // Opened before the codes render so the popup still counts as
           // coming from this click.
-          const printWindow = window.open('', '_blank');
+          const printWindow = openLabelWindow();
           if (!printWindow) {
             showToast('Allow pop-ups to print labels', 'error');
             return;
           }
           c();
-          const html = buildLabelSheetHtml(items, options, await renderLabelCodes(items, options.fields));
-          // The Content-Security-Policy no longer allows inline scripts, so the
-          // print dialog is triggered from here rather than from a <script> tag
-          // inside the document written below. The sheet has no external
-          // resources, so printing straight after close() is deterministic —
-          // waiting on the popup's `load` is not, because an about:blank popup
-          // fires its own load event before the written document renders.
-          printWindow.document.write(html);
-          printWindow.document.close();
-          fitLabelNames(printWindow.document);
-          printWindow.focus();
-          printWindow.print();
+          const codes = await renderLabelCodes(items.map(i => i.sku), options.fields);
+          printLabelSheet(printWindow, buildLabelSheetHtml(items, options, codes));
         }}
       ]
     });
-  }
-
-  // SVG markup per SKU for the codes the sheet shows. QR rendering is async,
-  // so it's done up front and handed to the (synchronous) sheet builder.
-  async function renderLabelCodes(items, fields) {
-    const skus = [...new Set(items.map(i => String(i.sku || '').trim()).filter(Boolean))];
-    const barcodes = new Map();
-    const qrs = new Map();
-    if (fields.includes('barcode')) {
-      for (const sku of skus) {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        try {
-          JsBarcode(svg, sku, { format: 'CODE128', displayValue: false, margin: 0, height: 60, width: 2 });
-        } catch { continue; /* SKU has characters CODE128 can't carry */ }
-        // Scale to the label rather than keep JsBarcode's fixed pixel size.
-        svg.setAttribute('viewBox', `0 0 ${parseFloat(svg.getAttribute('width'))} ${parseFloat(svg.getAttribute('height'))}`);
-        svg.setAttribute('preserveAspectRatio', 'none');
-        svg.removeAttribute('width');
-        svg.removeAttribute('height');
-        svg.removeAttribute('style');
-        barcodes.set(sku, svg.outerHTML);
-      }
-    }
-    if (fields.includes('qr')) {
-      await Promise.all(skus.map(async sku => {
-        qrs.set(sku, await QRCode.toString(sku, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' }));
-      }));
-    }
-    return { barcode: sku => barcodes.get(sku) || '', qr: sku => qrs.get(sku) || '' };
   }
 
   // --- DRAWERS & MODALS BACKPORT ---

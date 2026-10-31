@@ -5,6 +5,8 @@
 // physical size (mm) so long item names can't squeeze their neighbours, and
 // the person printing chooses which details appear on it. The barcode and QR
 // code both encode the item's SKU, so any scanner reads back the same value.
+// The sticker and sheet layout (labelHtml, labelSheetHtml) is shared with the
+// asset labels in assetLabels.js.
 
 import { escapeHTML } from './security.js';
 
@@ -79,42 +81,70 @@ const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
  *   SVG markup for each SKU, rendered by the caller (the encoders need a browser).
  */
 export function buildLabelSheetHtml(items, options, codes = {}) {
-  const size = LABEL_SIZES.find(s => s.key === options.size) || LABEL_SIZES[1];
   const on = new Set(options.fields);
-  const { width, height, font, pad } = size;
-  const inner = height - pad * 2;
 
   const labels = items.map(item => {
     const sku = String(item.sku || '').trim();
-    const qr = on.has('qr') && sku && codes.qr ? codes.qr(sku) : '';
-    const barcode = on.has('barcode') && sku && codes.barcode ? codes.barcode(sku) : '';
-    const meta = [on.has('category') && item.category, on.has('supplier') && item.supplier].filter(Boolean);
     const prices = [
       on.has('price') && `<span class="price">${money(item.unitPrice)}</span>`,
       on.has('cost') && `<span class="cost">Cost ${money(item.costPrice)}</span>`,
     ].filter(Boolean);
-    const hasText = on.has('name') || (on.has('sku') && sku) || meta.length || prices.length;
+    return labelHtml({
+      qr: on.has('qr') && sku && codes.qr ? codes.qr(sku) : '',
+      barcode: on.has('barcode') && sku && codes.barcode ? codes.barcode(sku) : '',
+      name: on.has('name') ? (item.name || '') : null,
+      code: on.has('sku') ? sku : '',
+      meta: [on.has('category') && item.category, on.has('supplier') && item.supplier].filter(Boolean),
+      pricesHtml: prices.join(''),
+    });
+  });
 
-    return `
+  return labelSheetHtml('Stock Labels', labels, options.size);
+}
+
+/**
+ * One sticker. Text is escaped here; `qr`, `barcode` and `pricesHtml` are
+ * trusted markup from the caller.
+ *
+ * @param {{qr?: string, barcode?: string, name?: string|null, code?: string, meta?: string[], pricesHtml?: string}} parts
+ *   `name` null leaves the name line out; an empty `code` leaves the code line out.
+ */
+export function labelHtml({ qr = '', barcode = '', name = null, code = '', meta = [], pricesHtml = '' }) {
+  const hasText = name !== null || code || meta.length || pricesHtml;
+  return `
       <div class="label">
         ${qr || hasText ? `<div class="top">
           ${qr ? `<div class="qr">${qr}</div>` : ''}
           ${hasText ? `<div class="body">
-            ${on.has('name') ? `<div class="name">${escapeHTML(item.name || '')}</div>` : ''}
-            ${on.has('sku') && sku ? `<div class="sku">${escapeHTML(sku)}</div>` : ''}
+            ${name !== null ? `<div class="name">${escapeHTML(name)}</div>` : ''}
+            ${code ? `<div class="sku">${escapeHTML(code)}</div>` : ''}
             ${meta.length ? `<div class="meta">${meta.map(m => escapeHTML(m)).join(' · ')}</div>` : ''}
-            ${prices.length ? `<div class="prices">${prices.join('')}</div>` : ''}
+            ${pricesHtml ? `<div class="prices">${pricesHtml}</div>` : ''}
           </div>` : ''}
         </div>` : ''}
         ${barcode ? `<div class="barcode${qr || hasText ? '' : ' only'}">${barcode}</div>` : ''}
       </div>`;
-  }).join('');
+}
+
+/**
+ * The printable sheet: fixed-size stickers in a grid.
+ *
+ * @param {string} title e.g. "Stock Labels"
+ * @param {string[]} labels markup from labelHtml()
+ * @param {string} sizeKey one of LABEL_SIZES
+ * @param {string} [noun] what each sticker is for, in the on-screen heading
+ */
+export function labelSheetHtml(title, labels, sizeKey, noun = 'item') {
+  const size = LABEL_SIZES.find(s => s.key === sizeKey) || LABEL_SIZES[1];
+  const { width, height, font, pad } = size;
+  const inner = height - pad * 2;
+  const count = labels.length;
 
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Stock Labels</title>
+  <title>${escapeHTML(title)}</title>
   <style>
     @page { margin: 8mm; }
     * { box-sizing: border-box; }
@@ -145,8 +175,8 @@ export function buildLabelSheetHtml(items, options, codes = {}) {
   </style>
 </head>
 <body>
-  <h3 class="sheet-title">Stock Labels (${items.length} item${items.length === 1 ? '' : 's'}) · ${escapeHTML(size.label)}</h3>
-  <div class="grid">${labels}</div>
+  <h3 class="sheet-title">${escapeHTML(title)} (${count} ${noun}${count === 1 ? '' : 's'}) · ${escapeHTML(size.label)}</h3>
+  <div class="grid">${labels.join('')}</div>
 </body>
 </html>`;
 }

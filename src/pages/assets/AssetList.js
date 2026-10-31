@@ -7,6 +7,9 @@ import { showAssetQuickAdd } from '../../utils/quickModals.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
+import { assetServiceStatus } from '../../utils/maintenanceSchedule.js';
+import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 
 export function renderAssetList(container, params) {
   const customerId = params?.customerId;
@@ -45,12 +48,14 @@ export function renderAssetList(container, params) {
       result = result.filter(a => a.status === 'In Maintenance');
     }
 
-    // Apply search
+    // Apply search. A scanned label carries the serial, or the record id for
+    // an asset without one, so an exact id matches too.
     if (searchTerm) {
-      result = result.filter(a => 
-        (a.name || '').toLowerCase().includes(searchTerm) || 
-        (a.serial || a.identifier || a.licensePlate || '').toLowerCase().includes(searchTerm) || 
-        (a.type || '').toLowerCase().includes(searchTerm)
+      result = result.filter(a =>
+        (a.name || '').toLowerCase().includes(searchTerm) ||
+        (a.serial || a.identifier || a.licensePlate || '').toLowerCase().includes(searchTerm) ||
+        (a.type || '').toLowerCase().includes(searchTerm) ||
+        String(a.id || '').toLowerCase() === searchTerm.trim()
       );
     }
 
@@ -79,6 +84,10 @@ export function renderAssetList(container, params) {
 
   let filteredData = [...assets];
 
+  // Next service comes from the asset's maintenance plans, as on the asset page.
+  const plans = store.getAll('maintenancePlans') || [];
+  const today = todayLocalISO();
+
   const columns = [
     { key: 'name', label: 'Asset', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
     { key: 'owner', label: 'Owner', render: (r) => {
@@ -90,30 +99,7 @@ export function renderAssetList(container, params) {
       }, width: '16%'
     },
     { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—'), width: '15%' },
-    { key: 'service', label: 'Service', render: (r) => {
-        const logs = r.logs || [];
-        const lastS = logs.filter(l => l.type === 'Service').sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-        if (!lastS || !r.serviceIntervalMonths) return '<span class="text-tertiary" style="font-size:12px">Not Scheduled</span>';
-        
-        const d = new Date(lastS.date);
-        d.setMonth(d.getMonth() + parseInt(r.serviceIntervalMonths));
-        
-        const today = new Date();
-        const timeDiff = d.getTime() - today.getTime();
-        const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
-        
-        let badgeHtml = '';
-        if (daysDiff <= 0) {
-          badgeHtml = `<span class="badge badge-danger">Overdue</span>`;
-        } else if (daysDiff <= 30) {
-          badgeHtml = `<span class="badge badge-warning">Due Soon</span>`;
-        } else {
-          badgeHtml = `<span class="badge badge-success">OK</span>`;
-        }
-        
-        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString('en-AU')}</span></div>`;
-      }, width: '21%'
-    },
+    { key: 'service', label: 'Service', render: (r) => serviceStatusHtml(assetServiceStatus(r, plans, today), r), width: '21%' },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>`, width: '11%' },
     { key: 'assignedTo', label: 'Assigned', render: (r) => {
         if (!r.assignedToId) return '—';
@@ -220,7 +206,7 @@ export function renderAssetList(container, params) {
             label: 'Print Labels',
             icon: 'qr_code_2',
             onClick: (ids) => {
-              import('../../components/Notifications.js').then(({ showToast }) => showToast(`Generating tags for ${ids.length} assets...`, 'info'));
+              openAssetLabelPrint(ids.map(id => store.getById('assets', id)).filter(Boolean));
             }
           },
           {

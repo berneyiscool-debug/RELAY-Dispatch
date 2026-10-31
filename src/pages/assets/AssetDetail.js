@@ -4,10 +4,12 @@ import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
-import { todayLocalISO } from '../../utils/dateUtils.js';
+import { todayLocalISO, toDateKey, formatLocalDate } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES } from '../../utils/statusColors.js';
 import { entityLink } from '../../components/EntityLink.js';
 import { jobActivityDate, jobsForAsset } from '../../utils/assetJobs.js';
+import { assetServiceStatus } from '../../utils/maintenanceSchedule.js';
+import { serviceStatusHtml, openAssetLabelPrint } from './assetUi.js';
 
 export function renderAssetDetail(container, { id, tab }) {
   const asset = store.getById('assets', id);
@@ -47,36 +49,11 @@ export function renderAssetDetail(container, { id, tab }) {
 
     const logs = currentAsset.logs || [];
     const totalMaintCost = logs.reduce((sum, log) => sum + (parseFloat(log.cost) || 0), 0);
-    
-    // Service Interval Logic (Calendar fallback)
-    const lastService = logs.filter(l => l.type === 'Service').sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-    let nextServiceDate = 'Not Scheduled';
-    let isOverdue = false;
-    if (lastService && currentAsset.serviceIntervalMonths) {
-      const d = new Date(lastService.date);
-      d.setMonth(d.getMonth() + parseInt(currentAsset.serviceIntervalMonths));
-      nextServiceDate = d.toLocaleDateString();
-      isOverdue = d < new Date();
-    }
 
-    // Fetch Maintenance Plans
     const plans = store.getAll('maintenancePlans').filter(p => p.assetId === currentAsset.id) || [];
-    const activePlan = plans.find(p => p.status === 'Active');
-
-    // Override overdue states if there is an active maintenance plan
-    if (activePlan) {
-      if (activePlan.triggerType === 'Calendar') {
-        nextServiceDate = new Date(activePlan.nextServiceDate).toLocaleDateString();
-        isOverdue = new Date(activePlan.nextServiceDate) < new Date();
-      } else if (activePlan.triggerType === 'Meter') {
-        const currentMeterVal = parseFloat(currentAsset.currentMeter || 0);
-        const lastTriggered = parseFloat(activePlan.lastTriggeredMeter || 0);
-        const interval = parseFloat(activePlan.meterInterval || 0);
-        const targetMeter = lastTriggered + interval;
-        nextServiceDate = `At ${targetMeter} ${currentAsset.meterUnit || 'hrs'}`;
-        isOverdue = currentMeterVal >= targetMeter;
-      }
-    }
+    const hasActivePlan = plans.some(p => p.status === 'Active');
+    // Same rule as the Service column on the asset list.
+    const serviceStatus = assetServiceStatus(currentAsset, plans, todayLocalISO());
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -90,6 +67,7 @@ export function renderAssetDetail(container, { id, tab }) {
           <span style="font-family:var(--font-mono)">• ${escapeHTML(currentAsset.identifier || currentAsset.serial || 'No ID')}</span>
         `,
         actionsHtml: `
+          <button class="btn btn-secondary" id="btn-print-label" data-tooltip="Print a barcode / QR tag for this asset" data-tooltip-pos="left"><span class="material-icons-outlined">qr_code_2</span> Print Label</button>
           <button class="btn btn-secondary" id="btn-edit" data-tooltip="Modify asset details, assignments, or properties" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit Details</button>
         `
       })}
@@ -103,8 +81,11 @@ export function renderAssetDetail(container, { id, tab }) {
                 ${r('Category', escapeHTML(currentAsset.type || '-'))}
                 ${r('Owner', currentAsset.customerId ? entityLink({ kind: 'customer', id: currentAsset.customerId, name: ownerName }) : escapeHTML(ownerName))}
                 ${r('Assigned To', escapeHTML(assigneeName))}
-                ${r('Location', escapeHTML(currentAsset.site || 'Main Office'))}
-                ${r('Interval', `${currentAsset.serviceIntervalMonths || 6} Months`)}
+                ${r('Location', escapeHTML(currentAsset.site || ''))}
+                ${r('Next Service', serviceStatusHtml(serviceStatus, currentAsset))}
+                ${hasActivePlan ? '' : r('Interval', currentAsset.serviceIntervalMonths ? `${currentAsset.serviceIntervalMonths} Months` : '')}
+                ${r('Meter', `${escapeHTML(String(parseFloat(currentAsset.currentMeter) || 0))} ${escapeHTML(currentAsset.meterUnit || 'hrs')} <button class="btn btn-ghost btn-sm" id="btn-update-meter" style="padding:0 6px; height:22px; font-size:12px;">Update</button>`)}
+                ${r('Maintenance Spend', totalMaintCost > 0 ? `$${totalMaintCost.toFixed(2)}` : '', { amount: true })}
                 ${currentAsset.ownerType === 'Business' ? r('Recovery Rate', `$${(currentAsset.recoveryRate || 0).toFixed(2)}/hr`, { amount: true, valueStyle: 'color:var(--color-primary)' }) : ''}
               </div>
             </div>
@@ -200,13 +181,18 @@ export function renderAssetDetail(container, { id, tab }) {
               <th style="width:120px">Type</th>
               <th>Notes</th>
               <th style="text-align:right">Cost</th>
+              <th style="width:76px"></th>
             </tr>
           </thead>
           <tbody>
-            ${logs.length === 0 ? `<tr><td colspan="5" class="text-center text-tertiary" style="padding:40px">No logs recorded for this asset.</td></tr>` :
-              logs.sort((a,b) => new Date(b.date) - new Date(a.date)).map(log => `
+            ${logs.length === 0 ? `<tr><td colspan="6" class="text-center text-tertiary" style="padding:40px">No logs recorded for this asset.</td></tr>` :
+              // Newest first; data-index is the log's place in asset.logs, which
+              // edit and delete address (manual logs have no id of their own).
+              logs.map((log, index) => ({ log, index }))
+                .sort((a, b) => String(toDateKey(b.log.date) || '').localeCompare(String(toDateKey(a.log.date) || '')))
+                .map(({ log, index }) => `
                 <tr>
-                  <td class="font-medium">${new Date(log.date).toLocaleDateString()}</td>
+                  <td class="font-medium">${toDateKey(log.date) ? formatLocalDate(toDateKey(log.date)) : '—'}</td>
                   <td class="text-secondary">${log.meter || '-'}</td>
                   <td>
                     <span class="badge ${log.type === 'Service' ? 'badge-success' : log.type === 'Repair' ? 'badge-danger' : 'badge-neutral'}">
@@ -215,6 +201,10 @@ export function renderAssetDetail(container, { id, tab }) {
                   </td>
                   <td><span class="text-secondary" style="font-size:13px">${escapeHTML(log.notes || '—')}</span></td>
                   <td style="text-align:right">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
+                  <td style="text-align:right; white-space:nowrap">
+                    <button class="btn btn-ghost btn-sm btn-edit-log" data-index="${index}" aria-label="Edit log" style="padding:0 4px"><span class="material-icons-outlined" style="font-size:16px">edit</span></button>
+                    <button class="btn btn-ghost btn-sm text-danger btn-delete-log" data-index="${index}" aria-label="Delete log" style="padding:0 4px"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>
+                  </td>
                 </tr>
               `).join('')
             }
@@ -290,6 +280,10 @@ export function renderAssetDetail(container, { id, tab }) {
       router.navigate(`/assets/${id}/edit`);
     });
 
+    container.querySelector('#btn-print-label').addEventListener('click', () => {
+      openAssetLabelPrint([store.getById('assets', id)]);
+    });
+
     // Tab toggles removed (migrated to sidebar)
 
     // Add log
@@ -357,69 +351,111 @@ export function renderAssetDetail(container, { id, tab }) {
     container.querySelector('#btn-update-meter')?.addEventListener('click', () => {
       openUpdateMeterModal();
     });
+
+    container.querySelectorAll('.btn-edit-log').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLogModal(parseInt(btn.dataset.index, 10));
+      });
+    });
+
+    container.querySelectorAll('.btn-delete-log').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index, 10);
+        const log = (store.getById('assets', id).logs || [])[index];
+        if (!log) return;
+        import('../../components/Modal.js').then(({ showModal }) => {
+          const modalContent = document.createElement('div');
+          modalContent.innerHTML = `<p>Delete the ${escapeHTML(log.type || '')} log from ${escapeHTML(formatLocalDate(toDateKey(log.date) || '') || 'an unknown date')}? This cannot be undone.</p>`;
+          showModal({
+            title: 'Delete Log',
+            content: modalContent,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+              { label: 'Delete', className: 'btn-danger', onClick: c => {
+                const latest = store.getById('assets', id);
+                store.update('assets', id, { logs: (latest.logs || []).filter((_, i) => i !== index) });
+                showToast('Log deleted', 'success');
+                c();
+                render();
+              }}
+            ]
+          });
+        });
+      });
+    });
   }
 
-  function openLogModal() {
+  /** Add a log, or edit the one at `editIndex` in asset.logs. */
+  function openLogModal(editIndex = null) {
     // Read fresh: store.update replaces the record, so the asset captured when
     // the page loaded would drop logs saved since then.
     const asset = store.getById('assets', id);
+    const existing = editIndex !== null ? (asset.logs || [])[editIndex] : null;
+    if (editIndex !== null && !existing) return;
+    const currentMeter = parseFloat(asset.currentMeter) || 0;
+    const types = [['Service', 'Routine Service'], ['Repair', 'Repair'], ['Inspection', 'Inspection'], ['Refuel', 'Refuel / Usage'], ['Other', 'Other']];
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Date</label>
-          <input type="date" id="log-date" class="form-input" value="${todayLocalISO()}" />
+          <input type="date" id="log-date" class="form-input" value="${escapeHTML(toDateKey(existing?.date) || todayLocalISO())}" />
         </div>
         <div class="form-group">
           <label class="form-label">Log Type</label>
           <select id="log-type" class="form-select">
-            <option value="Service">Routine Service</option>
-            <option value="Repair">Repair</option>
-            <option value="Inspection">Inspection</option>
-            <option value="Refuel">Refuel / Usage</option>
-            <option value="Other">Other</option>
+            ${types.map(([value, label]) => `<option value="${value}"${(existing?.type || 'Service') === value ? ' selected' : ''}>${label}</option>`).join('')}
           </select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Current Meter Reading (${asset.meterUnit || 'hrs'})</label>
-          <input type="number" id="log-meter" class="form-input" value="${asset.currentMeter || 0}" />
+          <label class="form-label">Meter Reading (${escapeHTML(asset.meterUnit || 'hrs')})</label>
+          <input type="number" id="log-meter" class="form-input" min="0" step="any" value="${existing ? (parseFloat(existing.meter) || 0) : currentMeter}" />
         </div>
         <div class="form-group">
           <label class="form-label">Internal Cost ($)</label>
-          <input type="number" id="log-cost" class="form-input" value="0" step="0.01" />
+          <input type="number" id="log-cost" class="form-input" min="0" value="${existing ? (parseFloat(existing.cost) || 0) : 0}" step="0.01" />
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Notes</label>
-        <textarea id="log-notes" class="form-input" rows="3" placeholder="Describe the work performed..."></textarea>
+        <textarea id="log-notes" class="form-input" rows="3" placeholder="Describe the work performed...">${escapeHTML(existing?.notes || '')}</textarea>
       </div>
     `;
 
     import('../../components/Modal.js').then(({ showModal }) => {
       showModal({
-        title: 'Add Activity Log',
+        title: existing ? 'Edit Activity Log' : 'Add Activity Log',
         content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
           { label: 'Save Log', className: 'btn-primary', onClick: c => {
             const date = content.querySelector('#log-date').value;
             const type = content.querySelector('#log-type').value;
-            const meter = parseFloat(content.querySelector('#log-meter').value);
-            const cost = parseFloat(content.querySelector('#log-cost').value);
+            const meterRaw = content.querySelector('#log-meter').value.trim();
+            const costRaw = content.querySelector('#log-cost').value.trim();
+            const meter = meterRaw === '' ? currentMeter : parseFloat(meterRaw);
+            const cost = costRaw === '' ? 0 : parseFloat(costRaw);
             const notes = content.querySelector('#log-notes').value;
 
-            if (!date) return;
+            if (!date) return showToast('Choose a date for the log', 'error');
+            if (!Number.isFinite(meter) || meter < 0) return showToast('Enter a valid meter reading', 'error');
+            if (!Number.isFinite(cost) || cost < 0) return showToast('Enter a valid cost', 'error');
 
             const latest = store.getById('assets', id);
-            const newLog = { date, type, meter, cost, notes };
-            const updatedLogs = [...(latest.logs || []), newLog];
+            const logs = [...(latest.logs || [])];
+            const log = { ...(existing || {}), date, type, meter, cost, notes };
+            if (existing) logs[editIndex] = log; else logs.push(log);
 
+            // A log can record an earlier service, so it only ever moves the
+            // meter forward; "Update" on the meter row sets it outright.
             store.update('assets', latest.id, {
-              logs: updatedLogs,
-              currentMeter: meter,
-              status: type === 'Repair' ? 'In Maintenance' : latest.status
+              logs,
+              currentMeter: Math.max(parseFloat(latest.currentMeter) || 0, meter),
+              status: !existing && type === 'Repair' ? 'In Maintenance' : latest.status
             });
             
             // If the meter changes, run maintenance checks immediately
@@ -452,7 +488,7 @@ export function renderAssetDetail(container, { id, tab }) {
           { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
           { label: 'Update Meter', className: 'btn-primary', onClick: c => {
             const meter = parseFloat(content.querySelector('#new-meter-val').value);
-            if (isNaN(meter)) return showToast('Please enter a valid meter reading', 'error');
+            if (isNaN(meter) || meter < 0) return showToast('Please enter a valid meter reading', 'error');
 
             store.update('assets', asset.id, { currentMeter: meter });
             showToast('Meter reading updated successfully', 'success');
@@ -473,6 +509,7 @@ export function renderAssetDetail(container, { id, tab }) {
     const asset = store.getById('assets', id);
     const quotes = store.getAll('quotes') || [];
     const taskTemplates = store.getAll('taskTemplates') || [];
+    const technicians = (store.getAll('technicians') || []).filter(t => t.active !== false || t.id === existingPlan?.defaultTechnicianId);
     const title = existingPlan ? 'Edit Maintenance Plan' : 'Configure Maintenance Plan';
 
     const content = document.createElement('div');
@@ -557,6 +594,14 @@ export function renderAssetDetail(container, { id, tab }) {
           </select>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">Default Technician</label>
+          <select class="form-select" id="plan-technician-id">
+            <option value="">None (assign when the job is raised)</option>
+            ${technicians.map(t => `<option value="${t.id}" ${existingPlan?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name || '')}</option>`).join('')}
+          </select>
+        </div>
+
         <div style="display:flex; align-items:center; gap:10px; margin:14px 0 8px 0; padding-left:2px;">
           <input type="checkbox" id="plan-collision-merging" ${existingPlan?.collisionMerging === true ? 'checked' : ''} style="width:18px; height:18px; margin:0; cursor:pointer; accent-color:var(--primary);" />
           <label for="plan-collision-merging" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Enable Collision Merging (auto-merge with other due plans)</label>
@@ -609,6 +654,7 @@ export function renderAssetDetail(container, { id, tab }) {
           const collisionMerging = content.querySelector('#plan-collision-merging').checked;
           const mergeTasks = content.querySelector('#plan-merge-tasks').checked;
           const taskTemplateId = content.querySelector('#plan-task-template-id').value || null;
+          const defaultTechnicianId = content.querySelector('#plan-technician-id').value || null;
           const status = content.querySelector('#plan-status').value;
 
           if (!name) return showToast('Plan Name is required', 'error');
@@ -624,6 +670,7 @@ export function renderAssetDetail(container, { id, tab }) {
             collisionMerging,
             mergeTasks,
             taskTemplateId,
+            defaultTechnicianId,
             frequency: triggerType === 'Calendar' ? frequency : null,
             nextServiceDate: triggerType === 'Calendar' ? nextServiceDate : null,
             meterInterval: triggerType === 'Meter' ? meterInterval : null,
