@@ -11,7 +11,7 @@ import { defineAction } from './registry.js';
 import { objectSchema, str, enumOf, dateish } from './schema.js';
 import { invalidInput, notFound } from './errors.js';
 import { buildReport, emptyFilters, toCsv } from '../utils/reportMetrics.js';
-import { REPORTS, reportSpec, assetServiceCost, isoDay } from '../pages/reports/reportSpec.js';
+import { REPORTS, reportSpec, isoDay, ASSET_CSV_HEADERS, assetCsvRows } from '../pages/reports/reportSpec.js';
 import { toDate } from '../utils/kpis.js';
 import { findTechnician } from './leads.js';
 import { resolveCustomer } from './customers.js';
@@ -71,11 +71,7 @@ function csvFor(id, r) {
       return toCsv(['Technician', 'Role', 'Hours logged', 'Hours on jobs', 'Share on jobs %', 'Labour cost', 'Hours with no pay rate'],
         r.team.map((person) => [person.name, person.role, person.hours, person.billableHours, person.billableShare != null ? person.billableShare * 100 : '', person.labourCost, person.unratedHours]));
     case 'assets_maintenance':
-      return toCsv(['Asset', 'Serial', 'Customer', 'Plan', 'Frequency', 'Next service', 'Priority (1-10)', 'Service cost'],
-        d.maintenancePlans.map((plan) => {
-          const asset = d.assets.find((row) => row.id === plan.assetId);
-          return [plan.assetName || '', asset?.serial || '', plan.customerName || '', plan.name || '', plan.frequency || 'Meter-Based', plan.nextServiceDate || plan.nextDue || '', plan.priority || 5, assetServiceCost(asset)];
-        }));
+      return toCsv(ASSET_CSV_HEADERS, assetCsvRows(r));
     case 'customers':
       return toCsv(['Company', 'First name', 'Last name', 'Email', 'Phone', 'Status', 'Invoiced in range (ex GST)'],
         d.customers.map((customer) => [customer.company, customer.firstName, customer.lastName, customer.email, customer.phone, customer.status, r.customers.revenueById.get(String(customer.id)) || 0]));

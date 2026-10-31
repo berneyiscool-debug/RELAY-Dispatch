@@ -18,7 +18,10 @@ import { toDate } from '../../utils/kpis.js';
 import {
   REPORTS, reportSpec, selectBlocks, localInsights,
   money, wholeMoney, pct, hrs, assetServiceCost, lowStock, stockValue, costedSub, NOT_COSTED,
+  assetReportFor, ASSET_CSV_HEADERS, assetCsvRows,
 } from './reportSpec.js';
+import { SPEND_TYPES } from '../../utils/assetReport.js';
+import { formatLocalDate } from '../../utils/dateUtils.js';
 
 const COLLECTIONS = [
   'jobs', 'quotes', 'invoices', 'customers', 'stock', 'technicians', 'leads', 'timesheets',
@@ -264,11 +267,7 @@ function csvFor(id, r) {
       return toCsv(['Technician', 'Role', 'Hours logged', 'Hours on jobs', 'Share on jobs %', 'Labour cost', 'Hours with no pay rate'],
         r.team.map(t => [t.name, t.role, t.hours, t.billableHours, t.billableShare != null ? t.billableShare * 100 : '', t.labourCost, t.unratedHours]));
     case 'assets_maintenance':
-      return toCsv(['Asset', 'Serial', 'Customer', 'Plan', 'Frequency', 'Next service', 'Priority (1-10)', 'Service cost'],
-        d.maintenancePlans.map(p => {
-          const asset = d.assets.find(a => a.id === p.assetId);
-          return [p.assetName || '', asset?.serial || '', p.customerName || '', p.name || '', p.frequency || 'Meter-Based', p.nextServiceDate || p.nextDue || '', p.priority || 5, assetServiceCost(asset)];
-        }));
+      return toCsv(ASSET_CSV_HEADERS, assetCsvRows(r));
     case 'customers':
       return toCsv(['Company', 'First name', 'Last name', 'Email', 'Phone', 'Status', 'Invoiced in range (ex GST)', 'Credit limit', 'Owing (incl. GST)', 'Over limit by'],
         d.customers.map(c => {
@@ -590,8 +589,11 @@ function getStatsSummaryText(reportId, r) {
     if (top) summary += `Largest customer share of revenue: ${pct(top.share)}\n`;
     summary += `Lead conversion: ${pct(r.sales.leadConversion)}\nQuote win rate: ${pct(r.sales.winRate)}\n`;
   } else if (reportId === 'assets_maintenance') {
+    const ar = assetReportFor(r);
     summary += `Active service plans: ${d.maintenancePlans.filter(p => p.status === 'Active').length}\n`;
-    summary += `Total service cost logged: ${money(d.assets.reduce((s, a) => s + assetServiceCost(a), 0))}\n`;
+    summary += `Maintenance spend in range: ${money(ar.total)} (service ${money(ar.byType.Service)}, repairs ${money(ar.byType.Repair)}, inspections ${money(ar.byType.Inspection)}, other ${money(ar.byType.Other)})\n`;
+    summary += `Plans overdue: ${ar.plansDue.filter(p => p.state === 'overdue').length}; due within 30 days: ${ar.plansDue.filter(p => p.state === 'due-soon').length}\n`;
+    summary += `Compliance checks overdue or due within 30 days: ${ar.complianceDue.length}\n`;
   } else if (reportId === 'inventory') {
     summary += `Stock lines: ${d.stock.length}\nBelow reorder level: ${lowStock(d.stock).length}\nStock value at cost: ${money(stockValue(d.stock))}\n`;
   }
@@ -974,8 +976,12 @@ function renderTimesheetsLaborReport(r) {
 
 function renderAssetsMaintenanceReport(r) {
   const d = r.scoped;
-  const assetCosts = d.assets.map(a => [a.name, assetServiceCost(a)]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
-  const totalMaintCost = assetCosts.reduce((s, [, c]) => s + c, 0);
+  const ar = assetReportFor(r);
+  const assetCosts = ar.rows.filter(x => x.total > 0).map(x => [x.asset.name, x.total]);
+  const assetById = new Map(d.assets.map(a => [a.id, a]));
+  const fmtDay = (key) => (key ? formatLocalDate(key, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+  const dueBadge = (state) => `<span class="badge ${state === 'overdue' ? 'badge-danger' : 'badge-warning'}">${state === 'overdue' ? 'Overdue' : 'Due soon'}</span>`;
+  const overdueCount = ar.plansDue.filter(p => p.state === 'overdue').length;
 
   const serviceLogs = [];
   d.assets.forEach(a => {
@@ -992,13 +998,86 @@ function renderAssetsMaintenanceReport(r) {
     ${renderAIInsightsPanel('assets_maintenance', r)}
 
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total assets', d.assets.length, 'inventory_2', 'blue')}
       ${kpi('Active agreements', activePlans.length, 'history_edu', 'green')}
-      ${kpi('Service actions logged', serviceLogs.length, 'engineering', 'orange')}
-      ${kpi('Total service cost', wholeMoney(totalMaintCost), 'savings', 'green')}
+      ${kpi('Maintenance spend', wholeMoney(ar.total), 'savings', 'blue')}
+      ${kpi('Spent on repairs', pct(ar.repairShare, 0), 'build', 'orange')}
+      ${kpi('Plans due or overdue', overdueCount ? `${ar.plansDue.length} (${overdueCount} overdue)` : ar.plansDue.length, 'event', overdueCount ? 'orange' : 'green')}
     </div>
 
     <div class="grid-2" style="margin-bottom:var(--space-lg);">
+      <div class="card">
+        <div class="card-header"><h4>Plans coming due</h4></div>
+        <div class="card-body" style="padding:0; overflow-y:auto; max-height:400px;">
+          <table class="data-table">
+            <thead><tr><th>Plan</th><th>Asset</th><th>Due</th><th>Status</th></tr></thead>
+            <tbody>
+              ${ar.plansDue.map(p => `
+                <tr>
+                  <td class="font-medium">${escapeHTML(p.plan.name || '')}</td>
+                  <td class="text-secondary">${assetLink(p.asset.id, p.asset.name)}${p.asset.customerName ? `<div class="text-tertiary" style="font-size:11px">${escapeHTML(p.asset.customerName)}</div>` : ''}</td>
+                  <td class="text-secondary" style="font-size:12px">${p.dueKey ? fmtDay(p.dueKey) : `at ${escapeHTML(String(p.meterTarget))} ${escapeHTML(p.asset.meterUnit || 'hrs')}`}</td>
+                  <td>${dueBadge(p.state)}</td>
+                </tr>
+              `).join('')}
+              ${!ar.plansDue.length ? emptyRow(4, 'Nothing due in the next 30 days') : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h4>Spend by type</h4></div>
+        <div class="card-body">
+          ${barChart(SPEND_TYPES.map(t => [t, ar.byType[t]]).filter(([, v]) => v > 0), {}, '#3B82F6', wholeMoney)}
+          ${ar.total > 0 ? `<p class="text-tertiary" style="font-size:12px; margin:8px 0 0">${pct(ar.plannedShare, 0)} planned work (service and inspections), ${pct(ar.repairShare, 0)} repairs.</p>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:var(--space-lg)">
+      <div class="card-header"><h4>Cost per asset</h4></div>
+      <div class="card-body" style="padding:0; overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>Asset</th><th>Customer</th><th style="text-align:right">Service</th><th style="text-align:right">Repair</th><th style="text-align:right">Inspection</th><th style="text-align:right">Other</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody>
+            ${ar.rows.filter(x => x.total > 0).map(x => `
+              <tr>
+                <td class="font-medium">${assetLink(x.asset.id, x.asset.name)}</td>
+                <td class="text-secondary">${escapeHTML(x.asset.customerName || 'My Business')}</td>
+                <td style="text-align:right">${money(x.Service)}</td>
+                <td style="text-align:right${x.Repair > 0 ? '; color:var(--color-danger)' : ''}">${money(x.Repair)}</td>
+                <td style="text-align:right">${money(x.Inspection)}</td>
+                <td style="text-align:right">${money(x.Other)}</td>
+                <td style="text-align:right; font-weight:600">${money(x.total)}</td>
+              </tr>
+            `).join('')}
+            ${!assetCosts.length ? emptyRow(7, 'No maintenance spend logged in this range') : ''}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:var(--space-lg);">
+      <div class="card">
+        <div class="card-header"><h4>Compliance coming due</h4></div>
+        <div class="card-body" style="padding:0; overflow-y:auto; max-height:400px;">
+          <table class="data-table">
+            <thead><tr><th>Check</th><th>Asset</th><th>Due</th><th>Status</th></tr></thead>
+            <tbody>
+              ${ar.complianceDue.map(c => `
+                <tr>
+                  <td class="font-medium">${escapeHTML(c.item.name || '')}</td>
+                  <td class="text-secondary">${assetLink(c.asset.id, c.asset.name)}</td>
+                  <td class="text-secondary" style="font-size:12px">${fmtDay(c.dueKey)}</td>
+                  <td>${dueBadge(c.state)}</td>
+                </tr>
+              `).join('')}
+              ${!ar.complianceDue.length ? emptyRow(4, 'No compliance checks due') : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header"><h4>Maintenance agreements</h4></div>
         <div class="card-body" style="padding:0; overflow-y:auto; max-height:400px;">
@@ -1007,24 +1086,17 @@ function renderAssetsMaintenanceReport(r) {
             <tbody>
               ${d.maintenancePlans.map(p => `
                 <tr>
-                  <td class="font-medium">${escapeHTML(p.name)}</td>
-                  <td class="text-secondary">${assetLink(p.assetId, p.assetName)}</td>
+                  <td class="font-medium">${escapeHTML(p.name)}${p.status !== 'Active' ? ` <span class="badge badge-neutral">${escapeHTML(p.status || '')}</span>` : ''}</td>
+                  <td class="text-secondary">${assetLink(p.assetId, assetById.get(p.assetId)?.name)}</td>
                   <td>
                     <span class="badge ${p.priority >= 8 ? 'badge-danger' : p.priority >= 4 ? 'badge-warning' : 'badge-success'}">Priority ${escapeHTML(String(p.priority || 5))}</span>
                   </td>
-                  <td class="text-secondary" style="font-size:12px">${escapeHTML(p.nextServiceDate || p.nextDue || '—')}</td>
+                  <td class="text-secondary" style="font-size:12px">${p.nextServiceDate ? fmtDay(p.nextServiceDate) : (p.triggerType === 'Meter' ? 'By meter' : '—')}</td>
                 </tr>
               `).join('')}
               ${!d.maintenancePlans.length ? emptyRow(4, 'No maintenance plans active') : ''}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h4>Service cost by asset</h4></div>
-        <div class="card-body">
-          ${barChart(assetCosts.slice(0, 10), {}, '#EF4444', wholeMoney)}
         </div>
       </div>
     </div>
@@ -1039,7 +1111,7 @@ function renderAssetsMaintenanceReport(r) {
           <tbody>
             ${displayLogs.map(l => `
               <tr>
-                <td class="text-secondary" style="font-size:12px">${escapeHTML(new Date(l.date).toLocaleDateString())}</td>
+                <td class="text-secondary" style="font-size:12px">${escapeHTML(fmtDay(l.date))}</td>
                 <td class="font-medium">${assetLink(l.asset.id, l.asset.name)}</td>
                 <td class="text-secondary" style="font-family:var(--font-mono); font-size:12px">${escapeHTML(l.asset.serial || '—')}</td>
                 <td>${escapeHTML(l.technicianName || 'Unassigned')}</td>
