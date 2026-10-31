@@ -617,7 +617,8 @@ describe('DataStore', () => {
       const plan = {
         id: 'p1', name: 'Quarterly filter clean', assetId: 'a1', quoteId: 'q1', triggerType: 'Calendar',
         frequency: 'Quarterly', nextServiceDate: '2026-12-01', taskTemplateId: 'tt1', mergeTasks: true,
-        defaultTechnicianId: 'tech_1', lastNotificationDate: '2026-10-31T02:00:00.000Z'
+        defaultTechnicianId: 'tech_1', lastNotificationDate: '2026-10-31T02:00:00.000Z',
+        autoCreateJob: true, leadDays: 21
       };
       const planRow = store.denormalizeRecord({ ...plan }, 'maintenancePlans');
       assert.strictEqual(planRow.quote_id, 'q1');

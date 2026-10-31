@@ -11,7 +11,7 @@
 import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
 import { resolveOne } from './resolve.js';
-import { objectSchema, str, num, int, enumOf, dateish } from './schema.js';
+import { objectSchema, str, num, int, bool, enumOf, dateish } from './schema.js';
 import { invalidInput, notFound } from './errors.js';
 import { logActivity } from './context.js';
 import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFound } from './customers.js';
@@ -193,7 +193,7 @@ defineAction({
   name: 'set_maintenance_plan',
   title: 'Set maintenance plan',
   description:
-    'Create or change the servicing plan on an asset: on a calendar ("Quarterly", next due date) or on the meter (every N hours or km). Each plan copies a blueprint quote — the standard service priced up — into the work it raises, so pass that quote. A plan with the same name on the asset is updated rather than duplicated; set status Paused to stop it.',
+    'Create or change the servicing plan on an asset: on a calendar ("Quarterly", next due date) or on the meter (every N hours or km). Each plan copies a blueprint quote — the standard service priced up — into the work it raises, so pass that quote. When the plan comes due it raises a notification for the office to dispatch, or, with autoCreateJob, creates the job straight away. A plan with the same name on the asset is updated rather than duplicated; set status Paused to stop it.',
   permission: { module: 'Assets', key: 'edit' },
   inputSchema: objectSchema(
     {
@@ -207,6 +207,8 @@ defineAction({
       lastServiceMeter: num('Meter plans: the reading at the last service. Defaults to the current reading.'),
       priority: int('1-10, higher wins when two plans fall due together. Defaults to 5.'),
       technician: str('Technician the raised job is assigned to by default.'),
+      autoCreateJob: bool('true to create the job as soon as the plan comes due; false (the default) raises a notification for the office to dispatch.'),
+      leadDays: int('Calendar plans: how many days before the due date the work is raised (0-365). Defaults to 7.', { minimum: 0, maximum: 365 }),
       status: enumOf(['Active', 'Paused'], 'Defaults to Active.'),
     },
     ['asset', 'name']
@@ -241,6 +243,8 @@ defineAction({
       mergeTasks: existing?.mergeTasks ?? false,
       taskTemplateId: existing?.taskTemplateId ?? null,
       defaultTechnicianId: technician ? technician.id : (existing?.defaultTechnicianId ?? null),
+      autoCreateJob: input.autoCreateJob != null ? input.autoCreateJob === true : (existing?.autoCreateJob === true),
+      leadDays: input.leadDays != null ? input.leadDays : (existing?.leadDays ?? null),
       frequency: triggerType === 'Calendar' ? (input.frequency || existing?.frequency || 'Quarterly') : null,
       nextServiceDate: triggerType === 'Calendar'
         ? (input.nextServiceDate ? parseDate(input.nextServiceDate) : (existing?.nextServiceDate || todayLocalISO()))

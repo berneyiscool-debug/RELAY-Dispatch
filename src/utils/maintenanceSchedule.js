@@ -13,6 +13,16 @@ import { toDateKey } from './dateUtils.js';
 
 const MONTHS_PER_FREQUENCY = { Monthly: 1, Quarterly: 3, 'Semi-Annually': 6, Annually: 12 };
 
+/** Days before a calendar plan's due date that its work is raised, unless the plan sets its own. */
+export const DEFAULT_LEAD_DAYS = 7;
+const MAX_LEAD_DAYS = 365;
+
+/** The plan's lead time in whole days: its own setting (0–365), else the default. */
+export function planLeadDays(plan) {
+  const days = parseInt(plan?.leadDays, 10);
+  return Number.isFinite(days) && days >= 0 ? Math.min(days, MAX_LEAD_DAYS) : DEFAULT_LEAD_DAYS;
+}
+
 /** Asset statuses that no longer raise maintenance work. */
 export const RETIRED_ASSET_STATUSES = ['Decommissioned', 'Lost/Stolen'];
 

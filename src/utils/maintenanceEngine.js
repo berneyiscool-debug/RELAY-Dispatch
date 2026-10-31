@@ -1,6 +1,7 @@
 import { store } from '../data/store.js';
 import { parsePreferredTime, toDateKey, todayLocalISO } from './dateUtils.js';
-import { daysUntil, isRetiredAsset, nextDateAfter, passedMeterMilestone } from './maintenanceSchedule.js';
+import { daysUntil, isRetiredAsset, nextDateAfter, passedMeterMilestone, planLeadDays } from './maintenanceSchedule.js';
+import { convertNotificationToJob } from './notificationJobs.js';
 import { supabase } from './supabase.js';
 import { checkPaymentReminders } from './paymentReminders.js';
 
@@ -160,7 +161,7 @@ function isPlanDue(plan, asset, notifications, todayKey) {
   const raisedFor = (n) => n.maintenancePlanId === plan.id || (n.mergedPlanIds || []).includes(plan.id);
   if (plan.triggerType === 'Calendar') {
     const dueKey = toDateKey(plan.nextServiceDate);
-    if (!dueKey || daysUntil(todayKey, dueKey) > 7) return false;
+    if (!dueKey || daysUntil(todayKey, dueKey) > planLeadDays(plan)) return false;
     // Not already raised for this plan and target date
     return !notifications.some(n => raisedFor(n) && n.targetServiceDate === plan.nextServiceDate);
   }
@@ -238,8 +239,13 @@ function buildPlanNotification(group, asset, quotes, stock) {
  * highest priority; plans sharing a blueprint quote are never merged. Retired
  * (Decommissioned, Lost/Stolen) assets raise nothing.
  *
+ * A calendar plan comes due its lead time (planLeadDays) before its date. When
+ * the leading plan is set to create its job (autoCreateJob), the notification
+ * is converted straight away, exactly as "Dispatch Job" would, and stays as
+ * the record of what was raised.
+ *
  * @param {string} [todayKey] YYYY-MM-DD; defaults to today (local)
- * @returns {object[]} the notifications raised
+ * @returns {object[]} the notifications raised, as stored (Converted when a job was created)
  */
 export function raiseDueMaintenance(todayKey = todayLocalISO()) {
   const plans = store.getAll('maintenancePlans') || [];
@@ -248,6 +254,7 @@ export function raiseDueMaintenance(todayKey = todayLocalISO()) {
   const notifications = store.getAll('notifications') || [];
   const stock = store.getAll('stock') || [];
   const raised = [];
+  const autoJobs = [];
 
   const activePlansByAsset = {};
   plans.forEach(plan => {
@@ -275,16 +282,19 @@ export function raiseDueMaintenance(todayKey = todayLocalISO()) {
     }
 
     groups.forEach(group => {
-      raised.push(buildPlanNotification(group, asset, quotes, stock));
+      const notification = buildPlanNotification(group, asset, quotes, stock);
+      raised.push(notification);
+      if (group[0].autoCreateJob === true) autoJobs.push(notification.id);
       group.forEach(plan => advancePlan(plan, asset, todayKey));
     });
   });
 
-  if (raised.length) {
-    store.save('notifications', [...notifications, ...raised]);
-    store.save('maintenancePlans', plans);
-  }
-  return raised;
+  if (!raised.length) return raised;
+  store.save('notifications', [...notifications, ...raised]);
+  store.save('maintenancePlans', plans);
+  // After the save, so the conversion finds the notification it marks Converted.
+  autoJobs.forEach(id => convertNotificationToJob(id));
+  return raised.map(n => store.getById('notifications', n.id) || n);
 }
 
 async function runEngineCore(userId, isCloud) {
